@@ -23,4 +23,19 @@ router.post('/login',
     AuthController.login,
 )
 
+router.post('/forgot-password',
+    body('email').isEmail().withMessage('Correo electrónico inválido'),
+    handleInputErrors,
+    AuthController.forgotPassword,
+)
+
+router.post('/update-password/:token',
+    param('token').notEmpty().withMessage('Token es requerido'),
+    body('password').isLength({ min: 6 }).withMessage('La contraseña debe tener al menos 6 caracteres'),
+    handleInputErrors,
+    AuthController.updatePasswordWithToken,
+)
+
+
+
 export default router;
