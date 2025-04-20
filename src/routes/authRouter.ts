@@ -16,4 +16,11 @@ router.post('/register',
     AuthController.register,
 )
 
+router.post('/login',
+    body('email').isEmail().withMessage('Correo electrónico inválido'),
+    body('password').notEmpty().withMessage('Contraseña es requerida'),
+    handleInputErrors,
+    AuthController.login,
+)
+
 export default router;

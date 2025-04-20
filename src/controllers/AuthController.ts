@@ -11,7 +11,6 @@ export class AuthController {
         try {
             const { nombre, email, password } = req.body;
 
-
             // Verificar si el usuario ya existe
             const userExists = await User.findOne({ email });
             if (userExists) {
@@ -34,26 +33,49 @@ export class AuthController {
             // Generar un token JWT
             const token = generateJWT({ id: newUser.id });
 
-
             res.status(201).json({
                 message: 'Usuario registrado exitosamente',
                 userId: newUser.id,
                 token: token
             });
-
-
         } catch (error) {
             res.status(500).json({ message: 'Error al registrar el usuario', error });
+            return;
         }
     }
 
     static async login(req: Request, res: Response) {
         try {
-            const { email, contrasena } = req.body;
-            // Aquí iría la lógica para autenticar al usuario
-            res.status(200).json({ message: 'Usuario autenticado', user: { email } });
+            const { email, password } = req.body;
+
+            // Verificar si el usuario existe
+            
+            const user = await User.findOne({ email }).select('+password');
+            console.log(user);
+            if (!user) {
+                res.status(400).json({ message: 'Credenciales invalidas' });
+                return;
+            }
+
+            // Verificar la contraseña
+            const isPasswordValid = await checkPassword(password, user.password);
+            
+            if (!isPasswordValid) {
+                res.status(400).json({ message: 'Credenciales invalidas' });
+                return;
+            }
+
+            // Generar un token JWT
+            const token = generateJWT({ id: user.id });
+
+            res.status(200).json({
+                message: 'Inicio de sesión exitoso',
+                userId: user.id,
+                token: token
+            });
         } catch (error) {
-            res.status(500).json({ message: 'Error al autenticar el usuario', error });
+            res.status(500).json({ message: 'Error al iniciar sesión', error });
+            return;
         }
     }
 
