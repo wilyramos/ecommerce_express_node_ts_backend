@@ -1,0 +1,103 @@
+import { Request, Response } from 'express';
+import slugify from 'slugify';
+import Category from '../models/Category';
+
+
+export class CategoryController {
+    static async createCategory(req: Request, res: Response) {
+        try {
+            const { nombre, descripcion } = req.body;
+            const slug = slugify(nombre, { lower: true, strict: true });
+
+            const ExistingCategory = await Category.findOne({ slug });
+            if (ExistingCategory) {
+                res.status(400).json({ message: "La categoria ya existe" });
+                return;
+            }
+
+            const newCategory = new Category({
+                nombre,
+                descripcion,
+                slug
+            });
+            await newCategory.save();
+            res.status(201).json({ message: "Category created successfully", category: newCategory });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error al crear la categoria', error });
+            return;
+        }
+    }
+
+    static async getCategories(req: Request, res: Response) {
+        try {
+            const categories = await Category.find();
+            res.status(200).json(categories);
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener las categorias', error });
+            return;
+        }
+    }
+    static async getCategoryById(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const category = await Category.findById(id);
+            if (!category) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+            res.status(200).json(category);
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener la categoria', error });
+            return;
+        }
+    }
+
+    static async getCategoryBySlug(req: Request, res: Response) {
+        try {
+            const { slug } = req.params;
+            const category = await Category.findOne({ slug });
+            if (!category) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+            res.status(200).json(category);
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener la categoria', error });
+            return;
+        }
+    }
+
+    static async updateCategory(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const { nombre, descripcion } = req.body;
+            const slug = slugify(nombre, { lower: true, strict: true });
+
+            const category = await Category.findByIdAndUpdate(id, { nombre, descripcion, slug }, { new: true });
+            if (!category) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+            res.status(200).json({ message: 'Categoria actualizada con exito', category });
+        } catch (error) {
+            res.status(500).json({ message: 'Error al actualizar la categoria', error });
+            return;
+        }
+    }
+
+    static async deleteCategory(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const category = await Category.findByIdAndDelete(id);
+            if (!category) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+            res.status(200).json({ message: 'Categoria eliminada con exito' });
+        } catch (error) {
+            res.status(500).json({ message: 'Error al eliminar la categoria', error });
+            return;
+        }
+    }
+}

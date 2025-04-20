@@ -155,17 +155,5 @@ export class AuthController {
         }
     }
 
-    static async verifyToken(req: Request, res: Response) {
-        try {
-        
-            
-        } catch (error) {
-
-            
-        }
-    }
-
-    static async refreshToken(req: Request, res: Response) {
-        console.log('refreshToken');
-    }
+    
 }
