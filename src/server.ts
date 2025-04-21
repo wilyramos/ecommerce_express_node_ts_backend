@@ -17,10 +17,14 @@ connectDB()
 app.use(morgan('dev'))
 app.use(express.json())
 
+app.get('/', (req, res) => {
+    res.send('API is running...')
+})
+
 // Router
 app.use('/api/auth', authRouter)
 app.use('/api/category', categoryRouter)
-app.use('/api/product', productRouter)
+app.use('/api/products', productRouter)
 
 
 

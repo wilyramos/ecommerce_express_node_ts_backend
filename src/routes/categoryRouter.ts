@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { CategoryController } from '../controllers/CategoryController';
 import { handleInputErrors } from '../middleware/validation';
+import { authenticate, isAdmin } from '../middleware/auth';
 
 
 const router = Router();
 
-router.post('/create',
+router.post('/create', authenticate, isAdmin,
 
     body('nombre').notEmpty().withMessage('Name is required'),
     body('descripcion').notEmpty().withMessage('Description is required'),
@@ -22,6 +23,7 @@ router.get('/:id', CategoryController.getCategoryById);
 router.get('/slug/:slug', CategoryController.getCategoryBySlug);
 // updateCategory
 router.put('/update/:id',
+    authenticate, isAdmin,
     body('nombre').notEmpty().withMessage('Name is required'),
     body('descripcion').notEmpty().withMessage('Description is required'),
     handleInputErrors,
@@ -29,7 +31,7 @@ router.put('/update/:id',
 );
 
 // deleteCategory
-router.delete('/delete/:id', CategoryController.deleteCategory);
+router.delete('/delete/:id', authenticate, isAdmin, CategoryController.deleteCategory);
 
 
 

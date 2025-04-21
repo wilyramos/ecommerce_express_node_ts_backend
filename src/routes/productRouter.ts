@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { ProductController } from '../controllers/ProductController';
 import { handleInputErrors } from '../middleware/validation';
+import { authenticate, isAdmin } from '../middleware/auth';
 
 
 const router = Router();
 
-router.post('/create',
+router.post('/',
+    authenticate, isAdmin,
     body('nombre')
         .notEmpty()
         .withMessage('Name is required'),
@@ -36,18 +38,25 @@ router.post('/create',
     ProductController.createProduct,
 );
 
-router.get('/list', ProductController.getProducts);
+router.get('/', ProductController.getProducts);
 router.get('/:id', ProductController.getProductById);
-router.put('/update/:id',
+router.put('/:id',
     
+    authenticate, isAdmin,
     ProductController.updateProduct
 );
 
-router.delete('/delete/:id', ProductController.deleteProduct);
+router.delete('/:id', authenticate, isAdmin, ProductController.deleteProduct);
 //getProductsByCategory
-router.get('/category/:categoryId', ProductController.getProductsByCategory);
+router.get('/category/:categoryId',
+    ProductController.getProductsByCategory);
 
+// router.get('/category/:categoryId', ProductController.getProductsByCategory);
 
-// router.post('/upload-image', ProductController.uploadImage);
+// uploadImage
+router.post('/:id/upload-images',
+    authenticate, isAdmin,
+    ProductController.uploadImages
+);
 
 export default router;

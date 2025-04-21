@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import Category from '../models/Category';
 import Product from '../models/Product';
+import formidable from 'formidable';
+// import cloudinary from 'cloudinary';
+import { v4 as uuid } from 'uuid';
+import cloudinary from '../config/cloudinary';
+
 
 
 
@@ -56,7 +61,7 @@ export class ProductController {
                 currentPage: Number(page),
                 totalProducts
             });
-            
+
         } catch (error) {
             res.status(500).json({ message: 'Error fetching products' });
             return;
@@ -135,13 +140,11 @@ export class ProductController {
         // y que el slug debe ser único para cada producto.
     }
 
-    static async uploadImage(req: Request, res: Response) {
-        console.log('Uploading image...');
-    }
+    
 
     static async getProductsByCategory(req: Request, res: Response) {
         try {
-            const { categoryId  } = req.params;
+            const { categoryId } = req.params;
             console.log('Category ID:', categoryId);
             const category = await Category.findById(categoryId);
             if (!category) {
@@ -155,4 +158,81 @@ export class ProductController {
             return;
         }
     }
+
+    static async uploadImages (req: Request, res: Response) {
+        const form = formidable({ 
+            multiples: true  // Permite recibir varios archivos
+        }); //
+    
+        form.parse(req, async (error, fields, files) => {
+            if (error) {
+                console.error("Error al procesar los archivos:", error);
+                res.status(400).json({ message: 'Error al procesar los archivos' });
+                return;
+            }
+    
+            // Verifica si se reciben las imágenes
+            if (!files.images) {
+                res.status(400).json({ message: 'No se han recibido imágenes' });
+                return;
+            }
+
+            // images es un array si se sube una sola imagen o un objeto si se suben varias
+            // The key 'images' is used in the form data
+            const images = Array.isArray(files.images) ? files.images : [files.images]; 
+            
+            if (images.length > 5) {
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                return;
+            }
+    
+            try {
+                const imageUrls = [];
+                // Subir las imágenes a Cloudinary
+                const uploadPromises = images.map((image) => {
+                    return cloudinary.uploader.upload(image.filepath, {
+                        public_id: uuid(), 
+                        folder: 'products',
+                    });
+                });
+    
+                // Esperar que todas las imágenes se suban
+                const results = await Promise.all(uploadPromises);
+                
+                // Extraer las URLs de las imágenes subidas
+                results.forEach(result => {
+                    imageUrls.push(result.secure_url);
+                });
+    
+                // Obtener el lugar por ID y actualizar sus imágenes
+                const { id } = req.params;
+
+                // Add images o mantener las imágenes existentes
+                const updatedProduct = await Product.findByIdAndUpdate(
+                    id,
+                    { $addToSet: { imagenes: { $each: imageUrls } } }, // Añadir imágenes sin duplicados
+                    { new: true } // Devuelve el documento actualizado
+                );
+
+                // verificar si el producto ya tiene 5 imágenes
+                if (updatedProduct && updatedProduct.imagenes.length > 5) {
+                    // Eliminar la imagen más antigua
+                    updatedProduct.imagenes.shift(); // Elimina la primera imagen (la más antigua)
+                    await updatedProduct.save(); // Guarda los cambios
+                }
+    
+                if (!updatedProduct) {
+                    res.status(404).json({ message: 'Producto no encontrado' });
+                    return;
+                }
+    
+                res.status(200).json({ message: 'Imágenes subidas correctamente', images: imageUrls });
+    
+            } catch (error) {
+                // console.error("Error al subir las imágenes:", error);
+                res.status(500).json({ message: 'Error al subir las imágenes' });
+                return;
+            }
+        });
+    };
 }

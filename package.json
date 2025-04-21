@@ -13,17 +13,21 @@
   "description": "",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "cloudinary": "^2.6.0",
     "colors": "^1.4.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "express-validator": "^7.2.1",
+    "formidable": "^3.5.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.13.2",
-    "nodemailer": "^6.10.1"
+    "nodemailer": "^6.10.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.1",
+    "@types/formidable": "^3.4.5",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/morgan": "^1.9.9",
     "@types/nodemailer": "^6.4.17",

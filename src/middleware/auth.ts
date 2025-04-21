@@ -36,3 +36,11 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         res.status(500).json({error: 'Token No Válido'})
     }
 }
+
+export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if(req.user && req.user.rol === 'administrador') {
+        next()
+    } else {
+        res.status(403).json({message: 'No autorizado'})
+    }
+}

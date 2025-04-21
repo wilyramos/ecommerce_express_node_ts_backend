@@ -53,7 +53,6 @@ export class AuthController {
 
             // Verificar si el usuario existe
             const user = await User.findOne({ email }).select('+password');
-            console.log(user);
             if (!user) {
                 res.status(400).json({ message: 'Credenciales invalidas' });
                 return;
