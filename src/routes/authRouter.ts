@@ -5,7 +5,6 @@ import { validationResult } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
 
 
-
 const router = Router();
 
 router.post('/register',
