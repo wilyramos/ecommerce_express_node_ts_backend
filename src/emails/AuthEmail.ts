@@ -13,7 +13,7 @@ export class AuthEmail {
         console.log('sendEmailResetPassword', user);
         await transporter.verify()
         const mailOptions = {
-            from: process.env.SMTP_USER,
+            from: "mi app <test@demomailtrap.co>",
             to: user.email,
             subject: 'Recuperación de contraseña',
             html: `

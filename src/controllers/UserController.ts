@@ -34,13 +34,20 @@ export class UserController {
     }
 
     static async updateUser(req: Request, res: Response) {
+        console.log('updateUser', req.body);
+    }
+
+    static async deleteUser(req: Request, res: Response) {
+        console.log('deleteUser', req.params.id);
+    }
+
+    static async getUserProfile(req: Request, res: Response) {
         try {
-            const userId = req.params.id;
-            const updatedUser = req.body;
-            // Aquí iría la lógica para actualizar un usuario por ID
-            res.status(200).json({ message: `Usuario con ID ${userId} actualizado`, user: updatedUser });
+            const userId = req.user.id; // Asumiendo que el ID del usuario está en el token
+            // Aquí iría la lógica para obtener el perfil del usuario
+            res.status(200).json({ message: `Perfil del usuario con ID ${userId}` });
         } catch (error) {
-            res.status(500).json({ message: 'Error al actualizar el usuario', error });
+            res.status(500).json({ message: 'Error al obtener el perfil del usuario', error });
         }
     }
 

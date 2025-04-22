@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import authRouter from './routes/authRouter'
 import productRouter from './routes/productRouter'
 import categoryRouter from './routes/categoryRouter'
+import cartRouter from './routes/cartRouter'
 
 // Connect to MongoDB
 
@@ -25,6 +26,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRouter)
 app.use('/api/category', categoryRouter)
 app.use('/api/products', productRouter)
+app.use('/api/cart', cartRouter)
 
 
 
