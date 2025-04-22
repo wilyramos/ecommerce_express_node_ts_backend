@@ -2,10 +2,6 @@ import { Request, Response } from 'express';
 import Product from '../models/Product';
 import Cart from '../models/Cart';
 
-
-
-
-
 export class CartController {
     static async getCart(req: Request, res: Response) {
         try {
@@ -162,5 +158,4 @@ export class CartController {
             res.status(500).json({ message: 'Error al eliminar producto del carrito' });
         }
     }
-
 }

@@ -1,4 +1,3 @@
-// backend/src/models/product.model.ts
 import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
 import { IProduct } from './Product';
 import { IUser } from './User';
