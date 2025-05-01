@@ -20,7 +20,6 @@ export class AuthEmail {
                 <h1>Hola ${user.name}</h1>
                 <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace para restablecerla:</p>
                 <a href="${process.env.FRONTEND_URL}/reset-password?token=${user.token}">Restablecer contraseña</a>
-
                 <p>Si no solicitaste este cambio, ignora este correo.</p>
             `
         }
