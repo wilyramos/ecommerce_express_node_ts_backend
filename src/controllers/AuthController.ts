@@ -40,7 +40,7 @@ export class AuthController {
                 token: token
             });
         } catch (error) {
-            res.status(500).json({ message: 'Error al registrar el usuario', error });
+            res.status(500).json({ message: 'Error al registrar el usuario'});
             return;
         }
     }
@@ -73,7 +73,8 @@ export class AuthController {
                 token: token
             });
         } catch (error) {
-            res.status(500).json({ message: 'Error al iniciar sesión', error });
+            // console.error('Error en el inicio de sesión:', error);
+            res.status(500).json({ message: 'Error al iniciar sesión' });
             return;
         }
     }
@@ -111,7 +112,7 @@ export class AuthController {
             res.status(200).json({ message: 'Email de restablecimiento de contraseña enviado' });
     
         } catch (error) {
-            res.status(500).json({ message: 'Error al restablecer la contraseña', error });
+            res.status(500).json({ message: 'Error al restablecer la contraseña' });
             return; 
         }
         
@@ -146,9 +147,8 @@ export class AuthController {
             res.status(200).json({ message: 'Contraseña actualizada exitosamente' });
             
         } catch (error) {
-            res.status(500).json({ message: 'Error al restablecer la contraseña', error });
-            return;
-            
+            res.status(500).json({ message: 'Error al restablecer la contraseña' });
+            return;            
         }
     }
 }
