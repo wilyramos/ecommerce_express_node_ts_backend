@@ -56,6 +56,8 @@ export class AuthController {
                 return;
             }
 
+            console.log(user.rol)
+
             // Verificar la contraseña
             const isPasswordValid = await checkPassword(password, user.password);
             
@@ -68,9 +70,10 @@ export class AuthController {
             const token = generateJWT({ id: user.id });
 
             res.status(200).json({
-                message: 'Inicio de sesión exitoso',
+                message: 'Inicio de sesión exitsdasdoso',
                 userId: user.id,
-                token: token
+                token: token,
+                role: user.rol,
             });
         } catch (error) {
             // console.error('Error en el inicio de sesión:', error);
