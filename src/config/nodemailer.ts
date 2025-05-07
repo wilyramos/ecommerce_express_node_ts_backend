@@ -4,12 +4,12 @@ dotenv.config() //
 
 const config = () => {
     return {
-        host: "live.smtp.mailtrap.io",
-        port: +587,
+        host: process.env.SMTP_HOST,
+        port: +process.env.SMTP_PORT,
         auth: {
-            user: "api",
-            pass: "530690e27efefe4d772ea60c4d0d64ba"
-        }
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+        },
     }
 }
 

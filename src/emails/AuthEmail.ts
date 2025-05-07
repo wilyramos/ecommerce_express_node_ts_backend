@@ -10,7 +10,7 @@ export class AuthEmail {
     static async sendEmailResetPassword( user: IEmail ) {
 
 
-        console.log('sendEmailResetPassword', user);
+        // console.log('sendEmailResetPassword', user);
         await transporter.verify()
         const mailOptions = {
             from: "mi app <test@demomailtrap.co>",
@@ -19,7 +19,7 @@ export class AuthEmail {
             html: `
                 <h1>Hola ${user.name}</h1>
                 <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace para restablecerla:</p>
-                <a href="${process.env.FRONTEND_URL}/reset-password?token=${user.token}">Restablecer contraseña</a>
+                <a href="${process.env.FRONTEND_URL}/auth/new-password?token=${user.token}">Restablecer contraseña</a>
                 <p>Si no solicitaste este cambio, ignora este correo.</p>
             `
         }

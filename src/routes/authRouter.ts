@@ -3,6 +3,7 @@ import { body, param } from 'express-validator';
 import { AuthController } from '../controllers/AuthController';
 import { validationResult } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
+import { authenticate } from '../middleware/auth';
 
 
 const router = Router();
@@ -33,6 +34,17 @@ router.post('/update-password/:token',
     body('password').isLength({ min: 6 }).withMessage('La contraseña debe tener al menos 6 caracteres'),
     handleInputErrors,
     AuthController.updatePasswordWithToken,
+)
+
+router.get('/user',
+    authenticate,
+    AuthController.getUser,
+)
+
+router.get('/validate-token/:token',
+    param('token').notEmpty().withMessage('Token es requerido'),
+    handleInputErrors,
+    AuthController.validateToken,
 )
 
 

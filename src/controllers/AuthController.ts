@@ -154,4 +154,27 @@ export class AuthController {
             return;            
         }
     }
+
+    static async getUser(req: Request, res: Response) {
+        res.json(req.user);
+    }
+
+    static async validateToken(req: Request, res: Response) {
+        try {
+            const { token } = req.params;
+
+            // Verificar si el token existe
+            const tokenExists = await Token.findOne({ token });
+            if (!tokenExists) {
+                res.status(400).json({ message: 'Token inválido' });
+                return;
+            }
+
+            res.json({ message: 'Token válido' });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error al validar el token' });
+            return;
+        }
+    }
 }
