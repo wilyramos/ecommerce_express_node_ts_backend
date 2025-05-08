@@ -21,10 +21,10 @@ export class CategoryController {
                 slug
             });
             await newCategory.save();
-            res.status(201).json({ message: "Category created successfully", category: newCategory });
+            res.status(201).json({ message: "Category created successfully" });
 
         } catch (error) {
-            res.status(500).json({ message: 'Error al crear la categoria', error });
+            res.status(500).json({ message: 'Error al crear la categoria' });
             return;
         }
     }
@@ -34,7 +34,7 @@ export class CategoryController {
             const categories = await Category.find();
             res.status(200).json(categories);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las categorias', error });
+            res.status(500).json({ message: 'Error al obtener las categorias' });
             return;
         }
     }
