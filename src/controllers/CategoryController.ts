@@ -74,14 +74,27 @@ export class CategoryController {
             const { nombre, descripcion } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
+            // Verificar si la categoria existe
+            // const existingCategory = await Category.findById(id);
+            // if (!existingCategory) {
+            //     res.status(404).json({ message: 'Categoria no encontrada' });
+            //     return;
+            // }
+            // Verificar si el slug ya existe
+            const existingSlug = await Category.findOne({ slug });
+            if (existingSlug && existingSlug._id.toString() !== id) {
+                res.status(400).json({ message: 'El slug ya existe' });
+                return;
+            }
+
             const category = await Category.findByIdAndUpdate(id, { nombre, descripcion, slug }, { new: true });
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
             }
-            res.status(200).json({ message: 'Categoria actualizada con exito', category });
+            res.status(200).json({ message: 'Categoria actualizada con exito' });
         } catch (error) {
-            res.status(500).json({ message: 'Error al actualizar la categoria', error });
+            res.status(500).json({ message: 'Error al actualizar la categoria' });
             return;
         }
     }
