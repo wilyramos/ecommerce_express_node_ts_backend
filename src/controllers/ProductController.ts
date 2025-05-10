@@ -132,7 +132,7 @@ export class ProductController {
             await product.deleteOne();
             res.status(200).json({ message: 'Producto eliminado correctamente' });
         } catch (error) {
-            res.status(500).json({ message: 'Error eliminando el producto', error });
+            res.status(500).json({ message: 'Error eliminando el producto' });
             return;
         }
     }
