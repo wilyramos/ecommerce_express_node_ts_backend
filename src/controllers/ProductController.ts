@@ -48,8 +48,11 @@ export class ProductController {
         try {
             const { page = 1, limit = 10 } = req.query;
             const skip = (Number(page) - 1) * Number(limit);
+
+            // obtener solo el nombre de la categoria
             const products = await Product.find()
-                .populate('categoria', 'nombre slug')
+                // .populate('categoria', 'nombre') // populate the category field with only nombre and slug
+                // .select('nombre descripcion precio imagenes categoria stock sku createdAt') // select only the fields you need
                 .skip(skip)
                 .limit(Number(limit))
                 .sort({ createdAt: -1 }); // sort by createdAt in descending order
@@ -110,8 +113,8 @@ export class ProductController {
             existingProduct.stock = stock || existingProduct.stock;
             existingProduct.sku = sku || existingProduct.sku;
 
-            const updatedProduct = await existingProduct.save();
-            res.status(200).json({ message: 'Producto actualizado correctamente', product: updatedProduct });
+            await existingProduct.save();
+            res.status(200).json({ message: 'Producto actualizado correctamente' });
         } catch (error) {
             res.status(500).json({ message: 'Error updating product', error });
             return;
