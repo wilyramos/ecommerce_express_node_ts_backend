@@ -19,8 +19,8 @@ router.post('/',
     body('precio')
         .isNumeric()
         .withMessage('Price must be a number')
-        .custom(value => value > 0)
-        .withMessage('Price must be greater than zero'),
+        .custom(value => value > -1)
+        .withMessage('Price must be zero or greater'),
     body('categoria')
         .notEmpty()
         .withMessage('Category is required'),
@@ -28,7 +28,7 @@ router.post('/',
         .notEmpty()
         .isNumeric()
         .withMessage('Stock is required and must be a number')
-        .custom(value => value >= 0)
+        .custom(value => value > -1)
         .withMessage('Stock must be zero or greater'),
     body('sku')
         .optional()
@@ -40,6 +40,7 @@ router.post('/',
 
 router.get('/', ProductController.getProducts);
 router.get('/:id', ProductController.getProductById);
+
 router.put('/:id',
     
     authenticate, isAdmin,
@@ -53,10 +54,18 @@ router.get('/category/:categoryId',
 
 // router.get('/category/:categoryId', ProductController.getProductsByCategory);
 
-// uploadImage
+// uploadImage Product
 router.post('/:id/upload-images',
     authenticate, isAdmin,
-    ProductController.uploadImages
+    ProductController.uploadImagesToProduct
 );
+
+// uploadImage Cloudinary
+router.post('/upload-images',
+    authenticate, isAdmin,
+    ProductController.uploadImageCloudinary
+);
+    
+
 
 export default router;

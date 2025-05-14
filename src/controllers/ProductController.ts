@@ -8,8 +8,6 @@ import cloudinary from '../config/cloudinary';
 
 
 
-
-
 export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
@@ -23,19 +21,26 @@ export class ProductController {
                 return;
             }
 
+            // validate images length 
+            if (imagenes && imagenes.length > 5) {
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                return;
+            }
+
+
             const newProduct = {
                 nombre,
                 descripcion,
-                precio,
-                imagenes: imagenes || [], // default to empty array if not provided
+                precio: Number(precio),
+                imagenes: imagenes || [],
                 categoria,
-                stock,
-                sku: sku
+                stock: Number(stock),
+                sku: sku || ''
             };
 
             const product = new Product(newProduct);
             await product.save();
-            res.status(201).json({ message: 'Product created successfully', product });
+            res.status(201).json({ message: 'Product created successfully' });
 
         } catch (error) {
             // console.error('Error creating product:', error);
@@ -104,13 +109,28 @@ export class ProductController {
                     return;
                 }
             }
+            // validate images length
+            if (imagenes && imagenes.length > 5) {
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                return;
+            }
+
 
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
-            existingProduct.precio = precio || existingProduct.precio;
+
+
+            if (precio != null) existingProduct.precio = precio;
+
+
+
+
+
             existingProduct.imagenes = imagenes || existingProduct.imagenes;
             existingProduct.categoria = categoria || existingProduct.categoria;
-            existingProduct.stock = stock || existingProduct.stock;
+
+            if (stock != null) existingProduct.stock = stock;
+
             existingProduct.sku = sku || existingProduct.sku;
 
             await existingProduct.save();
@@ -143,8 +163,6 @@ export class ProductController {
         // y que el slug debe ser único para cada producto.
     }
 
-    
-
     static async getProductsByCategory(req: Request, res: Response) {
         try {
             const { categoryId } = req.params;
@@ -162,18 +180,18 @@ export class ProductController {
         }
     }
 
-    static async uploadImages (req: Request, res: Response) {
-        const form = formidable({ 
+    static async uploadImagesToProduct(req: Request, res: Response) {
+        const form = formidable({
             multiples: true  // Permite recibir varios archivos
         }); //
-    
+
         form.parse(req, async (error, fields, files) => {
             if (error) {
                 console.error("Error al procesar los archivos:", error);
                 res.status(400).json({ message: 'Error al procesar los archivos' });
                 return;
             }
-    
+
             // Verifica si se reciben las imágenes
             if (!files.images) {
                 res.status(400).json({ message: 'No se han recibido imágenes' });
@@ -182,31 +200,31 @@ export class ProductController {
 
             // images es un array si se sube una sola imagen o un objeto si se suben varias
             // The key 'images' is used in the form data
-            const images = Array.isArray(files.images) ? files.images : [files.images]; 
-            
+            const images = Array.isArray(files.images) ? files.images : [files.images];
+
             if (images.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
-    
+
             try {
                 const imageUrls = [];
                 // Subir las imágenes a Cloudinary
                 const uploadPromises = images.map((image) => {
                     return cloudinary.uploader.upload(image.filepath, {
-                        public_id: uuid(), 
+                        public_id: uuid(),
                         folder: 'products',
                     });
                 });
-    
+
                 // Esperar que todas las imágenes se suban
                 const results = await Promise.all(uploadPromises);
-                
+
                 // Extraer las URLs de las imágenes subidas
                 results.forEach(result => {
                     imageUrls.push(result.secure_url);
                 });
-    
+
                 // Obtener el lugar por ID y actualizar sus imágenes
                 const { id } = req.params;
 
@@ -223,14 +241,14 @@ export class ProductController {
                     updatedProduct.imagenes.shift(); // Elimina la primera imagen (la más antigua)
                     await updatedProduct.save(); // Guarda los cambios
                 }
-    
+
                 if (!updatedProduct) {
                     res.status(404).json({ message: 'Producto no encontrado' });
                     return;
                 }
-    
+
                 res.status(200).json({ message: 'Imágenes subidas correctamente', images: imageUrls });
-    
+
             } catch (error) {
                 // console.error("Error al subir las imágenes:", error);
                 res.status(500).json({ message: 'Error al subir las imágenes' });
@@ -238,4 +256,53 @@ export class ProductController {
             }
         });
     };
+
+    static async uploadImageCloudinary(req: Request, res: Response) {
+
+        const form = formidable({ multiples: true }); // Allow multiple files
+        form.parse(req, async (error, fields, files) => {
+            if (error) {
+                console.error("Error al procesar los archivos:", error);
+                res.status(400).json({ message: 'Error al procesar los archivos' });
+                return;
+            }
+
+            // Verifica si se reciben las imágenes
+            if (!files.images) {
+                res.status(400).json({ message: 'No se han recibido imágenes' });
+                return;
+            }
+
+            const images = Array.isArray(files.images) ? files.images : [files.images];
+
+            if (images.length > 5) {
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                return;
+            }
+
+            try {
+                const imageUrls = [];
+                const uploadPromises = images.map((image) => {
+                    return cloudinary.uploader.upload(image.filepath, {
+                        public_id: uuid(),
+                        folder: 'products',
+                    });
+                });
+
+                const results = await Promise.all(uploadPromises);
+
+                results.forEach(result => {
+                    imageUrls.push(result.secure_url);
+                });
+
+                res.status(200).json({ images: imageUrls });
+
+            } catch (error) {
+                console.error("Error al subir las imágenes:", error);
+                res.status(500).json({ message: 'Error al subir las imágenes' });
+                return;
+            }
+        });
+
+    }
 }

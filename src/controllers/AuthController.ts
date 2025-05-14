@@ -124,7 +124,6 @@ export class AuthController {
     static async updatePasswordWithToken(req: Request, res: Response) {
         try {
             const { token } = req.params;
-            console.log(req.params);
             const { password } = req.body;
 
             const tokenExists = await Token.findOne({ token });
