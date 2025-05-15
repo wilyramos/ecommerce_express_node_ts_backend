@@ -39,6 +39,11 @@ router.post('/',
 );
 
 router.get('/', ProductController.getProducts);
+
+router.get('/filter',
+    ProductController.getProductsFilter
+);
+
 router.get('/:id', ProductController.getProductById);
 
 router.put('/:id',
@@ -48,6 +53,7 @@ router.put('/:id',
 );
 
 router.delete('/:id', authenticate, isAdmin, ProductController.deleteProduct);
+
 //getProductsByCategory
 router.get('/category/:categoryId',
     ProductController.getProductsByCategory);

@@ -76,6 +76,53 @@ export class ProductController {
         }
     }
 
+    static async getProductsFilter(req: Request, res: Response) {
+    try {
+        const { page = 1, limit = 10, category, priceRange, brand } = req.query;
+        const skip = (Number(page) - 1) * Number(limit);
+
+        const filter: any = {};
+        if (category) {
+            filter.categoria = category;
+        }
+        if (priceRange) {
+            let priceString: string | undefined;
+            if (typeof priceRange === 'string') {
+                priceString = priceRange;
+            } else if (Array.isArray(priceRange) && priceRange.length > 0 && typeof priceRange[0] === 'string') {
+                priceString = priceRange[0]; // Tomar el primer valor si es un array de strings
+            }
+
+            if (priceString) {
+                const [minPrice, maxPrice] = priceString.split('-').map(Number);
+                filter.precio = { $gte: minPrice, $lte: maxPrice };
+            }
+        }
+        // if (brand) {
+        //     filter.marca = brand;
+        // }
+
+        const products = await Product.find(filter)
+            .populate('categoria', 'nombre slug')
+            .skip(skip)
+            .limit(Number(limit))
+            .sort({ createdAt: -1 })
+            // .select('nombre descripcion precio imagenes categoria stock sku');
+
+        const totalProducts = await Product.countDocuments(filter)
+        res.status(200).json({
+            products,
+            totalPages: Math.ceil(totalProducts / Number(limit)),
+            currentPage: Number(page),
+            totalProducts
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching products' });
+        return;
+    }
+}
+
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;
