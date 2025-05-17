@@ -31,7 +31,7 @@ export class CategoryController {
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find();
+            const categories = await Category.find().select('_id nombre slug descripcion');
             res.status(200).json(categories);
         } catch (error) {
             res.status(500).json({ message: 'Error al obtener las categorias' });

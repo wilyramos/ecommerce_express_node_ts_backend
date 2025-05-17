@@ -56,11 +56,10 @@ export class ProductController {
 
             // obtener solo el nombre de la categoria
             const products = await Product.find()
-                // .populate('categoria', 'nombre') // populate the category field with only nombre and slug
-                // .select('nombre descripcion precio imagenes categoria stock sku createdAt') // select only the fields you need
+                
                 .skip(skip)
                 .limit(Number(limit))
-                .sort({ createdAt: -1 }); // sort by createdAt in descending order
+                .sort({ createdAt: -1 });
 
             const totalProducts = await Product.countDocuments();
             res.status(200).json({
@@ -126,7 +125,7 @@ export class ProductController {
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const product = await Product.findById(id).populate('categoria', 'nombre slug');
+            const product = await Product.findById(id).populate('categoria', '_id nombre slug');
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;

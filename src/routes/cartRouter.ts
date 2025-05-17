@@ -5,9 +5,7 @@ import { handleInputErrors } from '../middleware/validation';
 import { authenticate } from '../middleware/auth';
 import { CartController } from '../controllers/CartController';
 
-
 const router = Router();
-
 
 // get cart by userId
 router.get('/',
@@ -48,8 +46,6 @@ router.delete('/:productId',
     handleInputErrors,
     CartController.removeProductFromCart
 );
-
-
 
 
 export default router;
