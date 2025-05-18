@@ -15,7 +15,7 @@ router.post('/create', authenticate, isAdmin,
     CategoryController.createCategory   
 );
 
-router.get('/list', CategoryController.getCategories);
+router.get('/', CategoryController.getCategories);
 
 // getCategoryById 
 router.get('/:id', CategoryController.getCategoryById);
