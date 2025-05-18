@@ -56,7 +56,7 @@ export class ProductController {
 
             // obtener solo el nombre de la categoria
             const products = await Product.find()
-                
+
                 .skip(skip)
                 .limit(Number(limit))
                 .sort({ createdAt: -1 });
@@ -75,52 +75,67 @@ export class ProductController {
         }
     }
 
-    static async getProductsFilter(req: Request, res: Response) {
-    try {
-        const { page = 1, limit = 10, category, priceRange, brand } = req.query;
-        const skip = (Number(page) - 1) * Number(limit);
+    static async getProductsByFilter(req: Request, res: Response) {
+        try {
+            const {
+                page = '1',
+                limit = '10',
+                category,
+                priceRange
+            } = req.query as {
+                page?: string;
+                limit?: string;
+                category?: string;
+                priceRange?: string | string[];
+            };
 
-        const filter: any = {};
-        if (category) {
-            filter.categoria = category;
-        }
-        if (priceRange) {
-            let priceString: string | undefined;
-            if (typeof priceRange === 'string') {
-                priceString = priceRange;
-            } else if (Array.isArray(priceRange) && priceRange.length > 0 && typeof priceRange[0] === 'string') {
-                priceString = priceRange[0]; // Tomar el primer valor si es un array de strings
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+
+            const skip = (pageNum - 1) * limitNum;
+            const filter: Record<string, any> = {};
+
+            if (category) {
+                filter.categoria = category;
             }
 
-            if (priceString) {
-                const [minPrice, maxPrice] = priceString.split('-').map(Number);
-                filter.precio = { $gte: minPrice, $lte: maxPrice };
+            // Procesar el rango de precios
+            const priceStr = Array.isArray(priceRange) ? priceRange[0] : priceRange;
+            if (priceStr) {
+                const [minStr, maxStr] = priceStr.split('-');
+                const min = Number(minStr);
+                const max = Number(maxStr);
+
+                if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
+                    res.status(400).json({ message: 'Invalid price range' });
+                    return;
+                }
+
+                filter.precio = { $gte: min, $lte: max };
             }
+
+            const [products, totalProducts] = await Promise.all([
+                Product.find(filter)
+                    // .populate('categoria', '_id nombre slug descripcion')
+                    .skip(skip)
+                    .limit(limitNum)
+                    .sort({ createdAt: -1 }),
+                Product.countDocuments(filter)
+            ]);
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+        } catch (error) {
+            console.error('Error fetching products by filter:', error);
+            res.status(500).json({ message: 'Error fetching products by filter' });
+            return;
         }
-        // if (brand) {
-        //     filter.marca = brand;
-        // }
-
-        const products = await Product.find(filter)
-            .populate('categoria', 'nombre slug')
-            .skip(skip)
-            .limit(Number(limit))
-            .sort({ createdAt: -1 })
-            // .select('nombre descripcion precio imagenes categoria stock sku');
-
-        const totalProducts = await Product.countDocuments(filter)
-        res.status(200).json({
-            products,
-            totalPages: Math.ceil(totalProducts / Number(limit)),
-            currentPage: Number(page),
-            totalProducts
-        });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Error fetching products' });
-        return;
     }
-}
+
 
     static async getProductById(req: Request, res: Response) {
         try {

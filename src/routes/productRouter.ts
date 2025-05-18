@@ -41,7 +41,25 @@ router.post('/',
 router.get('/', ProductController.getProducts);
 
 router.get('/filter',
-    ProductController.getProductsFilter
+    
+    body('page')
+        .optional()
+        .isNumeric()
+        .withMessage('Page must be a number'),
+    body('limit')
+        .optional()
+        .isNumeric()
+        .withMessage('Limit must be a number'),
+    body('category')
+        .optional()
+        .isString()
+        .withMessage('Category must be a string'),
+    body('priceRange')
+        .optional()
+        .isString()
+        .withMessage('Price range must be a string'),
+    handleInputErrors,
+    ProductController.getProductsByFilter
 );
 
 router.get('/:id', ProductController.getProductById);
