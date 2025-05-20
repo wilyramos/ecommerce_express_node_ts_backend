@@ -136,7 +136,6 @@ export class ProductController {
         }
     }
 
-
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;

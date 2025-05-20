@@ -20,7 +20,7 @@ export class CartController {
             res.status(500).json({ message: 'Error al obtener el carrito' });
             return;
         }
-    }
+    };
 
     static async clearCart(req: Request, res: Response) {
         try {
@@ -116,7 +116,7 @@ export class CartController {
             // console.error('Error al actualizar la cantidad del producto:', error);
             res.status(500).json({ message: 'Error al actualizar la cantidad del producto' });
         }
-    }
+    };
 
     static async removeProductFromCart(req: Request, res: Response) {
         try {
@@ -157,5 +157,5 @@ export class CartController {
             // console.error('Error al eliminar producto del carrito:', error);
             res.status(500).json({ message: 'Error al eliminar producto del carrito' });
         }
-    }
+    };
 }
