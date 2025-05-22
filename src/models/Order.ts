@@ -14,6 +14,7 @@ export enum OrderStatus {
 export interface IShippingAddress {
     direccion: string;
     ciudad: string;
+    telefono?: string; // Opcional
     // TODO: Agregar más campos si es necesario (ej. código postal, país, etc.)
 }
 
@@ -48,6 +49,7 @@ const orderSchema = new Schema<IOrder>({
     shippingAddress: {
         direccion: { type: String, required: true },
         ciudad: { type: String, required: true },
+        telefono: { type: String, required: true },
     },
     paymentMethod: { type: String, required: true },
     paymentStatus: { type: String, default: "Pendiente" }, // Ejemplo de estado de pago
