@@ -7,6 +7,7 @@ import productRouter from './routes/productRouter'
 import categoryRouter from './routes/categoryRouter'
 import cartRouter from './routes/cartRouter'
 import orderRouter from './routes/orderRouter'
+import checkoutRouter from './routes/checkoutRouter'
 
 // Connect to MongoDB
 
@@ -29,7 +30,8 @@ app.use('/api/category', categoryRouter)
 app.use('/api/products', productRouter)
 app.use('/api/cart', cartRouter)
 app.use('/api/orders', orderRouter)
-
+app.use('/checkout', checkoutRouter)
+    
 
 
 export default app
