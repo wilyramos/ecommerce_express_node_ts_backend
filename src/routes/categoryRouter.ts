@@ -31,7 +31,7 @@ router.put('/update/:id',
 );
 
 // deleteCategory
-router.delete('/delete/:id', authenticate, isAdmin, CategoryController.deleteCategory);
+router.delete('/:id', authenticate, isAdmin, CategoryController.deleteCategory);
 
 
 

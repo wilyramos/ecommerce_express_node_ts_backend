@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import slugify from 'slugify';
 import Category from '../models/Category';
+import Product from '../models/Product';
 
 
 export class CategoryController {
@@ -102,14 +103,22 @@ export class CategoryController {
     static async deleteCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
+
+            const productWithCategory = await Product.countDocuments({ categoria: id });
+            if (productWithCategory > 0) {
+                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene productos asociados' });
+                return;
+            }
             const category = await Category.findByIdAndDelete(id);
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
             }
+
             res.status(200).json({ message: 'Categoria eliminada con exito' });
         } catch (error) {
-            res.status(500).json({ message: 'Error al eliminar la categoria', error });
+            // console.error(error);
+            res.status(500).json({ message: 'Error al eliminar la categoria' });
             return;
         }
     }
