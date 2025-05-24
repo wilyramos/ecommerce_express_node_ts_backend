@@ -89,14 +89,17 @@ export class ProductController {
                 priceRange?: string | string[];
             };
 
+            // Get the id of the category
+            const categoryId = category ? await Category.findOne({ slug: category }) : null;
+            
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
 
             const skip = (pageNum - 1) * limitNum;
             const filter: Record<string, any> = {};
 
-            if (category) {
-                filter.categoria = category;
+            if (categoryId) {
+                filter.categoria = categoryId._id;
             }
 
             // Procesar el rango de precios
