@@ -35,7 +35,7 @@ export interface IShippingAddress {
 
 // Ítem dentro de una orden (producto + cantidad + precio en ese momento)
 export interface IOrderItem {
-    product: Types.ObjectId | IProduct; // Puedes hacer populate si necesitas
+    productId: Types.ObjectId | IProduct; // Puedes hacer populate si necesitas
     quantity: number;
     price: number;
 }
@@ -63,7 +63,7 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
 
 // Subesquema: Ítem de la orden
 const orderItemSchema = new Schema<IOrderItem>({
-    product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
 }, { _id: false });

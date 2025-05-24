@@ -10,6 +10,7 @@ export interface IProduct extends Document {
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
     stock: number;
     sku?: string;
+    isActive: boolean; // TODO: Implementar en el frontend
 }
 
 const productSchema = new Schema<IProduct>(
@@ -28,7 +29,8 @@ const productSchema = new Schema<IProduct>(
             required: true 
         }, // Referencia al modelo Category
         stock: { type: Number, required: true, min: 0, default: 0 },
-        sku: { type: String, trim: true }
+        sku: { type: String, trim: true },
+        isActive: { type: Boolean, default: true }, //TODO:
     },
     { timestamps: true }
 );
