@@ -26,11 +26,11 @@ router.get('/user/:id',
     // AuthController.getOrdersByUserId
 );
 
-// Get All Orders
+// Get Orders
 router.get('/',
     authenticate,
     isAdmin,
-    // AuthController.getAllOrders
+    OrderController.getOrders
 );
 
 // Update Order Status
