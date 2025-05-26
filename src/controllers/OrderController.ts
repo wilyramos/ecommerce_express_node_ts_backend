@@ -1,34 +1,71 @@
 import Order from '../models/Order';
 import { Request, Response } from 'express';
+import Product from '../models/Product';
+import mongoose from 'mongoose';
 
 export class OrderController {
+
     static async createOrder(req: Request, res: Response) {
         try {
-            const userId = req.user?._id || null; // usuario autenticado o null
-
+            const userId = req.user?._id || null;
             const orderData = req.body;
 
-            const generateTrackingId = () => {
-                const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                let trackingId = '';
-                for (let i = 0; i < 10; i++) {
-                    trackingId += characters.charAt(Math.floor(Math.random() * characters.length));
+            const session = await mongoose.startSession();
+            session.startTransaction();
+
+            try {
+                // Iterar y validar productos
+                for (const item of orderData.items) {
+                    const product = await Product.findById(item.product).session(session);
+
+                    if (!product) {
+                        throw new Error(`Producto no encontrado: ${item.product}`);
+                    }
+
+                    if (product.stock < item.quantity) {
+                        throw new Error(`Stock insuficiente para el producto: ${product.nombre}`);
+                    }
+
+                    // Descontar stock
+                    product.stock -= item.quantity;
+                    await product.save({ session });
                 }
-                return trackingId;
+
+                // Crear orden
+                const generateTrackingId = () => {
+                    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                    let trackingId = '';
+                    for (let i = 0; i < 10; i++) {
+                        trackingId += characters.charAt(Math.floor(Math.random() * characters.length));
+                    }
+                    return trackingId;
+                };
+
+                const newOrder = new Order({
+                    user: userId,
+                    items: orderData.items,
+                    totalPrice: orderData.totalPrice,
+                    shippingAddress: orderData.shippingAddress,
+                    paymentMethod: orderData.paymentMethod,
+                    paymentStatus: orderData.paymentStatus,
+                    trackingId: generateTrackingId(),
+                });
+
+                await newOrder.save({ session });
+
+                await session.commitTransaction();
+                session.endSession();
+
+                res.status(201).json({ message: 'Orden creada exitosamente' });
+
+            } catch (innerError) {
+                await session.abortTransaction();
+                session.endSession();
+                console.error(innerError);
+                res.status(500).json({ message: `Error al procesar la orden: ${innerError.message}` });
+                return;
             }
 
-            const newOrder = new Order({
-                user: userId,   
-                items: orderData.items,
-                totalPrice: orderData.totalPrice,
-                shippingAddress: orderData.shippingAddress,
-                paymentMethod: orderData.paymentMethod,
-                paymentStatus: orderData.paymentStatus,
-                trackingId: generateTrackingId(),
-            });
-
-            await newOrder.save();
-            res.status(201).json({ message: 'Orden creada exitosamente' });
         } catch (error) {
             console.error(error);
             res.status(500).json({ message: 'Error al crear la orden' });
@@ -50,10 +87,10 @@ export class OrderController {
                     { 'trackingId': { $regex: query, $options: 'i' } }
                 ]
             })
-            .skip(skip)
-            .limit(limit)
-            .populate('user', 'name email') // Populate user details
-            .sort({ createdAt: -1 }); // Sort by creation date
+                .skip(skip)
+                .limit(limit)
+                .populate('user', 'name email') // Populate user details
+                .sort({ createdAt: -1 }); // Sort by creation date
 
             const totalOrders = await Order.countDocuments();
 
@@ -67,6 +104,30 @@ export class OrderController {
         } catch (error) {
             // console.error(error);
             res.status(500).json({ message: 'Error al obtener las órdenes' });
+        }
+    }
+
+    static async getOrderById(req: Request, res: Response) {
+        try {
+            const orderId = req.params.id;
+
+            const order = await Order.findById(orderId)
+                .populate('user', 'name email') // Populate user details
+                .populate('items.product', 'nombre imagenes sku'); // Populate product details
+
+            console.log(order);
+
+            if (!order) {
+                res.status(404).json({ message: 'Orden no encontrada' });
+                return;
+            }
+
+            res.status(200).json(order);
+
+        } catch (error) {
+            // console.error(error);
+            res.status(500).json({ message: 'Error al obtener la orden' });
+            return;
         }
     }
 }

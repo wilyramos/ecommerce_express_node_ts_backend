@@ -5,6 +5,7 @@ import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
+import { stopCoverage } from 'node:v8';
 
 
 
@@ -122,7 +123,7 @@ export class ProductController {
                     // .populate('categoria', '_id nombre slug descripcion')
                     .skip(skip)
                     .limit(limitNum)
-                    .sort({ createdAt: -1 }),
+                    .sort({ stock: -1, createdAt: -1 }),
                 Product.countDocuments(filter)
             ]);
 

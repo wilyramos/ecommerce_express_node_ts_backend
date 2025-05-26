@@ -17,7 +17,10 @@ router.post('/',
 // Get Order by ID
 router.get('/:id',
     authenticate,
-    // AuthController.getOrderById
+    isAdmin,
+    param('id').notEmpty().withMessage('El ID de la orden es obligatorio'),
+    handleInputErrors,
+    OrderController.getOrderById
 );
 
 // Get Orders by User
