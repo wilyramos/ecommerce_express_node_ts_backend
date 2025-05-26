@@ -37,20 +37,25 @@ export class OrderController {
 
     static async getOrders(req: Request, res: Response) {
         try {
+
+            // TODO: query
             const page = parseInt(req.query.page as string) || 1;
             const limit = parseInt(req.query.limit as string) || 10;
-
+            const query = req.query.query as string || '';
             const skip = (page - 1) * limit;
 
-            const orders = await Order.find()
-                .skip(skip)
-                .limit(limit)
-                .populate('user', 'name email') // Populate user details
-                .sort({ createdAt: -1 }); // Sort by creation date
+            const orders = await Order.find({
+                $or: [
+                    { 'user.name': { $regex: query, $options: 'i' } },
+                    { 'trackingId': { $regex: query, $options: 'i' } }
+                ]
+            })
+            .skip(skip)
+            .limit(limit)
+            .populate('user', 'name email') // Populate user details
+            .sort({ createdAt: -1 }); // Sort by creation date
 
             const totalOrders = await Order.countDocuments();
-
-            console.log("Orders:", orders);
 
             res.status(200).json({
                 orders,
@@ -58,7 +63,6 @@ export class OrderController {
                 currentPage: page,
                 totalPages: Math.ceil(totalOrders / limit),
             });
-
 
         } catch (error) {
             // console.error(error);
