@@ -16,7 +16,8 @@ export enum PaymentMethod {
     EFECTIVO = 'EFECTIVO',
     TARJETA = 'TARJETA',
     TRANSFERENCIA = 'TRANSFERENCIA',
-    PAYPAL = 'PAYPAL'
+    YAPE = 'YAPE',
+    PLIN = 'PLIN',
 }
 
 // Estado del pago

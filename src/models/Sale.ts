@@ -1,31 +1,71 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
+import { IOrder, PaymentMethod, PaymentStatus } from './Order';
 
-
-export interface ISale extends Document {
-    user: Types.ObjectId | IUser; // Referencia al usuario que realizó la compra
-    items: {
-        product: Types.ObjectId | IProduct; // Referencia al producto vendido
-        quantity: number; // Cantidad vendida
-        price: number; // Precio de venta del producto
-    }[];
-    totalPrice: number; // Precio total de la venta
-    createdAt: Date; // Fecha de creación de la venta
-    updatedAt: Date; // Fecha de actualización de la venta
+export enum SaleSource {
+    ONLINE = 'ONLINE',
+    POS = 'POS',
 }
 
-// TODO: 
+export enum SaleStatus {
+    COMPLETADA = 'COMPLETADA',
+    REEMBOLSADA = 'REEMBOLSADA',
+    ANULADA = 'ANULADA',
+}
+
+interface ISaleItem {
+    product: Types.ObjectId | IProduct;
+    quantity: number;
+    price: number;
+}
+
+export interface ISale extends Document {
+    customer?: Types.ObjectId | IUser;
+    employee?: Types.ObjectId | IUser;
+    items: ISaleItem[];
+    totalPrice: number;
+    totalDiscountAmount?: number;
+    source: SaleSource;
+    order?: Types.ObjectId | IOrder;
+    status: SaleStatus;
+    paymentMethod: PaymentMethod;
+    paymentStatus: PaymentStatus;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const saleItemSchema = new Schema<ISaleItem>({
+    product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    price: { type: Number, required: true, min: 0 },
+}, { _id: false });
 
 const saleSchema = new Schema<ISale>({
-    user: { type: Types.ObjectId, ref: 'User', required: true },
-    items: [{
-        product: { type: Types.ObjectId, ref: 'Product' }, // Referencia al modelo Product
-        quantity: { type: Number, required: true },
-        price: { type: Number, required: true }
-    }],
-    totalPrice: { type: Number, required: true },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
+    customer: { type: Schema.Types.ObjectId, ref: 'User' },
+    employee: { type: Schema.Types.ObjectId, ref: 'User' },
+    items: { type: [saleItemSchema], required: true },
+    totalPrice: { type: Number, min: 0 },
+    totalDiscountAmount: { type: Number, default: 0, min: 0 },
+    source: { type: String, enum: Object.values(SaleSource), required: true },
+    order: { type: Schema.Types.ObjectId, ref: 'Order' },
+    status: { type: String, enum: Object.values(SaleStatus), default: SaleStatus.COMPLETADA },
+    paymentMethod: { type: String, enum: Object.values(PaymentMethod), required: true },
+    paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.PAGADO },
+}, { timestamps: true });
+
+saleSchema.pre<ISale>('save', function (next) {
+    const itemsTotal = this.items.reduce((sum, item) => {
+        return sum + item.price * item.quantity;
+    }, 0);
+    this.totalPrice = Math.max(0, itemsTotal - (this.totalDiscountAmount || 0));
+    next();
 });
 
+saleSchema.index({ customer: 1 });
+saleSchema.index({ employee: 1 });
+saleSchema.index({ source: 1 });
+saleSchema.index({ createdAt: -1 });
+saleSchema.index({ order: 1 }, { sparse: true });
+
+export const Sale = mongoose.model<ISale>('Sale', saleSchema);
