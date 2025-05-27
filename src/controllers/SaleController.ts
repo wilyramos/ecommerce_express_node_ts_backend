@@ -43,10 +43,11 @@ export class SaleController {
             await sale.save({ session });
             await session.commitTransaction();
 
-            res.status(201).json({ message: 'Venta creada correctamente', sale });
+            res.status(201).json({ message: 'Venta creada correctamente' });
         } catch (error) {
             await session.abortTransaction();
             res.status(500).json({ message: `Error al crear la venta: ${error.message}` });
+            return;
         } finally {
             session.endSession();
         }

@@ -140,6 +140,49 @@ export class ProductController {
         }
     }
 
+    static async searchProducts(req: Request, res: Response) {
+  try {
+    const { query } = req.query;
+    const pageNum = parseInt(req.query.page as string, 10) || 1;
+    const limitNum = parseInt(req.query.limit as string, 10) || 10;
+
+    const searchText = query?.toString().trim() || "";
+
+    const searchRegex = new RegExp(searchText, "i"); // 'i' = insensible a mayúsculas/minúsculas
+
+    const filter = {
+      $or: [
+        { nombre: { $regex: searchRegex } },
+        { descripcion: { $regex: searchRegex } },
+       
+          ]
+    };
+
+    const products = await Product.find(filter)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
+
+    const totalProducts = await Product.countDocuments(filter);
+
+    if (products.length === 0) {
+       res.status(404).json({ message: 'No se encontraron productos' });
+       return;
+    }
+
+    res.status(200).json({
+      products,
+      totalPages: Math.ceil(totalProducts / limitNum),
+      currentPage: pageNum,
+      totalProducts
+    });
+
+  } catch (error) {
+    console.error('Error searching products:', error);
+    res.status(500).json({ message: 'Error al buscar productos' });
+  }
+}
+
+
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;

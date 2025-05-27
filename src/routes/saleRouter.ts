@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
-import { SaleController } from '../controllers/SaleControoler';
+import { SaleController } from '../controllers/SaleController';
 
 
 const router = Router();

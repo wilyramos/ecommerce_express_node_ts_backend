@@ -40,6 +40,24 @@ router.post('/',
 
 router.get('/', ProductController.getProducts);
 
+// Search products by query
+router.get('/search',
+    body('query')
+        .optional()
+        .isString()
+        .withMessage('Query must be a string'),
+    body('page')
+        .optional()
+        .isNumeric()
+        .withMessage('Page must be a number'),
+    body('limit')
+        .optional()
+        .isNumeric()
+        .withMessage('Limit must be a number'),
+    handleInputErrors,
+    ProductController.searchProducts
+);
+
 router.get('/filter',
     
     body('page')
