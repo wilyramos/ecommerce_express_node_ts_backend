@@ -24,8 +24,16 @@ router.post('/',
 );
 
 // Endpoint para obtener ventas con filtros opcionales en el query
+
 router.get('/',
     SaleController.getSales,
+);
+
+// Endpoint para obtener una venta por ID
+router.get('/:id',
+    param('id').isMongoId().withMessage('ID de venta inválido'),
+    handleInputErrors,
+    // SaleController.getSaleById,
 );
 
 export default router;
