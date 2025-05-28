@@ -44,3 +44,19 @@ export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
         res.status(403).json({message: 'No autorizado'})
     }
 }
+
+export const isVendedor = (req: Request, res: Response, next: NextFunction) => {
+    if(req.user && req.user.rol === 'vendedor') {
+        next()
+    } else {
+        res.status(403).json({message: 'No autorizado'})
+    }
+}
+
+export const isAdminOrVendedor = (req: Request, res: Response, next: NextFunction) => {
+    if(req.user && (req.user.rol === 'administrador' || req.user.rol === 'vendedor')) {
+        next()
+    } else {
+        res.status(403).json({message: 'No autorizado'})
+    }
+}

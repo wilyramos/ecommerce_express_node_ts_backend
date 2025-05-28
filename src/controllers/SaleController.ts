@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Sale } from '../models/Sale';
 import Product from '../models/Product';
+import { startOfDay, endOfDay, parseISO } from 'date-fns';
+
 
 export class SaleController {
     static async createSale(req: Request, res: Response) {
@@ -53,28 +55,65 @@ export class SaleController {
         }
     }
 
-    //TODO:
     static async getSales(req: Request, res: Response) {
         try {
-            const { customer, employee, source, status, paymentMethod, paymentStatus } = req.query;
+            const { search, fechaInicio, fechaFin, page = '1', limit = '10' } = req.query;
 
-            const filter: any = {};
+            const query: any = {};
 
-            if (customer) filter.customer = customer;
-            if (employee) filter.employee = employee;
-            if (source) filter.source = source;
-            if (status) filter.status = status;
-            if (paymentMethod) filter.paymentMethod = paymentMethod;
-            if (paymentStatus) filter.paymentStatus = paymentStatus;
+            // Filtro por nombre de cliente
+            if (search && typeof search === 'string') {
+                query['customer.name'] = { $regex: search, $options: 'i' };
+            }
 
-            const sales = await Sale.find(filter)
-                .populate('customer', 'nombre email')
-                .populate('employee', 'nombre email')
-                .populate('items.product', 'nombre precio');
+            // Filtro por fechas
+            if (fechaInicio || fechaFin) {
+                query.createdAt = {};
+                if (fechaInicio && typeof fechaInicio === 'string') {
+                    const inicio = startOfDay(parseISO(fechaInicio));
+                    query.createdAt.$gte = inicio;
+                }
+                if (fechaFin && typeof fechaFin === 'string') {
+                    const fin = endOfDay(parseISO(fechaFin));
+                    query.createdAt.$lte = fin;
+                }
+            }
 
-            res.status(200).json(sales);
+            // Paginación
+            const pageNumber = parseInt(page as string, 10);
+            const limitNumber = parseInt(limit as string, 10);
+            const skip = (pageNumber - 1) * limitNumber;
+
+            // Obtener ventas con paginación y filtros
+            const [sales, total] = await Promise.all([
+                Sale.find(query)
+                    .populate({
+                        path: 'items.product',
+                        select: 'nombre',
+                    })
+                    .populate({
+                        path: 'customer',
+                        select: 'name',
+                    })
+                    .populate({
+                        path: 'employee',
+                        select: 'name',
+                    })
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limitNumber)
+                    .lean(),
+                Sale.countDocuments(query),
+            ]);
+            res.json({
+                sales,
+                total,
+                page: pageNumber,
+                pages: Math.ceil(total / limitNumber)
+            });
         } catch (error) {
             res.status(500).json({ message: `Error al obtener las ventas: ${error.message}` });
+            return;
         }
     }
 }

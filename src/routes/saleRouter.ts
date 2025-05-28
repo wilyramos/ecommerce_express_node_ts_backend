@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
 import { SaleController } from '../controllers/SaleController';
+import { authenticate, isAdminOrVendedor } from '../middleware/auth';
 
 
 const router = Router();
@@ -19,6 +20,7 @@ router.post('/',
     body('customer').optional().isMongoId(),
     body('employee').optional().isMongoId(),
     body('order').optional().isMongoId(),
+    authenticate,
     handleInputErrors,
     SaleController.createSale,
 );
@@ -26,11 +28,15 @@ router.post('/',
 // Endpoint para obtener ventas con filtros opcionales en el query
 
 router.get('/',
+    authenticate,
+    isAdminOrVendedor,
     SaleController.getSales,
 );
 
 // Endpoint para obtener una venta por ID
 router.get('/:id',
+    authenticate,
+    isAdminOrVendedor,
     param('id').isMongoId().withMessage('ID de venta inválido'),
     handleInputErrors,
     // SaleController.getSaleById,
