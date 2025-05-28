@@ -21,6 +21,7 @@ router.post('/',
     body('employee').optional().isMongoId(),
     body('order').optional().isMongoId(),
     authenticate,
+    isAdminOrVendedor,
     handleInputErrors,
     SaleController.createSale,
 );
@@ -34,12 +35,12 @@ router.get('/',
 );
 
 // Endpoint para obtener una venta por ID
-router.get('/:id',
-    authenticate,
-    isAdminOrVendedor,
-    param('id').isMongoId().withMessage('ID de venta inválido'),
-    handleInputErrors,
-    // SaleController.getSaleById,
-);
+// router.get('/:id',
+//     authenticate,
+//     isAdminOrVendedor,
+//     param('id').isMongoId().withMessage('ID de venta inválido'),
+//     handleInputErrors,
+//     // SaleController.getSaleById,
+// );
 
 export default router;

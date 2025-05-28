@@ -85,19 +85,19 @@ export class SaleController {
             const skip = (pageNumber - 1) * limitNumber;
 
             // Obtener ventas con paginación y filtros
-            const [sales, total] = await Promise.all([
+            const [sales, totalSales] = await Promise.all([
                 Sale.find(query)
                     .populate({
                         path: 'items.product',
-                        select: 'nombre',
+                        select: 'nombre' + ' imagenes'
                     })
                     .populate({
                         path: 'customer',
-                        select: 'name',
+                        select: 'nombre'
                     })
                     .populate({
                         path: 'employee',
-                        select: 'name',
+                        select: 'nombre',
                     })
                     .sort({ createdAt: -1 })
                     .skip(skip)
@@ -107,9 +107,9 @@ export class SaleController {
             ]);
             res.json({
                 sales,
-                total,
-                page: pageNumber,
-                pages: Math.ceil(total / limitNumber)
+                totalSales,
+                currentPage: pageNumber,
+                totalPages: Math.ceil(totalSales / limitNumber)
             });
         } catch (error) {
             res.status(500).json({ message: `Error al obtener las ventas: ${error.message}` });
