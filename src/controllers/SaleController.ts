@@ -12,7 +12,7 @@ export class SaleController {
         session.startTransaction();
 
         try {
-            const { customer, employee, items, totalDiscountAmount = 0, source, status = 'COMPLETADA', paymentMethod, paymentStatus = 'PAGADO', order } = req.body;
+            const { customerDNI, employee, items, totalDiscountAmount = 0, source, status = 'COMPLETADA', paymentMethod, paymentStatus = 'PAGADO', order } = req.body;
 
             const validatedItems = [];
 
@@ -32,7 +32,7 @@ export class SaleController {
             }
 
             const sale = new Sale({
-                customer,
+                customerDNI,
                 employee,
                 items: validatedItems,
                 totalDiscountAmount,
@@ -62,16 +62,12 @@ export class SaleController {
 
             const query: any = {};
 
-            // Filtro por nombre de cliente
+            // Filtro por DNI
             if (search && typeof search === 'string') {
-                const clientes = await User.find({
-                    nombre: { $regex: search, $options: 'i' },
-                    rol: 'cliente'
-                }).select('_id');
-                const customerIds = clientes.map(cliente => cliente._id);
-                query.customer = { $in: customerIds };
+                query.customerDNI = search;
             }
-            // Filtro por fechas
+
+            // Filtro por rango de fechas
             if (fechaInicio || fechaFin) {
                 query.createdAt = {};
                 if (fechaInicio && typeof fechaInicio === 'string') {
@@ -84,26 +80,39 @@ export class SaleController {
                 }
             }
 
-            // Paginación
             const pageNumber = parseInt(page as string, 10);
             const limitNumber = parseInt(limit as string, 10);
             const skip = (pageNumber - 1) * limitNumber;
 
-            const [sales, totalSales] = await Promise.all([
+            const [sales, totalSales, totalAmountResult] = await Promise.all([
                 Sale.find(query)
                     .populate({ path: 'items.product', select: 'nombre imagenes' })
-                    .populate({ path: 'customer', select: 'nombre' })
                     .populate({ path: 'employee', select: 'nombre' })
                     .sort({ createdAt: -1 })
                     .skip(skip)
                     .limit(limitNumber)
                     .lean(),
+
                 Sale.countDocuments(query),
+
+                // Agregación para calcular el total vendido
+                Sale.aggregate([
+                    { $match: query },
+                    {
+                        $group: {
+                            _id: null,
+                            totalAmount: { $sum: "$totalPrice" },
+                        },
+                    },
+                ]),
             ]);
+
+            const totalAmount = totalAmountResult.length > 0 ? totalAmountResult[0].totalAmount : 0;
 
             res.json({
                 sales,
                 totalSales,
+                totalAmount, // <- total de dinero vendido
                 currentPage: pageNumber,
                 totalPages: Math.ceil(totalSales / limitNumber),
             });
