@@ -21,7 +21,7 @@ interface ISaleItem {
 }
 
 export interface ISale extends Document {
-    customer?: Types.ObjectId | IUser;
+    customerDNI?: string; 
     employee?: Types.ObjectId | IUser;
     items: ISaleItem[];
     totalPrice: number;
@@ -42,7 +42,7 @@ const saleItemSchema = new Schema<ISaleItem>({
 }, { _id: false });
 
 const saleSchema = new Schema<ISale>({
-    customer: { type: Schema.Types.ObjectId, ref: 'User' },
+    customerDNI: { type: String, required: false }, // DNI del cliente
     employee: { type: Schema.Types.ObjectId, ref: 'User' },
     items: { type: [saleItemSchema], required: true },
     totalPrice: { type: Number, min: 0 },
