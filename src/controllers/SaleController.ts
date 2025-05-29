@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Sale } from '../models/Sale';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO } from 'date-fns';
+import User from '../models/User';
 
 
 export class SaleController {
@@ -63,9 +64,13 @@ export class SaleController {
 
             // Filtro por nombre de cliente
             if (search && typeof search === 'string') {
-                query['customer.name'] = { $regex: search, $options: 'i' };
+                const clientes = await User.find({
+                    nombre: { $regex: search, $options: 'i' },
+                    rol: 'cliente'
+                }).select('_id');
+                const customerIds = clientes.map(cliente => cliente._id);
+                query.customer = { $in: customerIds };
             }
-
             // Filtro por fechas
             if (fechaInicio || fechaFin) {
                 query.createdAt = {};
@@ -84,36 +89,26 @@ export class SaleController {
             const limitNumber = parseInt(limit as string, 10);
             const skip = (pageNumber - 1) * limitNumber;
 
-            // Obtener ventas con paginación y filtros
             const [sales, totalSales] = await Promise.all([
                 Sale.find(query)
-                    .populate({
-                        path: 'items.product',
-                        select: 'nombre' + ' imagenes'
-                    })
-                    .populate({
-                        path: 'customer',
-                        select: 'nombre'
-                    })
-                    .populate({
-                        path: 'employee',
-                        select: 'nombre',
-                    })
+                    .populate({ path: 'items.product', select: 'nombre imagenes' })
+                    .populate({ path: 'customer', select: 'nombre' })
+                    .populate({ path: 'employee', select: 'nombre' })
                     .sort({ createdAt: -1 })
                     .skip(skip)
                     .limit(limitNumber)
                     .lean(),
                 Sale.countDocuments(query),
             ]);
+
             res.json({
                 sales,
                 totalSales,
                 currentPage: pageNumber,
-                totalPages: Math.ceil(totalSales / limitNumber)
+                totalPages: Math.ceil(totalSales / limitNumber),
             });
         } catch (error) {
             res.status(500).json({ message: `Error al obtener las ventas: ${error.message}` });
-            return;
         }
     }
 }
