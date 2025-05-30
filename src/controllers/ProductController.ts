@@ -5,7 +5,6 @@ import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
-import { stopCoverage } from 'node:v8';
 
 
 
@@ -13,7 +12,7 @@ export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku } = req.body;
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color } = req.body;
 
             // validate category exists
             const existingCategory = await Category.findById(categoria);
@@ -36,7 +35,10 @@ export class ProductController {
                 imagenes: imagenes || [],
                 categoria,
                 stock: Number(stock),
-                sku: sku || ''
+                sku: sku ? sku : undefined,
+                barcode: barcode ? barcode : undefined,
+                brand: brand ? brand : undefined,
+                color: color ? color : undefined,
             };
 
             const product = new Product(newProduct);
@@ -92,7 +94,7 @@ export class ProductController {
 
             // Get the id of the category
             const categoryId = category ? await Category.findOne({ slug: category }) : null;
-            
+
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
 
@@ -141,46 +143,46 @@ export class ProductController {
     }
 
     static async searchProducts(req: Request, res: Response) {
-  try {
-    const { query } = req.query;
-    const pageNum = parseInt(req.query.page as string, 10) || 1;
-    const limitNum = parseInt(req.query.limit as string, 10) || 10;
+        try {
+            const { query } = req.query;
+            const pageNum = parseInt(req.query.page as string, 10) || 1;
+            const limitNum = parseInt(req.query.limit as string, 10) || 10;
 
-    const searchText = query?.toString().trim() || "";
+            const searchText = query?.toString().trim() || "";
 
-    const searchRegex = new RegExp(searchText, "i"); // 'i' = insensible a mayúsculas/minúsculas
+            const searchRegex = new RegExp(searchText, "i"); // 'i' = insensible a mayúsculas/minúsculas
 
-    const filter = {
-      $or: [
-        { nombre: { $regex: searchRegex } },
-        { descripcion: { $regex: searchRegex } },
-       
-          ]
-    };
+            const filter = {
+                $or: [
+                    { nombre: { $regex: searchRegex } },
+                    { descripcion: { $regex: searchRegex } },
 
-    const products = await Product.find(filter)
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
+                ]
+            };
 
-    const totalProducts = await Product.countDocuments(filter);
+            const products = await Product.find(filter)
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum);
 
-    if (products.length === 0) {
-       res.status(404).json({ message: 'No se encontraron productos' });
-       return;
+            const totalProducts = await Product.countDocuments(filter);
+
+            if (products.length === 0) {
+                res.status(404).json({ message: 'No se encontraron productos' });
+                return;
+            }
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+
+        } catch (error) {
+            console.error('Error searching products:', error);
+            res.status(500).json({ message: 'Error al buscar productos' });
+        }
     }
-
-    res.status(200).json({
-      products,
-      totalPages: Math.ceil(totalProducts / limitNum),
-      currentPage: pageNum,
-      totalProducts
-    });
-
-  } catch (error) {
-    console.error('Error searching products:', error);
-    res.status(500).json({ message: 'Error al buscar productos' });
-  }
-}
 
 
     static async getProductById(req: Request, res: Response) {
@@ -225,20 +227,15 @@ export class ProductController {
 
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
-
-
             if (precio != null) existingProduct.precio = precio;
-
-
-
-
-
             existingProduct.imagenes = imagenes || existingProduct.imagenes;
             existingProduct.categoria = categoria || existingProduct.categoria;
-
             if (stock != null) existingProduct.stock = stock;
 
             existingProduct.sku = sku || existingProduct.sku;
+            existingProduct.barcode = req.body.barcode || existingProduct.barcode;
+            existingProduct.brand = req.body.brand || existingProduct.brand;
+            existingProduct.color = req.body.color || existingProduct.color;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
