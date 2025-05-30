@@ -195,6 +195,14 @@ export class ProductController {
         }
     }
 
+    static async mainSearchProducts(req: Request, res: Response) {
+       try {
+
+       } catch (error) {
+
+       }
+    }
+
 
     static async getProductById(req: Request, res: Response) {
         try {
