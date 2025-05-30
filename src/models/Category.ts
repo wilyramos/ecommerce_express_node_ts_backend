@@ -1,9 +1,10 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface ICategory extends Document {
     nombre: string;
     descripcion?: string;
     slug?: string;
+    parent?: Types.ObjectId; // Reference to another category
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -16,6 +17,13 @@ const categorySchema = new Schema<ICategory>(
         },
         descripcion: { type: String, trim: true },
         slug: { type: String, unique: true, trim: true },
+
+        // Reference to another category
+        parent: {
+            type: Schema.Types.ObjectId,
+            ref: 'Category',
+            default: null
+        }
     },
     { timestamps: true }
 );

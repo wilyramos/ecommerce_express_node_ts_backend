@@ -7,7 +7,7 @@ import Product from '../models/Product';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion } = req.body;
+            const { nombre, descripcion, parent } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
             const ExistingCategory = await Category.findOne({ slug });
@@ -16,10 +16,20 @@ export class CategoryController {
                 return;
             }
 
+            // Verificar que el parent exista si se proporciona
+            if (parent) {
+                const existingParent = await Category.findById(parent);
+                if (!existingParent) {
+                    res.status(400).json({ message: "La categoria padre no existe" });
+                    return;
+                }
+            }
+
             const newCategory = new Category({
                 nombre,
                 descripcion,
-                slug
+                slug,
+                parent: parent ? parent : null // Si no se proporciona parent, se establece como null
             });
             await newCategory.save();
             res.status(201).json({ message: "Category created successfully" });
@@ -32,7 +42,10 @@ export class CategoryController {
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find().select('_id nombre slug descripcion');
+            const categories = await Category.find().select('_id nombre slug descripcion parent')
+                .populate('parent', '_id nombre slug')
+                .sort({ createdAt: -1 });
+            console.log('Categories:', categories);
             res.status(200).json(categories);
         } catch (error) {
             res.status(500).json({ message: 'Error al obtener las categorias' });
@@ -42,11 +55,15 @@ export class CategoryController {
     static async getCategoryById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const category = await Category.findById(id);
+            const category = await Category.findById(id)
+                .select('_id nombre slug descripcion parent')
+                .populate('parent', '_id nombre slug');
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
             }
+
+            console.log('Category:', category);
             res.status(200).json(category);
         } catch (error) {
             res.status(500).json({ message: 'Error al obtener la categoria', error });
@@ -72,27 +89,47 @@ export class CategoryController {
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { nombre, descripcion } = req.body;
+            const { nombre, descripcion, parent } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
-            // Verificar si la categoria existe
-            // const existingCategory = await Category.findById(id);
-            // if (!existingCategory) {
-            //     res.status(404).json({ message: 'Categoria no encontrada' });
-            //     return;
-            // }
+            // Verificar si la categoría existe
+            const existingCategory = await Category.findById(id);
+            if (!existingCategory) {
+                res.status(404).json({ message: "Categoría no encontrada" });
+                return;
+            }
             // Verificar si el slug ya existe
             const existingSlug = await Category.findOne({ slug });
             if (existingSlug && existingSlug._id.toString() !== id) {
                 res.status(400).json({ message: 'El slug ya existe' });
                 return;
             }
+            // Verificar que el parent exista si se proporciona
+            if (parent) {
+                if(parent === id) {
+                    res.status(400).json({ message: 'No se puede establecer la categoria como su propia categoria padre' });
+                    return;
+                }
+                const existingParent = await Category.findById(parent);
+                if (!existingParent) {
+                    res.status(400).json({ message: "La categoria padre no existe" });
+                    return;
+                }
+            }
 
-            const category = await Category.findByIdAndUpdate(id, { nombre, descripcion, slug }, { new: true });
-            if (!category) {
+            // Actualizar la categoria
+            const updatedCategory = await Category.findByIdAndUpdate(id, {
+                nombre,
+                descripcion,
+                slug,
+                parent: parent ? parent : null // Si no se proporciona parent, se establece como null
+            }, { new: true });
+
+            if (!updatedCategory) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
             }
+
             res.status(200).json({ message: 'Categoria actualizada con exito' });
         } catch (error) {
             res.status(500).json({ message: 'Error al actualizar la categoria' });
