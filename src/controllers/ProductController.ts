@@ -56,7 +56,7 @@ export class ProductController {
             return;
         }
     }
-
+    
     static async getProducts(req: Request, res: Response) {
         try {
             const { page = 1, limit = 10 } = req.query;
