@@ -4,20 +4,20 @@ import { ICategory } from './Category';
 
 
 export enum Brand {
-    Iphone = "Iphone",
+    Apple = "Apple",
     Samsung = "Samsung",
     Ifans = "Ifans",
 }
 
 export enum color {
-    Black = "Black",
-    White = "White",
-    Blue = "Blue",
-    Red = "Red",
-    Green = "Green",
-    Yellow = "Yellow",
-    Purple = "Purple",
-    Orange = "Orange",
+    Negro = "Negro",
+    Blanco = "Blanco",
+    Azul = "Azul",
+    Rojo = "Rojo",
+    Verde = "Verde",
+    Amarillo = "Amarillo",
+    Morado = "Morado",
+    Naranja = "Naranja",
 }
 
 export interface IProduct extends Document {

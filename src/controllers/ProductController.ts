@@ -84,12 +84,16 @@ export class ProductController {
                 page = '1',
                 limit = '10',
                 category,
-                priceRange
+                priceRange,
+                brand,
+                color
             } = req.query as {
                 page?: string;
                 limit?: string;
                 category?: string;
                 priceRange?: string | string[];
+                brand?: string;
+                color?: string;
             };
 
             // Get the id of the category
@@ -97,7 +101,6 @@ export class ProductController {
 
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
-
             const skip = (pageNum - 1) * limitNum;
             const filter: Record<string, any> = {};
 
@@ -118,6 +121,14 @@ export class ProductController {
                 }
 
                 filter.precio = { $gte: min, $lte: max };
+            }
+            // Procesar la marca
+            if (brand) {
+                filter.brand = { $regex: new RegExp(brand, 'i') }; // 'i' = insensible a mayúsculas/minúsculas
+            }
+            // Procesar el color
+            if (color) {
+                filter.color = { $regex: new RegExp(color, 'i') }; // 'i' = insensible a mayúsculas/minúsculas
             }
 
             const [products, totalProducts] = await Promise.all([
