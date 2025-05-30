@@ -15,18 +15,23 @@ export class ProductController {
             const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color } = req.body;
 
             // validate category exists
-            const existingCategory = await Category.findById(categoria);
-            if (!existingCategory) {
+            const selectedCategory = await Category.findById(categoria);
+            if (!selectedCategory ) {
                 res.status(400).json({ message: 'La categoría no existe' });
                 return;
             }
 
-            // validate images length 
+            const hasChildren = await Category.exists({ parent: categoria });
+            if (hasChildren) {
+                res.status(400).json({ message: 'No se puede crear un producto en una categoría que tiene subcategorías' });
+                return;
+            }
+
+            // validate images length
             if (imagenes && imagenes.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
-
 
             const newProduct = {
                 nombre,

@@ -142,10 +142,30 @@ export class CategoryController {
             const { id } = req.params;
 
             const productWithCategory = await Product.countDocuments({ categoria: id });
+            
+            // verificar si la categoria existe
+            const existingCategory = await Category.findById(id);
+            if (!existingCategory) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+
+
+            // Verificar si la categoria tiene productos asociados
             if (productWithCategory > 0) {
                 res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene productos asociados' });
                 return;
             }
+
+
+            // Verificar si la categoria tiene subcategorias
+            const subcategories = await Category.countDocuments({ parent: id });
+            if (subcategories > 0) {
+                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene subcategorias asociadas' });
+                return;
+            }
+
+
             const category = await Category.findByIdAndDelete(id);
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
