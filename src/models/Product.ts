@@ -20,7 +20,6 @@ export enum color {
     Orange = "Orange",
 }
 
-
 export interface IProduct extends Document {
     nombre: string;
     descripcion?: string;
