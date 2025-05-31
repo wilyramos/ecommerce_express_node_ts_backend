@@ -18,42 +18,51 @@ export enum Color {
     Naranja = "Naranja",
 }
 
-interface Variant {
-    color?: Color;
-    modeloCompatible?: string;
+export interface VariantOption {
+    nombre: string;
+    valores: string[];
+}
+
+export interface Variant {
+    opciones: VariantOption[];
     stock: number;
-    sku?: string;
     barcode?: string;
-    imagen?: string;  // Imagen específica de la variante, opcional
 }
 
 export interface IProduct extends Document {
     nombre: string;
     descripcion?: string;
-    precio: number; // Precio base o fijo
+    precio: number;
     imagenes: string[];
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
-    stock: number;  // Stock total o general (si no hay variantes)
+    stock: number;
     sku?: string;
     barcode?: string;
     isActive: boolean;
     brand?: Brand;
-    color?: Color; // Color general, si aplica
-    variantes?: Variant[]; // Opcional: variantes si las hay
+    color?: Color;
+    variantes?: Variant[];
 }
 
-const variantSchema = new Schema<Variant>(
+// Subschemas
+const variantOptionSchema = new Schema<VariantOption>(
     {
-        color: { type: String, enum: Object.values(Color) },
-        modeloCompatible: { type: String },
-        stock: { type: Number, required: true, min: 0, default: 0 },
-        sku: { type: String, trim: true },
-        barcode: { type: String, trim: true },
-        imagen: { type: String },
+        nombre: { type: String, required: true },
+        valores: [{ type: String, required: true }]
     },
     { _id: false }
 );
 
+const variantSchema = new Schema<Variant>(
+    {
+        opciones: [variantOptionSchema],
+        stock: { type: Number, required: true, min: 0 },
+        barcode: { type: String, trim: true },
+    },
+    { _id: false }
+);
+
+// Producto principal
 const productSchema = new Schema<IProduct>(
     {
         nombre: { type: String, required: true, trim: true },
@@ -67,7 +76,7 @@ const productSchema = new Schema<IProduct>(
         isActive: { type: Boolean, default: true },
         brand: { type: String, enum: Object.values(Brand) },
         color: { type: String, enum: Object.values(Color) },
-        variantes: [variantSchema],  // Opcional: esquema para variantes
+        variantes: [variantSchema],
     },
     { timestamps: true }
 );

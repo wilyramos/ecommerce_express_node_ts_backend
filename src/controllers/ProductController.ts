@@ -12,7 +12,7 @@ export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color } = req.body;
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes } = req.body;
 
             // validate category exists
             const selectedCategory = await Category.findById(categoria);
@@ -32,6 +32,12 @@ export class ProductController {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
+            
+            // Validate variant if provided
+            if(variantes && !Array.isArray(variantes)) {
+                res.status(400).json({ message: 'Variantes deben ser un array' });
+                return;
+            }
 
             const newProduct = {
                 nombre,
@@ -44,6 +50,7 @@ export class ProductController {
                 barcode: barcode ? barcode : undefined,
                 brand: brand ? brand : undefined,
                 color: color ? color : undefined,
+                variantes: variantes || []
             };
 
             const product = new Product(newProduct);
