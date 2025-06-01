@@ -145,8 +145,6 @@ export class ProductController {
             }
 
             // Procesar el ordenamiento
-            let sortOption: Record<string, number> = {};
-
             let sortOptions: Record<string, 1 | -1> = {};
 
             switch (sort) {
@@ -164,7 +162,7 @@ export class ProductController {
                     break;
                 case '':
                 default:
-                    // Orden por defecto (puedes cambiarlo según tu criterio de "relevancia")
+                    // TODO: Cambiar el orden por defecto a stock relevancia añadir mayor vendidos etc : recomendados
                     sortOptions = { stock: -1, createdAt: -1 };
             }
 
