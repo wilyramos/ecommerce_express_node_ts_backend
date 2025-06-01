@@ -5,6 +5,7 @@ import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
+import { create } from 'node:domain';
 
 
 
@@ -16,7 +17,7 @@ export class ProductController {
 
             // validate category exists
             const selectedCategory = await Category.findById(categoria);
-            if (!selectedCategory ) {
+            if (!selectedCategory) {
                 res.status(400).json({ message: 'La categoría no existe' });
                 return;
             }
@@ -32,9 +33,9 @@ export class ProductController {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
-            
+
             // Validate variant if provided
-            if(variantes && !Array.isArray(variantes)) {
+            if (variantes && !Array.isArray(variantes)) {
                 res.status(400).json({ message: 'Variantes deben ser un array' });
                 return;
             }
@@ -63,7 +64,7 @@ export class ProductController {
             return;
         }
     }
-    
+
     static async getProducts(req: Request, res: Response) {
         try {
             const { page = 1, limit = 10 } = req.query;
@@ -98,7 +99,8 @@ export class ProductController {
                 category,
                 priceRange,
                 brand,
-                color
+                color,
+                sort
             } = req.query as {
                 page?: string;
                 limit?: string;
@@ -106,11 +108,11 @@ export class ProductController {
                 priceRange?: string | string[];
                 brand?: string;
                 color?: string;
+                sort?: string;
             };
 
             // Get the id of the category
             const categoryId = category ? await Category.findOne({ slug: category }) : null;
-
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
@@ -128,10 +130,9 @@ export class ProductController {
                 const max = Number(maxStr);
 
                 if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
-                    res.status(400).json({ message: 'Invalid price range' });
+                    res.status(400).json({ message: 'Rango de precios inválido' });
                     return;
                 }
-
                 filter.precio = { $gte: min, $lte: max };
             }
             // Procesar la marca
@@ -143,12 +144,35 @@ export class ProductController {
                 filter.color = { $regex: new RegExp(color, 'i') }; // 'i' = insensible a mayúsculas/minúsculas
             }
 
+            // Procesar el ordenamiento
+            let sortOption: Record<string, number> = {};
+
+            let sortOptions: Record<string, 1 | -1> = {};
+
+            switch (sort) {
+                case 'price-asc':
+                    sortOptions = { precio: 1 };
+                    break;
+                case 'price-desc':
+                    sortOptions = { precio: -1 };
+                    break;
+                case 'name-asc':
+                    sortOptions = { nombre: 1 };
+                    break;
+                case 'name-desc':
+                    sortOptions = { nombre: -1 };
+                    break;
+                case '':
+                default:
+                    // Orden por defecto (puedes cambiarlo según tu criterio de "relevancia")
+                    sortOptions = { stock: -1, createdAt: -1 };
+            }
+
             const [products, totalProducts] = await Promise.all([
                 Product.find(filter)
-                    // .populate('categoria', '_id nombre slug descripcion')
                     .skip(skip)
                     .limit(limitNum)
-                    .sort({ stock: -1, createdAt: -1 }),
+                    .sort(sortOptions),
                 Product.countDocuments(filter)
             ]);
 
@@ -208,44 +232,44 @@ export class ProductController {
     }
 
     static async mainSearchProducts(req: Request, res: Response) {
-       try {
+        try {
 
-        const { query, page, limit } = req.query;
-        const pageNum = parseInt(page as string, 10) || 1;
-        const limitNum = parseInt(limit as string, 10) || 10;
-        const searchText = query?.toString().trim() || "";
+            const { query, page, limit } = req.query;
+            const pageNum = parseInt(page as string, 10) || 1;
+            const limitNum = parseInt(limit as string, 10) || 10;
+            const searchText = query?.toString().trim() || "";
 
-        const searchRegex = new RegExp(searchText, "i"); // 'i' = insensible a mayúsculas/minúsculas
+            const searchRegex = new RegExp(searchText, "i"); // 'i' = insensible a mayúsculas/minúsculas
 
-        const filter = {
-            $or: [
-                { nombre: { $regex: searchRegex } },
-                { descripcion: { $regex: searchRegex } },
-            ]
-        };
+            const filter = {
+                $or: [
+                    { nombre: { $regex: searchRegex } },
+                    { descripcion: { $regex: searchRegex } },
+                ]
+            };
 
-        const products = await Product.find(filter)
-            .skip((pageNum - 1) * limitNum)
-            .limit(limitNum);
+            const products = await Product.find(filter)
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum);
 
-        const totalProducts = await Product.countDocuments(filter);
+            const totalProducts = await Product.countDocuments(filter);
 
-        if (products.length === 0) {
-            res.status(404).json({ message: 'No se encontraron productos' });
-            return;
+            if (products.length === 0) {
+                res.status(404).json({ message: 'No se encontraron productos' });
+                return;
+            }
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+
+        } catch (error) {
+            //    console.error('Error en la búsqueda principal de productos:', error);
+            res.status(500).json({ message: 'Error en la búsqueda principal de productos' });
         }
-
-        res.status(200).json({
-            products,
-            totalPages: Math.ceil(totalProducts / limitNum),
-            currentPage: pageNum,
-            totalProducts
-        });
-
-       } catch (error) {
-        //    console.error('Error en la búsqueda principal de productos:', error);
-           res.status(500).json({ message: 'Error en la búsqueda principal de productos' });
-       }
     }
 
     static async getProductById(req: Request, res: Response) {
