@@ -221,7 +221,6 @@ export class ProductController {
             $or: [
                 { nombre: { $regex: searchRegex } },
                 { descripcion: { $regex: searchRegex } },
-
             ]
         };
 
@@ -248,7 +247,6 @@ export class ProductController {
            res.status(500).json({ message: 'Error en la búsqueda principal de productos' });
        }
     }
-
 
     static async getProductById(req: Request, res: Response) {
         try {
