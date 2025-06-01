@@ -267,7 +267,7 @@ export class ProductController {
 
     static async updateProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku } = req.body;
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, variantes } = req.body;
             const productId = req.params.id;
 
             const existingProduct = await Product.findById(productId);
@@ -289,6 +289,11 @@ export class ProductController {
                 return;
             }
 
+            // Validate variant if provided // TODO: MEJORAR LA VALIDACIÓN DE VARIANTES
+            if (variantes && !Array.isArray(variantes)) {
+                res.status(400).json({ message: 'Las variantes deben ser un array' });
+                return;
+            }
 
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
@@ -301,6 +306,7 @@ export class ProductController {
             existingProduct.barcode = req.body.barcode || existingProduct.barcode;
             existingProduct.brand = req.body.brand || existingProduct.brand;
             existingProduct.color = req.body.color || existingProduct.color;
+            existingProduct.variantes = variantes || existingProduct.variantes;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
