@@ -113,7 +113,7 @@ export class ProductController {
             compatibilidad?: string;
         };
 
-        console.log('Filter Params:', compatibilidad, category, priceRange, brand, color, sort);
+        // console.log('Filter Params:', compatibilidad, category, priceRange, brand, color, sort);
 
         const pageNum = parseInt(page, 10);
         const limitNum = parseInt(limit, 10);

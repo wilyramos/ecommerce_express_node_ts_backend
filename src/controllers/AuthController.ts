@@ -30,7 +30,6 @@ export class AuthController {
             });
 
             await newUser.save();
-
             // Generar un token JWT
             const token = generateJWT({ id: newUser.id });
 
