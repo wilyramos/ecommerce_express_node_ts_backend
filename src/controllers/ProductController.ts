@@ -92,100 +92,144 @@ export class ProductController {
     }
 
     static async getProductsByFilter(req: Request, res: Response) {
-        try {
-            const {
-                page = '1',
-                limit = '10',
-                category,
-                priceRange,
-                brand,
-                color,
-                sort
-            } = req.query as {
-                page?: string;
-                limit?: string;
-                category?: string;
-                priceRange?: string | string[];
-                brand?: string;
-                color?: string;
-                sort?: string;
-            };
+    try {
+        const {
+            page = '1',
+            limit = '10',
+            category,
+            priceRange,
+            brand,
+            color,
+            sort,
+            compatibilidad
+        } = req.query as {
+            page?: string;
+            limit?: string;
+            category?: string;
+            priceRange?: string | string[];
+            brand?: string;
+            color?: string;
+            sort?: string;
+            compatibilidad?: string;
+        };
 
-            // Get the id of the category
-            const categoryId = category ? await Category.findOne({ slug: category }) : null;
-            const pageNum = parseInt(page, 10);
-            const limitNum = parseInt(limit, 10);
-            const skip = (pageNum - 1) * limitNum;
-            const filter: Record<string, any> = {};
+        console.log('Filter Params:', compatibilidad, category, priceRange, brand, color, sort);
 
-            if (categoryId) {
-                filter.categoria = categoryId._id;
+        const pageNum = parseInt(page, 10);
+        const limitNum = parseInt(limit, 10);
+        const skip = (pageNum - 1) * limitNum;
+
+        const filter: Record<string, any> = {};
+
+        // Buscar el ID de la categoría si se provee el slug
+        if (category) {
+            const categoryDoc = await Category.findOne({ slug: category });
+            if (categoryDoc) {
+                filter.categoria = categoryDoc._id;
             }
-
-            // Procesar el rango de precios
-            const priceStr = Array.isArray(priceRange) ? priceRange[0] : priceRange;
-            if (priceStr) {
-                const [minStr, maxStr] = priceStr.split('-');
-                const min = Number(minStr);
-                const max = Number(maxStr);
-
-                if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
-                    res.status(400).json({ message: 'Rango de precios inválido' });
-                    return;
-                }
-                filter.precio = { $gte: min, $lte: max };
-            }
-            // Procesar la marca
-            if (brand) {
-                filter.brand = { $regex: new RegExp(brand, 'i') }; // 'i' = insensible a mayúsculas/minúsculas
-            }
-            // Procesar el color
-            if (color) {
-                filter.color = { $regex: new RegExp(color, 'i') }; // 'i' = insensible a mayúsculas/minúsculas
-            }
-
-            // Procesar el ordenamiento
-            let sortOptions: Record<string, 1 | -1> = {};
-
-            switch (sort) {
-                case 'price-asc':
-                    sortOptions = { precio: 1 };
-                    break;
-                case 'price-desc':
-                    sortOptions = { precio: -1 };
-                    break;
-                case 'name-asc':
-                    sortOptions = { nombre: 1 };
-                    break;
-                case 'name-desc':
-                    sortOptions = { nombre: -1 };
-                    break;
-                case '':
-                default:
-                    // TODO: Cambiar el orden por defecto a stock relevancia añadir mayor vendidos etc : recomendados
-                    sortOptions = { stock: -1, createdAt: -1 };
-            }
-
-            const [products, totalProducts] = await Promise.all([
-                Product.find(filter)
-                    .skip(skip)
-                    .limit(limitNum)
-                    .sort(sortOptions),
-                Product.countDocuments(filter)
-            ]);
-
-            res.status(200).json({
-                products,
-                totalPages: Math.ceil(totalProducts / limitNum),
-                currentPage: pageNum,
-                totalProducts
-            });
-        } catch (error) {
-            console.error('Error fetching products by filter:', error);
-            res.status(500).json({ message: 'Error fetching products by filter' });
-            return;
         }
+
+        // Filtrado por rango de precio
+        const priceStr = Array.isArray(priceRange) ? priceRange[0] : priceRange;
+        if (priceStr) {
+            const [minStr, maxStr] = priceStr.split('-');
+            const min = Number(minStr);
+            const max = Number(maxStr);
+            if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
+                res.status(400).json({ message: 'Rango de precios inválido' });
+                return;
+            }
+            filter.precio = { $gte: min, $lte: max };
+        }
+
+        // Filtrado por marca
+        if (brand) {
+            filter.brand = { $regex: new RegExp(brand, 'i') };
+        }
+
+        // Variantes y campos generales (color y compatibilidad)
+        const orConditions: any[] = [];
+
+        if (color) {
+            // Coincidencia en campo general `color`
+            orConditions.push({ color: { $regex: new RegExp(color, 'i') } });
+
+            // Coincidencia en variantes
+            orConditions.push({
+                variantes: {
+                    $elemMatch: {
+                        opciones: {
+                            $elemMatch: {
+                                nombre: { $regex: /^color$/i },
+                                valores: { $regex: new RegExp(color, 'i') }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        if (compatibilidad) {
+            orConditions.push({
+                variantes: {
+                    $elemMatch: {
+                        opciones: {
+                            $elemMatch: {
+                                nombre: { $regex: /^compatibilidad$/i },
+                                valores: { $regex: new RegExp(compatibilidad, 'i') }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        if (orConditions.length > 0) {
+            filter.$or = orConditions;
+        }
+
+        // Ordenamiento
+        let sortOptions: Record<string, 1 | -1> = {};
+        switch (sort) {
+            case 'price-asc':
+                sortOptions = { precio: 1 };
+                break;
+            case 'price-desc':
+                sortOptions = { precio: -1 };
+                break;
+            case 'name-asc':
+                sortOptions = { nombre: 1 };
+                break;
+            case 'name-desc':
+                sortOptions = { nombre: -1 };
+                break;
+            default:
+                sortOptions = { stock: -1, createdAt: -1 };
+        }
+
+        // Consulta principal
+        const [products, totalProducts] = await Promise.all([
+            Product.find(filter)
+                .skip(skip)
+                .limit(limitNum)
+                .sort(sortOptions),
+            Product.countDocuments(filter)
+        ]);
+
+        res.status(200).json({
+            products,
+            totalPages: Math.ceil(totalProducts / limitNum),
+            currentPage: pageNum,
+            totalProducts
+        });
+
+    } catch (error) {
+        // console.error('Error fetching products by filter:', error);
+        res.status(500).json({ message: 'Error fetching products by filter' });
+        return;
     }
+}
+
 
     static async searchProducts(req: Request, res: Response) {
         try {
