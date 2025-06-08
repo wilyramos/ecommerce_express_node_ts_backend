@@ -179,4 +179,74 @@ export class CategoryController {
             return;
         }
     }
+
+    // Traer solo las categorias raiz
+    static async getRootCategories(req: Request, res: Response) {
+        try {
+            
+            const rootCategories = await Category.find({ parent: null })
+                .select('_id nombre slug descripcion')
+                .sort({ createdAt: -1 });
+
+            if (rootCategories.length === 0) {
+                res.status(404).json({ message: 'No se encontraron categorias raiz' });
+                return;
+            }
+
+            res.status(200).json(rootCategories);
+
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener las categorias raiz' });
+            return;
+        }
+    }
+
+    // Traer las subcategorias de una categoria
+    static async getSubcategories(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+
+            // Verificar si la categoria existe
+            const existingCategory = await Category.findById(id);
+            if (!existingCategory) {
+                res.status(404).json({ message: 'Categoria no encontrada' });
+                return;
+            }
+
+            const subcategories = await Category.find({ parent: id })
+                .select('_id nombre slug descripcion')
+                .sort({ createdAt: -1 });
+
+            if (subcategories.length === 0) {
+                res.status(404).json({ message: 'No se encontraron subcategorias' });
+                return;
+            }
+
+            res.status(200).json(subcategories);
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener las subcategorias' });
+            return;
+        }
+    }
+
+    // Traer todas las subcategorias pobladas
+    static async getAllSubcategories(req: Request, res: Response) {
+        try {
+            const categories = await Category.find({ parent: { $ne: null } })
+                .select('_id nombre slug descripcion parent')
+                .populate('parent', '_id nombre slug')
+                .sort({ createdAt: -1 });
+
+            if (categories.length === 0) {
+                res.status(404).json({ message: 'No se encontraron subcategorias' });
+                return;
+            }
+
+            res.status(200).json(categories);
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener las subcategorias', error });
+            return;
+        }
+    }
 }

@@ -35,4 +35,8 @@ router.delete('/:id', authenticate, isAdmin, CategoryController.deleteCategory);
 
 
 
+//     // Traer todas las subcategorias pobladas
+
+router.get('/all/subcategories', CategoryController.getAllSubcategories);
+
 export default router;
