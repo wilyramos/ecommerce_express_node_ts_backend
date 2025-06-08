@@ -317,7 +317,7 @@ export class ProductController {
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const product = await Product.findById(id); // .populate('categoria', 'nombre slug descripcion')
+            const product = await Product.findById(id).lean(); // mejor para rendimiento y serialización
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
