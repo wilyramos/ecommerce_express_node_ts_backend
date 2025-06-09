@@ -548,4 +548,42 @@ export class ProductController {
         });
 
     }
+
+    static async deactivateProduct(req: Request, res: Response) {
+        const { id } = req.params;
+        try {
+            const product = await Product.findById(id);
+            if (!product) {
+                res.status(404).json({ message: 'Producto no encontrado' });
+                return;
+            }
+
+            product.isActive = false; // Desactivar el producto
+            await product.save();
+
+            res.status(200).json({ message: 'Producto desactivado correctamente' });
+        } catch (error) {
+            console.error("Error al desactivar el producto:", error);
+            res.status(500).json({ message: 'Error al desactivar el producto' });
+        }
+    }
+
+    static async activateProduct(req: Request, res: Response) {
+        const { id } = req.params;
+        try {
+            const product = await
+            Product.findById(id);
+            if (!product) {
+                res.status(404).json({ message: 'Producto no encontrado' });
+                return;
+            }
+            product.isActive = true; // Activar el producto
+            await product.save();
+            res.status(200).json({ message: 'Producto activado correctamente' });
+        } catch (error) {
+            console.error("Error al activar el producto:", error);
+            res.status(500).json({ message: 'Error al activar el producto' });
+        }
+    }
+
 }
