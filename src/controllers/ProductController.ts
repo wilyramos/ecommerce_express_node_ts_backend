@@ -5,7 +5,6 @@ import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
-import { create } from 'node:domain';
 
 
 
@@ -13,7 +12,12 @@ export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes } = req.body;
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes,
+                esDestacado, esNuevo
+
+             } = req.body;
+
+             console.log('Creating product with data:', req.body);
 
             // validate category exists
             const selectedCategory = await Category.findById(categoria);
@@ -22,6 +26,7 @@ export class ProductController {
                 return;
             }
 
+            // Check if the category has children
             const hasChildren = await Category.exists({ parent: categoria });
             if (hasChildren) {
                 res.status(400).json({ message: 'No se puede crear un producto en una categoría que tiene subcategorías' });
@@ -51,7 +56,9 @@ export class ProductController {
                 barcode: barcode ? barcode : undefined,
                 brand: brand ? brand : undefined,
                 color: color ? color : undefined,
-                variantes: variantes || []
+                variantes: variantes || [],
+                esDestacado: esDestacado ? esDestacado : false,
+                esNuevo: esNuevo ? esNuevo : false,
             };
 
             const product = new Product(newProduct);
@@ -337,7 +344,7 @@ export class ProductController {
 
     static async updateProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, variantes } = req.body;
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, variantes, esDestacado, esNuevo } = req.body;
             const productId = req.params.id;
 
             const existingProduct = await Product.findById(productId);
@@ -377,6 +384,8 @@ export class ProductController {
             existingProduct.brand = req.body.brand || existingProduct.brand;
             existingProduct.color = req.body.color || existingProduct.color;
             existingProduct.variantes = variantes || existingProduct.variantes;
+            existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
+            existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });

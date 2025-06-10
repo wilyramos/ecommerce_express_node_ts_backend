@@ -5,6 +5,7 @@ export enum Brand {
     Apple = "Apple",
     Samsung = "Samsung",
     Ifans = "Ifans",
+    OneHora = "1HORA",
 }
 
 export enum Color {
@@ -42,6 +43,8 @@ export interface IProduct extends Document {
     brand?: Brand;
     color?: Color;
     variantes?: Variant[];
+    esDestacado?: boolean;
+    esNuevo?: boolean;
 }
 
 // Subschemas
@@ -68,6 +71,7 @@ const productSchema = new Schema<IProduct>(
         nombre: { type: String, required: true, trim: true },
         descripcion: { type: String, trim: true },
         precio: { type: Number, required: true, min: 0 },
+
         imagenes: [{ type: String }],
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
         stock: { type: Number, required: true, min: 0, default: 0 },
@@ -77,6 +81,8 @@ const productSchema = new Schema<IProduct>(
         brand: { type: String, enum: Object.values(Brand) },
         color: { type: String, enum: Object.values(Color) },
         variantes: [variantSchema],
+        esDestacado: { type: Boolean, default: false },
+        esNuevo: { type: Boolean, default: false }
     },
     { timestamps: true }
 );
