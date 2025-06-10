@@ -98,6 +98,39 @@ export class ProductController {
         }
     }
 
+
+    // Get product with pagination
+    static async getNewProducts(req: Request, res: Response) {
+        try {
+            const { page = '1', limit = '10' } = req.query as {
+                page?: string;
+                limit?: string;
+            };
+
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            // Obtener solo los productos nuevos
+            const products = await Product.find({ esNuevo: true })
+                .skip(skip)
+                .limit(limitNum)
+                .sort({ createdAt: -1 });
+
+            const totalProducts = await Product.countDocuments({ esNuevo: true });
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching new products' });
+        }
+    }
+
     static async getProductsByFilter(req: Request, res: Response) {
         try {
             const {
@@ -238,7 +271,6 @@ export class ProductController {
             return;
         }
     }
-
 
     static async searchProducts(req: Request, res: Response) {
         try {

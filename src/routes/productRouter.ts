@@ -40,6 +40,9 @@ router.post('/',
 
 router.get('/', ProductController.getProducts);
 
+// Get new products
+router.get('/new', ProductController.getNewProducts);
+
 // Search products by query
 router.get('/search',
     body('query')
@@ -117,5 +120,6 @@ router.put('/:id/status',
     handleInputErrors,
     ProductController.updateProductStatus
 );
+
 
 export default router;
