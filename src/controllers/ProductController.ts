@@ -549,8 +549,10 @@ export class ProductController {
 
     }
 
-    static async deactivateProduct(req: Request, res: Response) {
+    static async updateProductStatus(req: Request, res: Response) {
         const { id } = req.params;
+        const { isActive } = req.body;
+
         try {
             const product = await Product.findById(id);
             if (!product) {
@@ -558,31 +560,13 @@ export class ProductController {
                 return;
             }
 
-            product.isActive = false; // Desactivar el producto
+            product.isActive = isActive;
             await product.save();
 
-            res.status(200).json({ message: 'Producto desactivado correctamente' });
+            res.status(200).json({ message: 'Estado del producto actualizado correctamente' });
         } catch (error) {
-            console.error("Error al desactivar el producto:", error);
-            res.status(500).json({ message: 'Error al desactivar el producto' });
-        }
-    }
-
-    static async activateProduct(req: Request, res: Response) {
-        const { id } = req.params;
-        try {
-            const product = await
-            Product.findById(id);
-            if (!product) {
-                res.status(404).json({ message: 'Producto no encontrado' });
-                return;
-            }
-            product.isActive = true; // Activar el producto
-            await product.save();
-            res.status(200).json({ message: 'Producto activado correctamente' });
-        } catch (error) {
-            console.error("Error al activar el producto:", error);
-            res.status(500).json({ message: 'Error al activar el producto' });
+            // console.error("Error al actualizar el estado del producto:", error);
+            res.status(500).json({ message: 'Error al actualizar el estado del producto' });
         }
     }
 

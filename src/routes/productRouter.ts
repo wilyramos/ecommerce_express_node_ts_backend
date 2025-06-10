@@ -107,7 +107,15 @@ router.post('/upload-images',
     authenticate, isAdmin,
     ProductController.uploadImageCloudinary
 );
-    
 
+// Actualizar el estado de un producto
+router.put('/:id/status',
+    authenticate, isAdmin,
+    body('isActive')
+        .isBoolean()
+        .withMessage('Status must be a boolean'),
+    handleInputErrors,
+    ProductController.updateProductStatus
+);
 
 export default router;
