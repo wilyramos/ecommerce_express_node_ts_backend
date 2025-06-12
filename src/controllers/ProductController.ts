@@ -613,34 +613,29 @@ export class ProductController {
         }
     }
 
-    // Traer productos relacionados recomendados complementarios con page total pages,etc
+    // Traer productos relacionados de otras categorías
     static async getProductsRelated(req: Request, res: Response) {
         const { id } = req.params;
-
         try {
-
             const product = await Product.findById(id);
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
 
-            // Obtener productos relacionados basados en la categoría y excluyendo el producto actual
-            const relatedProducts = await Product.find({
-                categoria: product.categoria,
-                _id: { $ne: id }, // Excluir el producto actual
-                isActive: true // Solo productos activos
+            // Obtener productos recomendados de la misma categoría
+            const recommendedProducts = await Product.find({
+                categoria: product.categoria, // Mismo categoría
+                isActive: true, // Solo productos activos
+                stock: { $gt: 0 }, // Solo productos con stock disponible
             })
-                .limit(4) // Limitar a 4 productos relacionados
+                .limit(4) // Limitar a 4 productos recomendados
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación
 
-            res.status(200).json(relatedProducts);
-            return;
+            res.status(200).json(recommendedProducts);
         } catch (error) {
-            // console.error("Error al obtener productos relacionados:", error);
-            res.status(500).json({ message: 'Error al obtener productos relacionados' });
-            return;
+            // console.error("Error al obtener productos recomendados:", error);
+            res.status(500).json({ message: 'Error al obtener productos recomendados' });
         }
     }
-
 }
