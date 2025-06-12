@@ -141,7 +141,8 @@ export class ProductController {
                 brand,
                 color,
                 sort,
-                compatibilidad
+                compatibilidad,
+                query
             } = req.query as {
                 page?: string;
                 limit?: string;
@@ -151,6 +152,7 @@ export class ProductController {
                 color?: string;
                 sort?: string;
                 compatibilidad?: string;
+                query?: string;
             };
 
             // console.log('Filter Params:', compatibilidad, category, priceRange, brand, color, sort);
@@ -189,6 +191,10 @@ export class ProductController {
 
             // Variantes y campos generales (color y compatibilidad)
             const orConditions: any[] = [];
+
+            // Filtros por texto de bsuqueda 
+
+
 
             if (color) {
                 // Coincidencia en campo general `color`
@@ -249,6 +255,31 @@ export class ProductController {
 
             // Consulta principal y traer solo los productos activos
             filter.isActive = true; // Solo productos activos
+
+            // Filtro por texto de búsqueda
+            if (query) {
+                const regex = new RegExp(query, 'i'); // insensible a mayúsculas/minúsculas
+
+                filter.$or = [
+                    ...(filter.$or || []), // conservar condiciones de color o compatibilidad si existen
+                    { nombre: regex },
+                    { descripcion: regex },
+                    { brand: regex },
+                    {
+                        variantes: {
+                            $elemMatch: {
+                                opciones: {
+                                    $elemMatch: {
+                                        valores: regex
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ];
+            }
+
+            // Consulta para obtener productos
             const [products, totalProducts] = await Promise.all([
                 Product.find(filter)
                     .skip(skip)
