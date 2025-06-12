@@ -623,11 +623,12 @@ export class ProductController {
                 return;
             }
 
-            // Obtener productos recomendados de la misma categoría
+            // Obtener productos recomendados de la misma categoría, menos el producto actual
             const recommendedProducts = await Product.find({
                 categoria: product.categoria, // Mismo categoría
                 isActive: true, // Solo productos activos
                 stock: { $gt: 0 }, // Solo productos con stock disponible
+                _id: { $ne: id } // Excluir el producto actual
             })
                 .limit(4) // Limitar a 4 productos recomendados
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación
