@@ -122,4 +122,10 @@ router.put('/:id/status',
 );
 
 
+// get product related products
+router.get('/:id/related', ProductController.getProductsRelated);
+
+
+
+
 export default router;

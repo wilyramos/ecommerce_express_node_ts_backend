@@ -15,9 +15,9 @@ export class ProductController {
             const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes,
                 esDestacado, esNuevo
 
-             } = req.body;
+            } = req.body;
 
-             console.log('Creating product with data:', req.body);
+            console.log('Creating product with data:', req.body);
 
             // validate category exists
             const selectedCategory = await Category.findById(categoria);
@@ -610,6 +610,36 @@ export class ProductController {
         } catch (error) {
             // console.error("Error al actualizar el estado del producto:", error);
             res.status(500).json({ message: 'Error al actualizar el estado del producto' });
+        }
+    }
+
+    // Traer productos relacionados recomendados complementarios con page total pages,etc
+    static async getProductsRelated(req: Request, res: Response) {
+        const { id } = req.params;
+
+        try {
+
+            const product = await Product.findById(id);
+            if (!product) {
+                res.status(404).json({ message: 'Producto no encontrado' });
+                return;
+            }
+
+            // Obtener productos relacionados basados en la categoría y excluyendo el producto actual
+            const relatedProducts = await Product.find({
+                categoria: product.categoria,
+                _id: { $ne: id }, // Excluir el producto actual
+                isActive: true // Solo productos activos
+            })
+                .limit(4) // Limitar a 4 productos relacionados
+                .sort({ createdAt: -1 }); // Ordenar por fecha de creación
+
+            res.status(200).json(relatedProducts);
+            return;
+        } catch (error) {
+            // console.error("Error al obtener productos relacionados:", error);
+            res.status(500).json({ message: 'Error al obtener productos relacionados' });
+            return;
         }
     }
 
