@@ -7,7 +7,7 @@ import Product from '../models/Product';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, parent } = req.body;
+            const { nombre, descripcion, parent, atributos } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
             const ExistingCategory = await Category.findOne({ slug });
@@ -25,12 +25,41 @@ export class CategoryController {
                 }
             }
 
+            // Validar los atributos si se proporcionan
+            let atributosValidados: typeof atributos = [];
+            if (Array.isArray(atributos)) {
+                for (const attr of atributos) {
+                    if (!attr.nombre || !attr.tipo) {
+                        res.status(400).json({ message: 'Todos los atributos deben tener un nombre y un tipo' });
+                        return;
+                    }
+
+                    if (!['string', 'number', 'boolean', 'select'].includes(attr.tipo)) {
+                        res.status(400).json({ message: `El tipo de atributo "${attr.tipo}" no es válido. Debe ser uno de: 'string', 'number', 'boolean', 'select'` });
+                        return;
+                    }
+
+                    if (attr.tipo === 'select' && (!Array.isArray(attr.opciones) || attr.opciones.length === 0)) {
+                        res.status(400).json({ message: `El atributo "${attr.nombre}" debe tener opciones si es tipo 'select'` });
+                        return;
+                    }
+
+                    atributosValidados.push({
+                        nombre: attr.nombre,
+                        tipo: attr.tipo,
+                        opciones: attr.tipo === 'select' ? attr.opciones : undefined
+                    });
+                }
+            }
+
             const newCategory = new Category({
                 nombre,
                 descripcion,
                 slug,
-                parent: parent ? parent : null // Si no se proporciona parent, se establece como null
+                parent: parent || null, // Si no se proporciona parent, se establece como null,
+                atributos: atributosValidados
             });
+
             await newCategory.save();
             res.status(201).json({ message: "Category created successfully" });
 
@@ -106,7 +135,7 @@ export class CategoryController {
             }
             // Verificar que el parent exista si se proporciona
             if (parent) {
-                if(parent === id) {
+                if (parent === id) {
                     res.status(400).json({ message: 'No se puede establecer la categoria como su propia categoria padre' });
                     return;
                 }
@@ -142,7 +171,7 @@ export class CategoryController {
             const { id } = req.params;
 
             const productWithCategory = await Product.countDocuments({ categoria: id });
-            
+
             // verificar si la categoria existe
             const existingCategory = await Category.findById(id);
             if (!existingCategory) {
@@ -183,7 +212,7 @@ export class CategoryController {
     // Traer solo las categorias raiz
     static async getRootCategories(req: Request, res: Response) {
         try {
-            
+
             const rootCategories = await Category.find({ parent: null })
                 .select('_id nombre slug descripcion')
                 .sort({ createdAt: -1 });
@@ -249,4 +278,5 @@ export class CategoryController {
             return;
         }
     }
+
 }

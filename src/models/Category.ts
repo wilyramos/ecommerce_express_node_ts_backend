@@ -5,6 +5,12 @@ export interface ICategory extends Document {
     descripcion?: string;
     slug?: string;
     parent?: Types.ObjectId; // Reference to another category
+    atributos?: {
+        nombre: string;
+        tipo: 'string' | 'number' | 'boolean' | 'select';
+        opciones?: string[]; // For select type attributes
+    }
+
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -23,7 +29,18 @@ const categorySchema = new Schema<ICategory>(
             type: Schema.Types.ObjectId,
             ref: 'Category',
             default: null
-        }
+        },
+        atributos: [
+            {
+                nombre: { type: String, required: true },
+                tipo: {
+                    type: String,
+                    enum: ['string', 'number', 'boolean', 'select'],
+                    required: true
+                },
+                opciones: [{ type: String }] // For select type attributes
+            }
+        ]
     },
     { timestamps: true }
 );
