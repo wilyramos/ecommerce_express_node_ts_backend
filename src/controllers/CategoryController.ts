@@ -7,7 +7,7 @@ import Product from '../models/Product';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, parent, atributos } = req.body;
+            const { nombre, descripcion, parent, attributes } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
             const ExistingCategory = await Category.findOne({ slug });
@@ -25,30 +25,19 @@ export class CategoryController {
                 }
             }
 
-            // Validar los atributos si se proporcionan
-            let atributosValidados: typeof atributos = [];
-            if (Array.isArray(atributos)) {
-                for (const attr of atributos) {
-                    if (!attr.nombre || !attr.tipo) {
-                        res.status(400).json({ message: 'Todos los atributos deben tener un nombre y un tipo' });
+            // Validar que los atributos sean válidos
+            
+            if (attributes) {
+                if (!Array.isArray(attributes) || attributes.length === 0) {
+                    res.status(400).json({ message: "Los atributos deben ser un array no vacío" });
+                    return;
+                }
+
+                for (const attr of attributes) {
+                    if (!attr.name || !Array.isArray(attr.values) || attr.values.length === 0) {
+                        res.status(400).json({ message: "Cada atributo debe tener un nombre y al menos un valor" });
                         return;
                     }
-
-                    if (!['string', 'number', 'boolean', 'select'].includes(attr.tipo)) {
-                        res.status(400).json({ message: `El tipo de atributo "${attr.tipo}" no es válido. Debe ser uno de: 'string', 'number', 'boolean', 'select'` });
-                        return;
-                    }
-
-                    if (attr.tipo === 'select' && (!Array.isArray(attr.opciones) || attr.opciones.length === 0)) {
-                        res.status(400).json({ message: `El atributo "${attr.nombre}" debe tener opciones si es tipo 'select'` });
-                        return;
-                    }
-
-                    atributosValidados.push({
-                        nombre: attr.nombre,
-                        tipo: attr.tipo,
-                        opciones: attr.tipo === 'select' ? attr.opciones : undefined
-                    });
                 }
             }
 
@@ -57,7 +46,7 @@ export class CategoryController {
                 descripcion,
                 slug,
                 parent: parent || null, // Si no se proporciona parent, se establece como null,
-                atributos: atributosValidados
+                attributes
             });
 
             await newCategory.save();
@@ -74,7 +63,7 @@ export class CategoryController {
             const categories = await Category.find().select('_id nombre slug descripcion parent')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
-            console.log('Categories:', categories);
+            // console.log('Categories:', categories);
             res.status(200).json(categories);
         } catch (error) {
             res.status(500).json({ message: 'Error al obtener las categorias' });
@@ -85,14 +74,14 @@ export class CategoryController {
         try {
             const { id } = req.params;
             const category = await Category.findById(id)
-                .select('_id nombre slug descripcion parent')
+                .select('_id nombre slug descripcion parent attributes')
                 .populate('parent', '_id nombre slug');
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
             }
 
-            console.log('Category:', category);
+            // console.log('Category:', category);
             res.status(200).json(category);
         } catch (error) {
             res.status(500).json({ message: 'Error al obtener la categoria', error });
@@ -118,7 +107,10 @@ export class CategoryController {
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { nombre, descripcion, parent } = req.body;
+            const { nombre, descripcion, parent, attributes } = req.body;
+
+            console.log('body', req.body);
+
             const slug = slugify(nombre, { lower: true, strict: true });
 
             // Verificar si la categoría existe
@@ -146,12 +138,28 @@ export class CategoryController {
                 }
             }
 
+            // Validar que los atributos sean válidos
+            if (attributes) {
+                if (!Array.isArray(attributes) || attributes.length === 0) {
+                    res.status(400).json({ message: "Los atributos deben ser un array no vacío" });
+                    return;
+                }
+
+                for (const attr of attributes) {
+                    if (!attr.name || !Array.isArray(attr.values) || attr.values.length === 0) {
+                        res.status(400).json({ message: "Cada atributo debe tener un nombre y al menos un valor" });
+                        return;
+                    }
+                }
+            }
+
             // Actualizar la categoria
             const updatedCategory = await Category.findByIdAndUpdate(id, {
                 nombre,
                 descripcion,
                 slug,
-                parent: parent ? parent : null // Si no se proporciona parent, se establece como null
+                parent: parent ? parent : null, // Si no se proporciona parent, se establece como null
+                attributes
             }, { new: true });
 
             if (!updatedCategory) {

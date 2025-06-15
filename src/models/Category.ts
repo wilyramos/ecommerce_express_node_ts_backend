@@ -1,46 +1,50 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
+// Subesquema para atributos de categoría
+export interface ICategoryAttribute {
+    name: string;
+    values: string[];
+}
+
 export interface ICategory extends Document {
     nombre: string;
     descripcion?: string;
     slug?: string;
-    parent?: Types.ObjectId; // Reference to another category
-    atributos?: {
-        nombre: string;
-        tipo: 'string' | 'number' | 'boolean' | 'select';
-        opciones?: string[]; // For select type attributes
-    }
-
+    parent?: Types.ObjectId;
+    attributes?: ICategoryAttribute[];
     createdAt?: Date;
     updatedAt?: Date;
 }
 
+// Subschema para atributo individual
+const categoryAttributeSchema = new Schema<ICategoryAttribute>(
+    {
+        name: { type: String, required: true, trim: true },
+        values: [{ type: String, required: true, trim: true }],
+    },
+    { _id: false } // No queremos un _id para cada atributo
+);
+
+// Esquema de categoría
 const categorySchema = new Schema<ICategory>(
     {
         nombre: {
-            type: String, required: true, unique: true,
-            trim: true
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
         },
         descripcion: { type: String, trim: true },
         slug: { type: String, unique: true, trim: true },
 
-        // Reference to another category
         parent: {
             type: Schema.Types.ObjectId,
             ref: 'Category',
-            default: null
+            default: null,
         },
-        atributos: [
-            {
-                nombre: { type: String, required: true },
-                tipo: {
-                    type: String,
-                    enum: ['string', 'number', 'boolean', 'select'],
-                    required: true
-                },
-                opciones: [{ type: String }] // For select type attributes
-            }
-        ]
+
+        // Atributos de la categoría
+        attributes: [categoryAttributeSchema],
     },
     { timestamps: true }
 );
