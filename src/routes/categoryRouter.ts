@@ -17,7 +17,7 @@ router.post('/create', authenticate, isAdmin,
 
 router.get('/', CategoryController.getCategories);
 
-// getCategoryById 
+// getCategoryByIdOrSlug
 router.get('/:id', CategoryController.getCategoryById);
 // getCategoryBySlug
 router.get('/slug/:slug', CategoryController.getCategoryBySlug);

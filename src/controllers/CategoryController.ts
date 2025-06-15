@@ -92,7 +92,10 @@ export class CategoryController {
     static async getCategoryBySlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
-            const category = await Category.findOne({ slug });
+            const category = await Category.findOne({ slug })
+                .select('_id nombre slug descripcion parent attributes')
+                .populate('parent', '_id nombre slug');
+
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
                 return;
