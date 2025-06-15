@@ -60,7 +60,7 @@ export class CategoryController {
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find().select('_id nombre slug descripcion parent')
+            const categories = await Category.find().select('_id nombre slug descripcion parent attributes')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
             // console.log('Categories:', categories);
@@ -255,7 +255,7 @@ export class CategoryController {
             }
 
             const subcategories = await Category.find({ parent: id })
-                .select('_id nombre slug descripcion')
+                .select('_id nombre slug descripcion attributes')
                 .sort({ createdAt: -1 });
 
             if (subcategories.length === 0) {
@@ -274,7 +274,7 @@ export class CategoryController {
     static async getAllSubcategories(req: Request, res: Response) {
         try {
             const categories = await Category.find({ parent: { $ne: null } })
-                .select('_id nombre slug descripcion parent')
+                .select('_id nombre slug descripcion parent attributes')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
 

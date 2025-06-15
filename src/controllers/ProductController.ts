@@ -13,7 +13,7 @@ export class ProductController {
     static async createProduct(req: Request, res: Response) {
         try {
             const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes,
-                esDestacado, esNuevo
+                esDestacado, esNuevo, atributos
 
             } = req.body;
 
@@ -45,6 +45,12 @@ export class ProductController {
                 return;
             }
 
+            // Validate atributos if provided
+            if (atributos && typeof atributos !== 'object') {
+                res.status(400).json({ message: 'Atributos deben ser un objeto' });
+                return;
+            }
+
             const newProduct = {
                 nombre,
                 descripcion,
@@ -59,6 +65,7 @@ export class ProductController {
                 variantes: variantes || [],
                 esDestacado: esDestacado ? esDestacado : false,
                 esNuevo: esNuevo ? esNuevo : false,
+                atributos: atributos || {},
             };
 
             const product = new Product(newProduct);
