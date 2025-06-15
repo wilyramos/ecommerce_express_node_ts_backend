@@ -45,6 +45,7 @@ export interface IProduct extends Document {
     variantes?: Variant[];
     esDestacado?: boolean;
     esNuevo?: boolean;
+    atributos?: Record<string, string>;
 }
 
 // Subschemas
@@ -82,7 +83,8 @@ const productSchema = new Schema<IProduct>(
         color: { type: String, enum: Object.values(Color) },
         variantes: [variantSchema],
         esDestacado: { type: Boolean, default: false },
-        esNuevo: { type: Boolean, default: false }
+        esNuevo: { type: Boolean, default: false },
+        atributos: { type: Map, of: String, default: {} }, // Atributos personalizados como un mapa clave-valor
     },
     { timestamps: true }
 );
