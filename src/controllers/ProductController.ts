@@ -160,9 +160,8 @@ export class ProductController {
                 sort?: string;
                 compatibilidad?: string;
                 query?: string;
+                [key: string]: string | string[] | undefined;
             };
-
-            // console.log('Filter Params:', compatibilidad, category, priceRange, brand, color, sort);
 
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
@@ -170,7 +169,7 @@ export class ProductController {
 
             const filter: Record<string, any> = {};
 
-            // Buscar el ID de la categoría si se provee el slug
+            // --- Categoría (por slug)
             if (category) {
                 const categoryDoc = await Category.findOne({ slug: category });
                 if (categoryDoc) {
@@ -178,36 +177,40 @@ export class ProductController {
                 }
             }
 
-            // Filtrado por rango de precio
+            // --- Rango de precios
             const priceStr = Array.isArray(priceRange) ? priceRange[0] : priceRange;
             if (priceStr) {
                 const [minStr, maxStr] = priceStr.split('-');
                 const min = Number(minStr);
                 const max = Number(maxStr);
                 if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
-                    res.status(400).json({ message: 'Rango de precios inválido' });
-                    return;
+                     res.status(400).json({ message: 'Invalid price range' });
+                     return;
                 }
                 filter.precio = { $gte: min, $lte: max };
             }
 
-            // Filtrado por marca
-            if (brand) {
-                filter.brand = { $regex: new RegExp(brand, 'i') };
+            // --- Atributos dinámicos: atributos[Tamaño]=250ml, atributos[Material]=Aluminio, etc.
+            for (const key in req.query) {
+                if (key.startsWith('atributos[') && key.endsWith(']')) {
+                    const attrKey = key.slice(10, -1); // Extrae el nombre del atributo entre corchetes
+                    const value = req.query[key];
+                    if (typeof value === 'string') {
+                        filter[`atributos.${attrKey}`] = { $regex: new RegExp(value, 'i') };
+                    }
+                }
             }
 
-            // Variantes y campos generales (color y compatibilidad)
+            // --- Marca como atributo dinámico también
+            if (brand) {
+                filter[`atributos.Marca`] = { $regex: new RegExp(brand, 'i') };
+            }
+
+            // --- Color y compatibilidad como $or
             const orConditions: any[] = [];
 
-            // Filtros por texto de bsuqueda 
-
-
-
             if (color) {
-                // Coincidencia en campo general `color`
-                orConditions.push({ color: { $regex: new RegExp(color, 'i') } });
-
-                // Coincidencia en variantes
+                orConditions.push({ [`atributos.Color`]: { $regex: new RegExp(color, 'i') } });
                 orConditions.push({
                     variantes: {
                         $elemMatch: {
@@ -241,7 +244,32 @@ export class ProductController {
                 filter.$or = orConditions;
             }
 
-            // Ordenamiento
+            // --- Texto de búsqueda general
+            if (query) {
+                const regex = new RegExp(query, 'i');
+                filter.$or = [
+                    ...(filter.$or || []),
+                    { nombre: regex },
+                    { descripcion: regex },
+                    { [`atributos.Marca`]: regex },
+                    {
+                        variantes: {
+                            $elemMatch: {
+                                opciones: {
+                                    $elemMatch: {
+                                        valores: regex
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ];
+            }
+
+            // --- Solo productos activos
+            filter.isActive = true;
+
+            // --- Ordenamiento
             let sortOptions: Record<string, 1 | -1> = {};
             switch (sort) {
                 case 'price-asc':
@@ -260,39 +288,12 @@ export class ProductController {
                     sortOptions = { stock: -1, createdAt: -1 };
             }
 
-            // Consulta principal y traer solo los productos activos
-            filter.isActive = true; // Solo productos activos
-
-            // Filtro por texto de búsqueda
-            if (query) {
-                const regex = new RegExp(query, 'i'); // insensible a mayúsculas/minúsculas
-
-                filter.$or = [
-                    ...(filter.$or || []), // conservar condiciones de color o compatibilidad si existen
-                    { nombre: regex },
-                    { descripcion: regex },
-                    { brand: regex },
-                    {
-                        variantes: {
-                            $elemMatch: {
-                                opciones: {
-                                    $elemMatch: {
-                                        valores: regex
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ];
-            }
-
-            // Consulta para obtener productos
+            // --- Consulta a la base de datos
             const [products, totalProducts] = await Promise.all([
                 Product.find(filter)
                     .skip(skip)
                     .limit(limitNum)
                     .sort(sortOptions),
-
                 Product.countDocuments(filter)
             ]);
 
@@ -302,6 +303,7 @@ export class ProductController {
                 currentPage: pageNum,
                 totalProducts
             });
+            return;
 
         } catch (error) {
             // console.error('Error fetching products by filter:', error);
