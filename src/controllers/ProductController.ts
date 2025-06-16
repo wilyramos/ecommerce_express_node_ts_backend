@@ -414,22 +414,65 @@ export class ProductController {
 
     static async updateProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, variantes, esDestacado, esNuevo } = req.body;
-            const productId = req.params.id;
+            const {
+                nombre,
+                descripcion,
+                precio,
+                imagenes,
+                categoria,
+                stock,
+                sku,
+                variantes,
+                esDestacado,
+                esNuevo,
+                atributos,
+                barcode,
+                brand,
+                color
+            } = req.body;
 
+            const productId = req.params.id;
             const existingProduct = await Product.findById(productId);
             if (!existingProduct) {
-                res.status(404).json({ message: 'Product not found' });
+                res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
 
-            if (categoria) {
-                const existingCategory = await Category.findById(categoria);
-                if (!existingCategory) {
+            // Validar si la categoría cambió
+            let categoriaCambio = false;
+            if (categoria && categoria !== existingProduct.categoria.toString()) {
+                const selectedCategory = await Category.findById(categoria);
+                if (!selectedCategory) {
                     res.status(400).json({ message: 'La categoría no existe' });
                     return;
                 }
+
+                // Validar que no tenga subcategorías
+                const hasChildren = await Category.exists({ parent: categoria });
+                if (hasChildren) {
+                    res.status(400).json({ message: 'No se puede cambiar a una categoría que tiene subcategorías' });
+                    return;
+                }
+
+                categoriaCambio = true;
+                existingProduct.categoria = categoria;
             }
+
+
+            // Validar atributos si se proporcionan
+            if (atributos && typeof atributos !== 'object') {
+                res.status(400).json({ message: 'Los atributos deben ser un objeto' });
+                return;
+            }
+
+            // Si cambió la categoría, limpiar atributos y asignar los nuevos (si se proporcionan)
+            if (categoriaCambio) {
+                existingProduct.atributos = atributos || {};
+            } else if (atributos) {
+                // Si no cambió la categoría pero se envían nuevos atributos, se actualizan
+                existingProduct.atributos = atributos;
+            }
+
             // validate images length
             if (imagenes && imagenes.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
@@ -442,20 +485,21 @@ export class ProductController {
                 return;
             }
 
+            // Asignar valores
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
             if (precio != null) existingProduct.precio = precio;
-            existingProduct.imagenes = imagenes || existingProduct.imagenes;
-            existingProduct.categoria = categoria || existingProduct.categoria;
+            if (imagenes) existingProduct.imagenes = imagenes;
             if (stock != null) existingProduct.stock = stock;
 
             existingProduct.sku = sku || existingProduct.sku;
-            existingProduct.barcode = req.body.barcode || existingProduct.barcode;
-            existingProduct.brand = req.body.brand || existingProduct.brand;
-            existingProduct.color = req.body.color || existingProduct.color;
+            existingProduct.barcode = barcode || existingProduct.barcode;
+            existingProduct.brand = brand || existingProduct.brand;
+            existingProduct.color = color || existingProduct.color;
             existingProduct.variantes = variantes || existingProduct.variantes;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
+
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
