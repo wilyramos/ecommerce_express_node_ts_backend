@@ -1,49 +1,43 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-// Subesquema para atributos de categoría
+// Atributos posibles para productos de esta categoría
 export interface ICategoryAttribute {
-    name: string;
-    values: string[];
+    name: string;        // Ej: "Color", "Talla", "Material"
+    values: string[];    // Ej: ["Rojo", "Verde"] o ["S", "M", "L"]
 }
 
 export interface ICategory extends Document {
     nombre: string;
     descripcion?: string;
     slug?: string;
-    parent?: Types.ObjectId;
+    parent?: Types.ObjectId; // Subcategoría (si aplica)
     attributes?: ICategoryAttribute[];
     createdAt?: Date;
     updatedAt?: Date;
 }
 
-// Subschema para atributo individual
+// Subschema para atributos
 const categoryAttributeSchema = new Schema<ICategoryAttribute>(
     {
         name: { type: String, required: true, trim: true },
         values: [{ type: String, required: true, trim: true }],
     },
-    { _id: false } // No queremos un _id para cada atributo
+    { _id: false }
 );
 
-// Esquema de categoría
+// Esquema principal de categoría
 const categorySchema = new Schema<ICategory>(
     {
-        nombre: {
-            type: String,
-            required: true,
-            unique: true,
-            trim: true,
-        },
+        nombre: { type: String, required: true, unique: true, trim: true },
         descripcion: { type: String, trim: true },
         slug: { type: String, unique: true, trim: true },
 
         parent: {
             type: Schema.Types.ObjectId,
             ref: 'Category',
-            default: null,
+            default: null, // null si es categoría raíz
         },
 
-        // Atributos de la categoría
         attributes: [categoryAttributeSchema],
     },
     { timestamps: true }

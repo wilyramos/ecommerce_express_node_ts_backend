@@ -12,9 +12,8 @@ export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, brand, color, variantes,
+            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, variantes,
                 esDestacado, esNuevo, atributos
-
             } = req.body;
 
             console.log('Creating product with data:', req.body);
@@ -60,8 +59,6 @@ export class ProductController {
                 stock: Number(stock),
                 sku: sku ? sku : undefined,
                 barcode: barcode ? barcode : undefined,
-                brand: brand ? brand : undefined,
-                color: color ? color : undefined,
                 variantes: variantes || [],
                 esDestacado: esDestacado ? esDestacado : false,
                 esNuevo: esNuevo ? esNuevo : false,
@@ -496,8 +493,6 @@ export class ProductController {
 
             existingProduct.sku = sku || existingProduct.sku;
             existingProduct.barcode = barcode || existingProduct.barcode;
-            existingProduct.brand = brand || existingProduct.brand;
-            existingProduct.color = color || existingProduct.color;
             existingProduct.variantes = variantes || existingProduct.variantes;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
