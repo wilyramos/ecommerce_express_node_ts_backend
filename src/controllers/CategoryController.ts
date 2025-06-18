@@ -7,7 +7,7 @@ import Product from '../models/Product';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, parent, attributes } = req.body;
+            const { nombre, descripcion, parent, attributes, variants } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
             const ExistingCategory = await Category.findOne({ slug });
@@ -41,12 +41,28 @@ export class CategoryController {
                 }
             }
 
+            // Validar que las variantes sean válidas
+            if (variants) {
+                if (!Array.isArray(variants) || variants.length === 0) {
+                    res.status(400).json({ message: "Las variantes deben ser un array no vacío" });
+                    return;
+                }
+
+                for (const variant of variants) {
+                    if (!variant.name || !Array.isArray(variant.values) || variant.values.length === 0) {
+                        res.status(400).json({ message: "Cada variante debe tener un nombre y al menos un valor" });
+                        return;
+                    }
+                }
+            }
+
             const newCategory = new Category({
                 nombre,
                 descripcion,
                 slug,
                 parent: parent || null, // Si no se proporciona parent, se establece como null,
-                attributes
+                attributes,
+                variants
             });
 
             await newCategory.save();
@@ -60,7 +76,7 @@ export class CategoryController {
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find().select('_id nombre slug descripcion parent attributes')
+            const categories = await Category.find().select('_id nombre slug descripcion parent attributes variants')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
             // console.log('Categories:', categories);
@@ -74,7 +90,7 @@ export class CategoryController {
         try {
             const { id } = req.params;
             const category = await Category.findById(id)
-                .select('_id nombre slug descripcion parent attributes')
+                .select('_id nombre slug descripcion parent attributes variants')
                 .populate('parent', '_id nombre slug');
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });

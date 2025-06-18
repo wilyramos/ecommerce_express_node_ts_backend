@@ -13,6 +13,7 @@ export interface Variant {
     barcode?: string;
 }
 
+
 export interface IProduct extends Document {
     nombre: string;
     descripcion?: string;
