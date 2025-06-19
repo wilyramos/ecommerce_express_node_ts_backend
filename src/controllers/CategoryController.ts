@@ -222,6 +222,12 @@ export class CategoryController {
                 return;
             }
 
+            // Verificar si la categoria tiene subcategorias
+            const categoryWithSubcategories = await Category.countDocuments({ parent: id });
+            if (categoryWithSubcategories > 0) {
+                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene subcategorias asociadas' });
+                return;
+            }
 
             // Verificar si la categoria tiene productos asociados
             if (productWithCategory > 0) {
