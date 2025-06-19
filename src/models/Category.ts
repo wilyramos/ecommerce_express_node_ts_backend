@@ -6,18 +6,12 @@ export interface ICategoryAttribute {
     values: string[];    // Ej: ["Rojo", "Verde"] o ["S", "M", "L"]
 }
 
-export interface ICategoryVariant {
-    name: string;        // Ej: "Color", "Talla"
-    values: string[];    // Ej: ["Rojo", "Azul"] o ["S", "M", "L"]
-}
-
 export interface ICategory extends Document {
     nombre: string;
     descripcion?: string;
     slug?: string;
     parent?: Types.ObjectId; // Subcategoría (si aplica)
     attributes?: ICategoryAttribute[];
-    variants?: ICategoryVariant[]; // Variantes de la categoría
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -32,14 +26,6 @@ const categoryAttributeSchema = new Schema<ICategoryAttribute>(
     { _id: false }
 );
 
-// Subschema para variantes de categoría
-const categoryVariantSchema = new Schema<ICategoryVariant>(
-    {
-        name: { type: String, required: true, trim: true },
-        values: [{ type: String, required: true, trim: true }],
-    },
-    { _id: false }
-);
 
 // Esquema principal de categoría
 const categorySchema = new Schema<ICategory>(
@@ -55,7 +41,6 @@ const categorySchema = new Schema<ICategory>(
         },
 
         attributes: [categoryAttributeSchema], // Atributos informativos
-        variants: [categoryVariantSchema], // Variantes de la categoría para generar combinaciones de productos 
     },
     { timestamps: true }
 );

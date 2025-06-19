@@ -7,7 +7,6 @@ import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
 
 
-
 export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
@@ -493,7 +492,6 @@ export class ProductController {
 
             existingProduct.sku = sku || existingProduct.sku;
             existingProduct.barcode = barcode || existingProduct.barcode;
-            existingProduct.variantes = variantes || existingProduct.variantes;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
 
