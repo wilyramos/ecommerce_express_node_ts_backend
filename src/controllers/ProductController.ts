@@ -124,7 +124,6 @@ export class ProductController {
         }
     }
 
-
     // Get product with pagination
     static async getNewProducts(req: Request, res: Response) {
         try {
@@ -419,9 +418,8 @@ export class ProductController {
             const { id } = req.params;
             // populate category to get the name and slug
             const product = await Product.findById(id)
-                // .populate('categoria', 'nombre slug')
                 .lean()
-            // .populate('variantes.opciones.valores', 'nombre slug');
+                .select('+costo');
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
@@ -433,23 +431,36 @@ export class ProductController {
         }
     }
 
+    static async getProductBySlug(req: Request, res: Response){
+        try {
+            const { slug } = req.params;
+            const product = await Product.findOne({ slug })
+                .lean()
+            if (!product) {
+                res.status(404).json({ message: 'Product not found' });
+                return;
+            }
+            res.status(200).json(product);
+        } catch (error) {
+            
+        }
+    }
+
     static async updateProduct(req: Request, res: Response) {
         try {
             const {
                 nombre,
                 descripcion,
                 precio,
+                costo,
                 imagenes,
                 categoria,
                 stock,
                 sku,
-                variantes,
                 esDestacado,
                 esNuevo,
                 atributos,
                 barcode,
-                brand,
-                color
             } = req.body;
 
             const productId = req.params.id;
@@ -500,23 +511,30 @@ export class ProductController {
                 return;
             }
 
-            // Validate variant if provided // TODO: MEJORAR LA VALIDACIÓN DE VARIANTES
-            if (variantes && !Array.isArray(variantes)) {
-                res.status(400).json({ message: 'Las variantes deben ser un array' });
-                return;
+            // Validate Slug
+            const slug = slugify(nombre, { lower: true, strict: true });
+            if (slug !== existingProduct.slug) {
+                const existingSlug = await Product.findOne({ slug });
+                if (existingSlug) {
+                    res.status(400).json({ message: 'Ya existe un producto con ese slug' });
+                    return;
+                }
             }
+
+            existingProduct.slug = slug;
 
             // Asignar valores
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
             if (precio != null) existingProduct.precio = precio;
+            if (costo !=null ) existingProduct.costo = costo;
             if (imagenes) existingProduct.imagenes = imagenes;
             if (stock != null) existingProduct.stock = stock;
-
             existingProduct.sku = sku || existingProduct.sku;
             existingProduct.barcode = barcode || existingProduct.barcode;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
+
 
 
             await existingProduct.save();
@@ -541,12 +559,6 @@ export class ProductController {
             res.status(500).json({ message: 'Error eliminando el producto' });
             return;
         }
-    }
-
-    static async getProductBySlug(req: Request, res: Response) {
-        // TODO: Implementar la lógica para obtener un producto por su slug,
-        // Tener en cuetna que se debe añadir en los modelos el slug
-        // y que el slug debe ser único para cada producto.
     }
 
     static async getProductsByCategory(req: Request, res: Response) {
@@ -715,9 +727,9 @@ export class ProductController {
 
     // Traer productos relacionados de otras categorías
     static async getProductsRelated(req: Request, res: Response) {
-        const { id } = req.params;
+        const { slug } = req.params;
         try {
-            const product = await Product.findById(id);
+            const product = await Product.findOne({ slug });
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
@@ -725,10 +737,8 @@ export class ProductController {
 
             // Obtener productos recomendados de la misma categoría, menos el producto actual
             const recommendedProducts = await Product.find({
-                categoria: product.categoria, // Mismo categoría
-                isActive: true, // Solo productos activos
-                stock: { $gt: 0 }, // Solo productos con stock disponible
-                _id: { $ne: id } // Excluir el producto actual
+                categoria: product.categoria,
+                _id: { $ne: product._id } // Excluir el producto actual
             })
                 .limit(4) // Limitar a 4 productos recomendados
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación

@@ -106,6 +106,9 @@ router.get('/filter',
 
 router.get('/:id', ProductController.getProductById);
 
+// Get products by SLUG
+router.get('/slug/:slug', ProductController.getProductBySlug);
+
 router.put('/:id',
 
     authenticate, isAdmin,
@@ -144,7 +147,7 @@ router.put('/:id/status',
 
 
 // get product related products
-router.get('/:id/related', ProductController.getProductsRelated);
+router.get('/:slug/related', ProductController.getProductsRelated);
 
 
 
