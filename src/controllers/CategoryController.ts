@@ -28,8 +28,8 @@ export class CategoryController {
             // Validar que los atributos sean válidos
             
             if (attributes) {
-                if (!Array.isArray(attributes) || attributes.length === 0) {
-                    res.status(400).json({ message: "Los atributos deben ser un array no vacío" });
+                if (!Array.isArray(attributes)) {
+                    res.status(400).json({ message: "Los atributos deben ser un array" });
                     return;
                 }
 
@@ -43,8 +43,8 @@ export class CategoryController {
 
             // Validar que las variantes sean válidas
             if (variants) {
-                if (!Array.isArray(variants) || variants.length === 0) {
-                    res.status(400).json({ message: "Las variantes deben ser un array no vacío" });
+                if (!Array.isArray(variants) ) {
+                    res.status(400).json({ message: "Las variantes deben ser un array" });
                     return;
                 }
 
@@ -126,7 +126,7 @@ export class CategoryController {
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { nombre, descripcion, parent, attributes } = req.body;
+            const { nombre, descripcion, parent, attributes, variants } = req.body;
 
             console.log('body', req.body);
 
@@ -159,8 +159,8 @@ export class CategoryController {
 
             // Validar que los atributos sean válidos
             if (attributes) {
-                if (!Array.isArray(attributes) || attributes.length === 0) {
-                    res.status(400).json({ message: "Los atributos deben ser un array no vacío" });
+                if (!Array.isArray(attributes)) {
+                    res.status(400).json({ message: "Los atributos deben ser un array" });
                     return;
                 }
 
@@ -172,13 +172,29 @@ export class CategoryController {
                 }
             }
 
+            // Validar que las variantes sean válidas
+            if (variants) {
+                if (!Array.isArray(variants) ) {
+                    res.status(400).json({ message: "Las variantes deben ser un array" });
+                    return;
+                }
+
+                for (const variant of variants) {
+                    if (!variant.name || !Array.isArray(variant.values) || variant.values.length === 0) {
+                        res.status(400).json({ message: "Cada variante debe tener un nombre y al menos un valor" });
+                        return;
+                    }
+                }
+            }
+
             // Actualizar la categoria
             const updatedCategory = await Category.findByIdAndUpdate(id, {
                 nombre,
                 descripcion,
                 slug,
                 parent: parent ? parent : null, // Si no se proporciona parent, se establece como null
-                attributes
+                attributes,
+                variants
             }, { new: true });
 
             if (!updatedCategory) {
