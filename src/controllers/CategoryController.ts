@@ -128,8 +128,6 @@ export class CategoryController {
             const { id } = req.params;
             const { nombre, descripcion, parent, attributes, variants } = req.body;
 
-            console.log('body', req.body);
-
             const slug = slugify(nombre, { lower: true, strict: true });
 
             // Verificar si la categoría existe
