@@ -5,41 +5,53 @@ import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
+import slugify from 'slugify';
+
 
 
 export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, imagenes, categoria, stock, sku, barcode, variantes,
-                esDestacado, esNuevo, atributos
+            const {
+                nombre,
+                descripcion,
+                precio,
+                costo,
+                imagenes,
+                categoria,
+                stock,
+                sku,
+                barcode,
+                esDestacado,
+                esNuevo,
+                atributos
             } = req.body;
 
             console.log('Creating product with data:', req.body);
 
-            // validate category exists
-            const selectedCategory = await Category.findById(categoria);
+            // validate category exists y no tiene subcategorías
+            const [selectedCategory, hasChildren] = await Promise.all([
+                Category.findById(categoria),
+                Category.exists({ parent: categoria }),
+            ]);
+
             if (!selectedCategory) {
                 res.status(400).json({ message: 'La categoría no existe' });
                 return;
             }
 
-            // Check if the category has children
-            const hasChildren = await Category.exists({ parent: categoria });
             if (hasChildren) {
-                res.status(400).json({ message: 'No se puede crear un producto en una categoría que tiene subcategorías' });
-                return;
+                res.status(400).json({
+                    message: 'No se puede crear un producto en una categoría que tiene subcategorías',
+                });
+                return; 
             }
+
 
             // validate images length
             if (imagenes && imagenes.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
-                return;
-            }
-
-            // Validate variant if provided
-            if (variantes && !Array.isArray(variantes)) {
-                res.status(400).json({ message: 'Variantes deben ser un array' });
                 return;
             }
 
@@ -49,20 +61,31 @@ export class ProductController {
                 return;
             }
 
+            // validate slug
+            const slug = slugify(nombre, {lower:true , strict: true});
+            const existingSlug = await Product.findOne({slug});
+            if(existingSlug) {
+                res.status(400).json({ message: 'Ya existe un producto con el mismo nombre'})
+                return;
+            }
+
             const newProduct = {
                 nombre,
+                slug,
                 descripcion,
                 precio: Number(precio),
-                imagenes: imagenes || [],
+                costo: Number(costo),
+                imagenes: imagenes,
                 categoria,
                 stock: Number(stock),
-                sku: sku ? sku : undefined,
-                barcode: barcode ? barcode : undefined,
-                variantes: variantes || [],
-                esDestacado: esDestacado ? esDestacado : false,
-                esNuevo: esNuevo ? esNuevo : false,
-                atributos: atributos || {},
+                sku: sku,
+                barcode: barcode,
+                esDestacado: esDestacado,
+                esNuevo: esNuevo,
+                atributos: atributos,
             };
+
+            console.log(newProduct);
 
             const product = new Product(newProduct);
             await product.save();
@@ -180,8 +203,8 @@ export class ProductController {
                 const min = Number(minStr);
                 const max = Number(maxStr);
                 if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
-                     res.status(400).json({ message: 'Invalid price range' });
-                     return;
+                    res.status(400).json({ message: 'Invalid price range' });
+                    return;
                 }
                 filter.precio = { $gte: min, $lte: max };
             }

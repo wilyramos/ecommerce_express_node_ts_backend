@@ -4,11 +4,14 @@ import { ICategory } from './Category';
 
 export interface IProduct extends Document {
     nombre: string;
-    descripcion?: string;
-    precio: number;
-    imagenes: string[];
+    slug: string;
+
+    descripcion: string;
+    precio?: number;
+    costo?: number;
+    imagenes?: string[];
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
-    stock: number;
+    stock?: number;
     sku?: string;
     barcode?: string;
     isActive: boolean;
@@ -23,11 +26,13 @@ export interface IProduct extends Document {
 const productSchema = new Schema<IProduct>(
     {
         nombre: { type: String, required: true, trim: true },
-        descripcion: { type: String, trim: true },
-        precio: { type: Number, required: true, min: 0 },
+        slug: { type: String, trim: true, unique: true },
+        descripcion: { type: String, required: true },
+        precio: { type: Number, min: 0, default: 0 },
+        costo: { type: Number, min: 0, default: 0, select: false },
         imagenes: [{ type: String }],
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
-        stock: { type: Number, required: true, min: 0, default: 0 },
+        stock: { type: Number, min: 0, default: 0 },
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
         isActive: { type: Boolean, default: true },

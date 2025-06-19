@@ -7,20 +7,35 @@ import { authenticate, isAdmin } from '../middleware/auth';
 
 const router = Router();
 
+// Create Product
 router.post('/',
     authenticate, isAdmin,
     body('nombre')
         .notEmpty()
         .withMessage('Name is required'),
     body('descripcion')
-        .optional()
-        .isString()
-        .withMessage('Description must be a string'),
+        .notEmpty()
+        .withMessage('La descripción es obligatoria'),
+
     body('precio')
+        .optional()
         .isNumeric()
-        .withMessage('Price must be a number')
-        .custom(value => value > -1)
-        .withMessage('Price must be zero or greater'),
+        .withMessage('El precio debe ser un número')
+        .custom((value) => value >= 0)
+        .withMessage('El precio debe ser cero o mayor'),
+
+    body('costo')
+        .optional()
+        .isNumeric()
+        .withMessage('El costo debe ser un número')
+        .custom((value) => value >= 0)
+        .withMessage('El costo debe ser cero o mayor'),
+
+    body('imagenes')
+        .optional()
+        .isArray({ max: 5 })
+        .withMessage('Las imágenes deben ser un arreglo con un máximo de 5 elementos'),
+
     body('categoria')
         .notEmpty()
         .withMessage('Category is required'),
@@ -30,10 +45,16 @@ router.post('/',
         .withMessage('Stock is required and must be a number')
         .custom(value => value > -1)
         .withMessage('Stock must be zero or greater'),
+        
     body('sku')
         .optional()
         .isString()
         .withMessage('SKU must be a string'),
+
+    body('atributos')
+        .optional()
+        .isObject()
+        .withMessage('Los atributos deben ser un objeto'),
     handleInputErrors,
     ProductController.createProduct,
 );
@@ -62,7 +83,7 @@ router.get('/search',
 );
 
 router.get('/filter',
-    
+
     body('page')
         .optional()
         .isNumeric()
@@ -86,7 +107,7 @@ router.get('/filter',
 router.get('/:id', ProductController.getProductById);
 
 router.put('/:id',
-    
+
     authenticate, isAdmin,
     ProductController.updateProduct
 );
