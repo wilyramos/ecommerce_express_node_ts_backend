@@ -6,6 +6,7 @@ import formidable from 'formidable';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
 import slugify from 'slugify';
+import { generateUniqueSlug } from '../utils/slug';
 
 
 
@@ -45,7 +46,7 @@ export class ProductController {
                 res.status(400).json({
                     message: 'No se puede crear un producto en una categoría que tiene subcategorías',
                 });
-                return; 
+                return;
             }
 
 
@@ -61,13 +62,7 @@ export class ProductController {
                 return;
             }
 
-            // validate slug
-            const slug = slugify(nombre, {lower:true , strict: true});
-            const existingSlug = await Product.findOne({slug});
-            if(existingSlug) {
-                res.status(400).json({ message: 'Ya existe un producto con el mismo nombre'})
-                return;
-            }
+            const slug = await generateUniqueSlug(nombre);
 
             const newProduct = {
                 nombre,
@@ -431,7 +426,7 @@ export class ProductController {
         }
     }
 
-    static async getProductBySlug(req: Request, res: Response){
+    static async getProductBySlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
             const product = await Product.findOne({ slug })
@@ -442,7 +437,7 @@ export class ProductController {
             }
             res.status(200).json(product);
         } catch (error) {
-            
+
         }
     }
 
@@ -527,7 +522,7 @@ export class ProductController {
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
             if (precio != null) existingProduct.precio = precio;
-            if (costo !=null ) existingProduct.costo = costo;
+            if (costo != null) existingProduct.costo = costo;
             if (imagenes) existingProduct.imagenes = imagenes;
             if (stock != null) existingProduct.stock = stock;
             existingProduct.sku = sku || existingProduct.sku;
@@ -772,7 +767,7 @@ export class ProductController {
                 currentPage: pageNum,
                 totalProducts
             });
-            
+
 
         } catch (error) {
             res.status(500).json({ message: 'Error fetching featured products' });
