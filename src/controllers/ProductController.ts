@@ -747,13 +747,13 @@ export class ProductController {
 
     static async getDestacadosProducts(req: Request, res: Response) {
         try {
-            const { page = '2', limit = '5' } = req.query as {
+            const { page = '1', limit = '5' } = req.query as {
                 page?: string;
                 limit?: string;
             };
 
-            const pageNum = parseInt(page, 10);
-            const limitNum = parseInt(limit, 10);
+            const pageNum = parseInt(page, 1);
+            const limitNum = parseInt(limit, 5);
             const skip = (pageNum - 1) * limitNum;
             // Obtener solo los productos destacados
             const products = await Product.find({ esDestacado: true })
