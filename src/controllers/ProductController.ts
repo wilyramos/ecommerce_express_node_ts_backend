@@ -745,30 +745,34 @@ export class ProductController {
         }
     }
 
+
     static async getDestacadosProducts(req: Request, res: Response) {
         try {
-            const { page = '1', limit = '5' } = req.query as {
+            // add pagination
+            const { page = '1', limit = '10' } = req.query as {
                 page?: string;
                 limit?: string;
             };
-
-            const pageNum = parseInt(page, 1);
-            const limitNum = parseInt(limit, 5);
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
-            // Obtener solo los productos destacados
+            // Obtener productos destacados
             const products = await Product.find({ esDestacado: true })
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 });
+
             const totalProducts = await Product.countDocuments({ esDestacado: true });
+            if (products.length === 0) {
+                res.status(404).json({ message: 'No se encontraron productos destacados' });
+                return;
+            }
             res.status(200).json({
                 products,
                 totalPages: Math.ceil(totalProducts / limitNum),
                 currentPage: pageNum,
                 totalProducts
             });
-
-
         } catch (error) {
             res.status(500).json({ message: 'Error fetching featured products' });
         }
