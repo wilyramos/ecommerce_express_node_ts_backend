@@ -149,9 +149,8 @@ router.put('/:id/status',
 // get product related products
 router.get('/:slug/related', ProductController.getProductsRelated);
 
-// get getDestacadosProducts
-router.get('/destacados', ProductController.getDestacadosProducts);
-
+// get Traer los productos destacados
+router.get('/destacados/all', ProductController.getDestacadosProducts);
 
 
 

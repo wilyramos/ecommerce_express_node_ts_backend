@@ -747,7 +747,7 @@ export class ProductController {
 
     static async getDestacadosProducts(req: Request, res: Response) {
         try {
-            const { page = '1', limit = '10' } = req.query as {
+            const { page = '2', limit = '5' } = req.query as {
                 page?: string;
                 limit?: string;
             };
