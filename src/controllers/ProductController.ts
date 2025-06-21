@@ -28,9 +28,6 @@ export class ProductController {
                 esNuevo,
                 atributos
             } = req.body;
-
-            console.log('Creating product with data:', req.body);
-
             // validate category exists y no tiene subcategorías
             const [selectedCategory, hasChildren] = await Promise.all([
                 Category.findById(categoria),
