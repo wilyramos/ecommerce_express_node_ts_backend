@@ -13,7 +13,7 @@ export enum OrderStatus {
 
 // Métodos de pago disponibles
 export enum PaymentMethod {
-    EFECTIVO = 'EFECTIVO',
+    MERCADOPAGO = 'MERCADOPAGO',
     TARJETA = 'TARJETA',
     TRANSFERENCIA = 'TRANSFERENCIA',
     YAPE = 'YAPE',
@@ -29,14 +29,31 @@ export enum PaymentStatus {
 
 // Dirección de envío
 export interface IShippingAddress {
+    departamento?: string;
+    provincia?: string; 
+    distrito?: string;
     direccion: string;
-    ciudad: string;
-    telefono: string;
+    numero?: string;
+    piso?: string;
+    referencia?: string;
 }
+
+// Cusomer info
+
+export type CustomerInfo = {
+    email: string;
+    nombre: string;
+    apellidos: string;
+    telefono: string;
+    tipoDocumento: "DNI" | "RUC" | "CE";
+    numeroDocumento: string;
+}
+
+
 
 // Ítem dentro de una orden (producto + cantidad + precio en ese momento)
 export interface IOrderItem {
-    product: Types.ObjectId | IProduct; // Puedes hacer populate si necesitas
+    product: Types.ObjectId | IProduct; // Para hacer populate
     quantity: number;
     price: number;
 }
@@ -57,9 +74,13 @@ export interface IOrder extends Document {
 
 // Subesquema: Dirección de envío
 const shippingAddressSchema = new Schema<IShippingAddress>({
+    departamento: { type: String, required: true },
+    provincia: { type: String, required: true },
+    distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    ciudad: { type: String, required: true },
-    telefono: { type: String, required: true },
+    numero: { type: String, required: true },
+    piso: { type: String, required: true },
+    referencia: { type: String, required: true }
 }, { _id: false }); // No necesita un _id propio
 
 // Subesquema: Ítem de la orden
