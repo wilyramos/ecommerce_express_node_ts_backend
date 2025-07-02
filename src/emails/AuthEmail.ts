@@ -1,3 +1,5 @@
+// Implementacion con mailtrap
+
 import { transporter } from "../config/nodemailer"
  
 interface IEmail {
@@ -8,8 +10,6 @@ interface IEmail {
 
 export class AuthEmail {
     static async sendEmailResetPassword( user: IEmail ) {
-
-
         // console.log('sendEmailResetPassword', user);
         await transporter.verify()
         const mailOptions = {

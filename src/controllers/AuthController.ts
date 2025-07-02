@@ -5,6 +5,7 @@ import { checkPassword, hashPassword } from "../utils/auth";
 import Token from '../models/Token';
 import { generateToken } from '../utils/token';
 import { AuthEmail } from '../emails/AuthEmail';
+import { OrderEmail } from '../emails/OrderEmail';
 
 export class AuthController {
 
@@ -107,6 +108,22 @@ export class AuthController {
             ).catch((error) => {
                 console.error('Error sending email:', error);
             });
+
+            const result = await OrderEmail.sendResetPasswordEmail({
+                to: user.email,
+                subject: 'Recuperación de contraseña',
+                content: `<p>Hola ${user.nombre},</p>
+                          <p>Hemos recibido una solicitud de restablecimiento de contraseña.</p>
+                          <p>Por favor, haz clic en el siguiente enlace para restablecer tu contraseña:</p>
+                          <p><a href="${process.env.FRONTEND_URL}/reset-password?token=${token.token}">Restablecer contraseña</a></p>
+                          <p>Si no solicitaste este cambio, puedes ignorar este email.</p>`
+            });
+
+            if (result.success) {
+                console.log('Email de restablecimiento de contraseña enviado');
+            } else {
+                console.error('Error al enviar el email de restablecimiento de contraseña:', result.message);
+            }
 
             // Generar un token de restablecimiento de contraseña
 
