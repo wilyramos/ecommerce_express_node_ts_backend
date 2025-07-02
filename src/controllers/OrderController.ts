@@ -2,12 +2,13 @@ import Order from '../models/Order';
 import { Request, Response } from 'express';
 import Product from '../models/Product';
 import mongoose from 'mongoose';
+import User from '../models/User';
 
 export class OrderController {
 
     static async createOrder(req: Request, res: Response) {
         try {
-            const userId = req.user?._id || null;
+            const userId = req.user?._id || req.body.userId;
             const orderData = req.body;
 
             const session = await mongoose.startSession();

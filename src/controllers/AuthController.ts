@@ -39,7 +39,7 @@ export class AuthController {
                 token: token
             });
         } catch (error) {
-            res.status(500).json({ message: 'Error al registrar el usuario'});
+            res.status(500).json({ message: 'Error al registrar el usuario' });
             return;
         }
     }
@@ -59,7 +59,7 @@ export class AuthController {
 
             // Verificar la contraseña
             const isPasswordValid = await checkPassword(password, user.password);
-            
+
             if (!isPasswordValid) {
                 res.status(400).json({ message: 'Credenciales invalidas' });
                 return;
@@ -112,12 +112,12 @@ export class AuthController {
 
 
             res.status(200).json({ message: 'Email de restablecimiento de contraseña enviado' });
-    
+
         } catch (error) {
             res.status(500).json({ message: 'Error al restablecer la contraseña' });
-            return; 
+            return;
         }
-        
+
     }
 
     static async updatePasswordWithToken(req: Request, res: Response) {
@@ -146,10 +146,10 @@ export class AuthController {
             await Promise.all([user.save(), tokenExists.deleteOne()]);
 
             res.status(200).json({ message: 'Contraseña actualizada exitosamente' });
-            
+
         } catch (error) {
             res.status(500).json({ message: 'Error al restablecer la contraseña' });
-            return;            
+            return;
         }
     }
 
@@ -172,6 +172,44 @@ export class AuthController {
 
         } catch (error) {
             res.status(500).json({ message: 'Error al validar el token' });
+            return;
+        }
+    }
+
+    static async createUserIfNotExists(req: Request, res: Response) {
+        const { email, nombre, apellidos, tipoDocumento, numeroDocumento, telefono } = req.body;
+        try {
+            const userExists = await User.findOne({ email });
+
+            if (userExists) {
+                res.status(200).json({ message: 'El usuario ya existe', userId: userExists.id });
+                return;
+            }
+
+            // Crear el nuevo usuario
+            const newUser = new User({
+                email,
+                nombre,
+                apellidos,
+                tipoDocumento,
+                numeroDocumento,
+                telefono
+            });
+
+            // TODO: 
+
+            await newUser.save();
+
+            // TODO: Enviar un email de bienvenida o confirmación si es necesario
+            // AuthEmail.sendWelcomeEmail(newUser.email, newUser.nombre);
+
+            res.status(201).json({
+                message: 'Usuario nuevo creado exitosamente',
+                userId: newUser.id
+            });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error al crear el usuario' });
             return;
         }
     }

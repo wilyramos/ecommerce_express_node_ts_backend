@@ -46,6 +46,18 @@ router.get('/validate-token/:token',
     AuthController.validateToken,
 )
 
+// Create user if not exists
+router.post('/create-user-if-not-exists',
+    body('email').isEmail().withMessage('Correo electrónico inválido'),
+    body('nombre').notEmpty().withMessage('Nombre es requerido'),
+    body('apellidos').notEmpty().withMessage('Apellidos son requeridos'),
+    body('tipoDocumento').isIn(['DNI', 'RUC', 'CE']).withMessage('Tipo de documento inválido'),
+    body('numeroDocumento').notEmpty().withMessage('Número de documento es requerido'),
+    body('telefono').optional().isString().withMessage('Teléfono debe ser una cadena de texto'),
+    handleInputErrors,
+    AuthController.createUserIfNotExists,
+)
+
 
 
 

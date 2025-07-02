@@ -31,6 +31,7 @@ export class PaymentsController {
                     pending: 'http://localhost:3000/pending',
                 },
                 auto_return: 'approved',
+                
             };
 
             console.log('Creating payment preference with payload:', preferencePayload);
@@ -48,6 +49,4 @@ export class PaymentsController {
             return;
         }
     };
-
-
 }
