@@ -5,7 +5,8 @@ import { checkPassword, hashPassword } from "../utils/auth";
 import Token from '../models/Token';
 import { generateToken } from '../utils/token';
 import { AuthEmailResend } from '../emails/AuthEmailResend';
-import { OrderEmail } from '../emails/OrderEmail';
+import { googleClient } from '../config/googleClient';
+
 
 export class AuthController {
 
@@ -44,7 +45,7 @@ export class AuthController {
             }).catch((error) => {
                 console.error('Error al enviar el email de bienvenida:', error);
             });
-            
+
 
 
             res.status(201).json({
@@ -91,6 +92,78 @@ export class AuthController {
         } catch (error) {
             // console.error('Error en el inicio de sesión:', error);
             res.status(500).json({ message: 'Error al iniciar sesión' });
+            return;
+        }
+    }
+
+    static async loginWithGoogle(req: Request, res: Response) {
+        try {
+            const { credential } = req.body;
+
+            // console.log("Google Login Credential:", credential);
+
+            if (!credential) {
+                res.status(400).json({ message: 'Token de Google no recibido' });
+                return;
+            }
+
+            const ticket = await googleClient.verifyIdToken({
+                idToken: credential,
+                audience: process.env.GOOGLE_CLIENT_ID
+            });
+
+            // console.log("Google Ticket:", ticket);
+
+            const payload = ticket.getPayload();
+            if (!payload) {
+                res.status(400).json({ message: 'Token de Google inválido' });
+                return;
+            }
+
+            // console.log("Google Payload:", payload);
+
+            let user = await User.findOne({ googleId: payload.sub });
+
+            if (!user) {
+                // Buscar por email en caso ya exista una cuenta con ese email
+                user = await User.findOne({ email: payload.email });
+
+                if (user) {
+                    // Asociar cuenta existente con cuenta de Google
+                    user.googleId = payload.sub;
+                    if (!user.nombre) user.nombre = payload.name;
+                    await user.save();
+                } else {
+                    // Crear nuevo usuario
+                    user = new User({
+                        nombre: payload.name,
+                        email: payload.email,
+                        googleId: payload.sub,
+                    });
+                    await user.save();
+
+                    // Send email de bienvenida
+                    AuthEmailResend.sendWelcomeEmail({
+                        email: user.email,
+                        name: user.nombre
+                    });
+                }
+            }
+
+            // console.log("User found or created:", user);
+
+            const token = generateJWT({ id: user.id });
+
+            res.status(200).json({
+                message: 'Inicio de sesión con Google exitoso',
+                userId: user.id,
+                token,
+                role: user.rol,
+            });
+
+        } catch (error) {
+            // console.error('Error al iniciar sesión con Google:', error);
+            res.status(500).json({ message: 'Error al iniciar sesión con Google' });
             return;
         }
     }
@@ -164,7 +237,7 @@ export class AuthController {
         }
     }
 
-  
+
 
     static async validateToken(req: Request, res: Response) {
         try {
@@ -185,7 +258,7 @@ export class AuthController {
         }
     }
 
-      static async getUser(req: Request, res: Response) {
+    static async getUser(req: Request, res: Response) {
         res.json(req.user);
     }
 

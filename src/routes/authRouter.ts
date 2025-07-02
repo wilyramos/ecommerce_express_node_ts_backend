@@ -22,6 +22,13 @@ router.post('/login',
     AuthController.login,
 )
 
+// Login and register with Google
+router.post('/google',
+    body('credential').notEmpty().withMessage('Token de Google es requerido'),
+    handleInputErrors,
+    AuthController.loginWithGoogle,
+)
+
 router.post('/forgot-password',
     body('email').isEmail().withMessage('Correo electrónico inválido'),
     handleInputErrors,

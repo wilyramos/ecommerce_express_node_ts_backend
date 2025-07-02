@@ -11,6 +11,7 @@ export interface IUser extends Document {
     password?: string;
     telefono?: string;
     rol?: UserRole;
+    googleId?: string; // Para autenticación con Google
 }
 
 const userSchema = new Schema<IUser>({
@@ -25,7 +26,8 @@ const userSchema = new Schema<IUser>({
         type: String,
         enum: ['cliente', 'administrador', 'vendedor'],
         default: 'cliente'
-    }
+    },
+    googleId: { type: String, required: false, unique: true, sparse: true }, // <- sparse evita conflictos si es null
 }, { timestamps: true }); // timestamps agrega automáticamente createdAt y updatedAt
 
 const User = mongoose.model<IUser>("User", userSchema);
