@@ -4,7 +4,7 @@ import { generateJWT } from '../utils/jwt';
 import { checkPassword, hashPassword } from "../utils/auth";
 import Token from '../models/Token';
 import { generateToken } from '../utils/token';
-import { AuthEmail } from '../emails/AuthEmail';
+import { AuthEmailResend } from '../emails/AuthEmailResend';
 import { OrderEmail } from '../emails/OrderEmail';
 
 export class AuthController {
@@ -34,6 +34,19 @@ export class AuthController {
             // Generar un token JWT
             const token = generateJWT({ id: newUser.id });
 
+            // Send email de bienvenida
+
+            AuthEmailResend.sendWelcomeEmail({
+                email: newUser.email,
+                name: newUser.nombre
+            }).then(() => {
+                console.log('Email de bienvenida enviado exitosamente');
+            }).catch((error) => {
+                console.error('Error al enviar el email de bienvenida:', error);
+            });
+            
+
+
             res.status(201).json({
                 message: 'Usuario registrado exitosamente',
                 userId: newUser.id,
@@ -56,7 +69,7 @@ export class AuthController {
                 return;
             }
 
-            console.log(user.rol)
+            // console.log(user.rol)
 
             // Verificar la contraseña
             const isPasswordValid = await checkPassword(password, user.password);
@@ -98,43 +111,24 @@ export class AuthController {
             token.user = user.id;
             await token.save();
 
-            AuthEmail.sendEmailResetPassword({
+            // Send email with reset password link
+            AuthEmailResend.sendEmailForgotPassword({
                 email: user.email,
-                name: user.nombre,
                 token: token.token
             }).then(() => {
-                console.log('Email sent successfully');
-            }
-            ).catch((error) => {
-                console.error('Error sending email:', error);
+                console.log('Email de restablecimiento de contraseña enviado exitosamente');
+            }).catch((error) => {
+                console.error('Error al enviar el email de restablecimiento de contraseña:', error);
             });
-
-            const result = await OrderEmail.sendResetPasswordEmail({
-                to: user.email,
-                subject: 'Recuperación de contraseña',
-                content: `<p>Hola ${user.nombre},</p>
-                          <p>Hemos recibido una solicitud de restablecimiento de contraseña.</p>
-                          <p>Por favor, haz clic en el siguiente enlace para restablecer tu contraseña:</p>
-                          <p><a href="${process.env.FRONTEND_URL}/reset-password?token=${token.token}">Restablecer contraseña</a></p>
-                          <p>Si no solicitaste este cambio, puedes ignorar este email.</p>`
-            });
-
-            if (result.success) {
-                console.log('Email de restablecimiento de contraseña enviado');
-            } else {
-                console.error('Error al enviar el email de restablecimiento de contraseña:', result.message);
-            }
 
             // Generar un token de restablecimiento de contraseña
 
-
-            res.status(200).json({ message: 'Email de restablecimiento de contraseña enviado' });
+            res.status(200).json({ message: 'Email de restablecimiento de contraseña enviadoo' });
 
         } catch (error) {
             res.status(500).json({ message: 'Error al restablecer la contraseña' });
             return;
         }
-
     }
 
     static async updatePasswordWithToken(req: Request, res: Response) {
@@ -144,7 +138,7 @@ export class AuthController {
 
             const tokenExists = await Token.findOne({ token });
             if (!tokenExists) {
-                res.status(400).json({ message: 'Token inválido' });
+                res.status(400).json({ message: 'Token no valido o expirado' });
                 return;
             }
 
@@ -170,9 +164,7 @@ export class AuthController {
         }
     }
 
-    static async getUser(req: Request, res: Response) {
-        res.json(req.user);
-    }
+  
 
     static async validateToken(req: Request, res: Response) {
         try {
@@ -191,6 +183,10 @@ export class AuthController {
             res.status(500).json({ message: 'Error al validar el token' });
             return;
         }
+    }
+
+      static async getUser(req: Request, res: Response) {
+        res.json(req.user);
     }
 
     static async createUserIfNotExists(req: Request, res: Response) {

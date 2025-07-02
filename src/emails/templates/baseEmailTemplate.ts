@@ -17,9 +17,10 @@ export function baseEmailTemplate({ title, content }: EmailTemplateParams): stri
 
         <!-- Header con degradado -->
         <div style="background: linear-gradient(135deg, #000000, #000000); padding: 24px; text-align: center;">
-          <img src="https://res.cloudinary.com/delcvo0yz/image/upload/v1751441756/products/ca4c68b5-eee2-42af-9aa5-922d99bb6096.jpg" 
-               alt="Gophone" 
-               style="height: 48px; border-radius: 10px; margin-bottom: 12px;" />
+          <div style="margin-bottom: 16px;">
+          <p style="color: #ffffff; font-size: 24px;">GoPhone Cañete</p>
+          <p style="color: #ffffff; font-size: 14px;">San Vicente de Cañete, Lima, Perú</p>
+          </div>
           <h1 style="color: #ffffff; font-size: 24px; margin: 0;">${title}</h1>
         </div>
 
