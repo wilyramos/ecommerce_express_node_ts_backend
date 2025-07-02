@@ -49,8 +49,6 @@ export type CustomerInfo = {
     numeroDocumento: string;
 }
 
-
-
 // Ítem dentro de una orden (producto + cantidad + precio en ese momento)
 export interface IOrderItem {
     product: Types.ObjectId | IProduct; // Para hacer populate
