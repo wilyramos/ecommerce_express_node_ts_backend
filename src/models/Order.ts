@@ -20,7 +20,7 @@ export enum PaymentMethod {
     PLIN = 'PLIN',
 }
 
-// Estado del pago
+// Status payment
 export enum PaymentStatus {
     PAGADO = 'PAGADO',
     PENDIENTE = 'PENDIENTE',
