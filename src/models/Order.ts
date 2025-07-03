@@ -11,7 +11,7 @@ export enum OrderStatus {
     CANCELADO = 'CANCELADO',
 }
 
-// Métodos de pago disponibles
+// Métodos de pago disponibles 
 export enum PaymentMethod {
     MERCADOPAGO = 'MERCADOPAGO',
     TARJETA = 'TARJETA',
