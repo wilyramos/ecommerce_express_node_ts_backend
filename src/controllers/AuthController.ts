@@ -299,4 +299,35 @@ export class AuthController {
             return;
         }
     }
+
+    static async editUser(req: Request, res: Response) {
+        const { email, nombre, apellidos, tipoDocumento, numeroDocumento, telefono } = req.body;
+        try {
+            
+            const user = await User.findById(req.user.id);
+
+            if (!user) {
+                res.status(404).json({ message: 'Usuario no encontrado' });
+                return;
+            }
+
+            // Actualizar los campos del usuario
+            user.email = email || user.email;
+            user.nombre = nombre || user.nombre;
+            user.apellidos = apellidos || user.apellidos;
+            user.tipoDocumento = tipoDocumento || user.tipoDocumento;
+            user.numeroDocumento = numeroDocumento || user.numeroDocumento;
+            user.telefono = telefono || user.telefono;
+
+
+            await user.save();
+
+            res.status(200).json({
+                message: 'Usuario actualizado exitosamente'            });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error al actualizar el usuario' });
+            return;
+        }
+    }
 }
