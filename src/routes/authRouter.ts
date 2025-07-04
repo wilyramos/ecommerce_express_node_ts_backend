@@ -68,7 +68,6 @@ router.post('/create-user-if-not-exists',
 // Edit user profile
 router.put('/edit-profile',
     authenticate,
-    body('nombre').notEmpty().withMessage('Nombre es requerido'),
     body('apellidos').optional().isString().withMessage('Apellidos deben ser una cadena de texto'),
     body('tipoDocumento').optional().isIn(['DNI', 'RUC', 'CE']).withMessage('Tipo de documento inválido'),
     body('numeroDocumento').optional().isString().withMessage('Número de documento debe ser una cadena de texto'),

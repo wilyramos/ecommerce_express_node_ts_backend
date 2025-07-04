@@ -302,25 +302,40 @@ export class AuthController {
 
     static async editUser(req: Request, res: Response) {
         const { email, nombre, apellidos, tipoDocumento, numeroDocumento, telefono } = req.body;
+
+
+        console.log("Edit User Request Body:", req.body);
+
         try {
             
-            const user = await User.findById(req.user.id);
+            const userExists = await User.findById(req.user.id);
 
-            if (!user) {
+            if (!userExists) {
                 res.status(404).json({ message: 'Usuario no encontrado' });
                 return;
             }
 
+            // Verificar si el email ya está en uso por otro usuario
+            if (email && email !== userExists.email) {
+                const emailExists = await User.findOne({ email });
+                if (emailExists) {
+                    res.status(400).json({ message: 'El email ya está en uso por otro usuario' });
+                    return;
+                }
+            }
+
+            
+
             // Actualizar los campos del usuario
-            user.email = email || user.email;
-            user.nombre = nombre || user.nombre;
-            user.apellidos = apellidos || user.apellidos;
-            user.tipoDocumento = tipoDocumento || user.tipoDocumento;
-            user.numeroDocumento = numeroDocumento || user.numeroDocumento;
-            user.telefono = telefono || user.telefono;
+            userExists.email = email || userExists.email;
+            userExists.nombre = nombre || userExists.nombre;
+            userExists.apellidos = apellidos || userExists.apellidos;
+            userExists.tipoDocumento = tipoDocumento || userExists.tipoDocumento;
+            userExists.numeroDocumento = numeroDocumento || userExists.numeroDocumento;
+            userExists.telefono = telefono || userExists.telefono;
 
 
-            await user.save();
+            await userExists.save();
 
             res.status(200).json({
                 message: 'Usuario actualizado exitosamente'            });
