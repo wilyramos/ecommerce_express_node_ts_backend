@@ -32,7 +32,6 @@ export class WebhookController {
                         status: status === 'approved' ? 'PROCESANDO' : 'PENDIENTE',
                         paymentId,
                     });
-
                 }
             }
 
