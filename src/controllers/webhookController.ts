@@ -1,6 +1,7 @@
 // controllers/paymentController.ts
 import { Request, Response } from 'express';
 import { preference, payment } from '../utils/mercadopago';
+import Order from '../models/Order';
 
 export class WebhookController {
 
@@ -9,27 +10,37 @@ export class WebhookController {
         try {
             const event = req.body;
 
-            console.log('Received Mercado Pago webhook event:', event);
+            console.log('🔔 Webhook recibido:', event);
 
-            // Handle the event based on its type
-            switch (event.type) {
-                case 'payment':
-                    const paymentData = event.data;
-                    console.log('Payment data:', paymentData);
-                    // Process payment data as needed
-                    break;
-                // Add more cases for different event types if needed
-                default:
-                    console.warn(`Unhandled event type: ${event.type}`);
+            if (event.type === 'payment' && event.data?.id) {
+                const paymentId = event.data.id;
+                const paymentData = await payment.get({ id: paymentId });
+                if (!paymentData) {
+                    console.error('❌ No se encontró el pago con ID:', paymentId);
+                     res.status(404).json({ message: 'Pago no encontrado' });
+                     return;
+                }
+
+                console.log('✅ Payment data retrieved:', paymentData);
+
+                const { status, metadata } = paymentData;
+
+                const orderId = metadata?.order_id;
+                if (orderId) {
+                    await Order.findByIdAndUpdate(orderId, {
+                        paymentStatus: status === 'approved' ? 'PAGADO' : 'PENDIENTE',
+                        status: status === 'approved' ? 'PROCESANDO' : 'PENDIENTE',
+                        paymentId,
+                    });
+
+                }
             }
 
-            res.status(200).json({ message: 'Webhook received successfully' });
+            res.status(200).json({ message: 'Webhook procesado correctamente' });
         } catch (error) {
-            console.error('Error handling Mercado Pago webhook:', error);
-            res.status(500).json({ message: 'Internal Server Error' });
+            console.error('❌ Error al procesar el Webhook de Mercado Pago:', error);
+            res.status(500).json({ message: 'Error interno del servidor' });
+            return;
         }
-    
-
-
     }
 }

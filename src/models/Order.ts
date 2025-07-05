@@ -37,7 +37,7 @@ export interface IShippingAddress {
 }
 
 export interface IOrderItem {
-    product: Types.ObjectId | IProduct;
+    productId: Types.ObjectId | IProduct;
     quantity: number;
     price: number;
 }
@@ -80,7 +80,7 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
 }, { _id: false });
 
 const orderItemSchema = new Schema<IOrderItem>({
-    product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true },
     price: { type: Number, required: true },
 }, { _id: false });

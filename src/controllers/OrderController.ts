@@ -25,7 +25,7 @@ export class OrderController {
             const newOrder = await Order.create({
                 user: req.user._id,
                 items: items.map((item : any ) => ({
-                    product: item.productId,
+                    productId: item.productId,
                     quantity: item.quantity,
                     price: item.price,
                 })),

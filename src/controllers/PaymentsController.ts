@@ -10,6 +10,8 @@ export class PaymentsController {
         try {
             const { items, payer, orderId } = req.body;
 
+            console.log('Creating payment preference with items:', req.body);
+
             if (!items || !Array.isArray(items)) {
                 res.status(400).json({ message: 'Items are required' });
                 return;
@@ -45,8 +47,9 @@ export class PaymentsController {
                 },
                 auto_return: 'approved',
                 metadata: {
-                    orderId: orderId, // <-- este es el valor clave
+                    order_id: orderId, // Use the orderId from the request body
                 },
+                notification_url: process.env.MP_NOTIFICATION_URL,
             };
 
             const response = await preference.create({ body: preferencePayload });
