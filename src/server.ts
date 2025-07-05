@@ -9,6 +9,7 @@ import cartRouter from './routes/cartRouter'
 import orderRouter from './routes/orderRouter'
 import checkoutRouter from './routes/checkoutRouter'
 import saleRouter from './routes/saleRouter'
+import webhookRouter from './routes/webhookRouter'
 
 // Connect to MongoDB
 
@@ -33,5 +34,6 @@ app.use('/api/cart', cartRouter)
 app.use('/api/orders', orderRouter)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/sales', saleRouter)
+app.use('/api/webhooks', webhookRouter)
 
 export default app

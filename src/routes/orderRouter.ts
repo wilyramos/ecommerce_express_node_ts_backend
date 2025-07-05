@@ -10,7 +10,7 @@ const router = Router();
 
 // Create Order
 router.post('/',
-    // authenticate,
+    authenticate,
     OrderController.createOrder
 );
 

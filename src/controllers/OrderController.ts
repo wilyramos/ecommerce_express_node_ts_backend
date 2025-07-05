@@ -2,70 +2,49 @@ import Order from '../models/Order';
 import { Request, Response } from 'express';
 import Product from '../models/Product';
 import mongoose from 'mongoose';
-import User from '../models/User';
+import { IOrderItem } from "../models/Order";
+
 
 export class OrderController {
 
     static async createOrder(req: Request, res: Response) {
         try {
-            const userId = req.user?._id || req.body.userId;
-            const orderData = req.body;
 
-            const session = await mongoose.startSession();
-            session.startTransaction();
+            // TODO: añadir session para manejar transacciones solo si la confirmación de pago es exitosa
+            const {
+                items,
+                subtotal,
+                shippingCost,
+                totalPrice,
+                shippingAddress,
+                shippingMethod,
+                notes,
+            } = req.body;
 
-            try {
-                // Iterar y validar productos
-                for (const item of orderData.items) {
-                    const product = await Product.findById(item.product).session(session);
 
-                    if (!product) {
-                        throw new Error(`Producto no encontrado: ${item.product}`);
-                    }
+            const newOrder = await Order.create({
+                user: req.user._id,
+                items: items.map((item : any ) => ({
+                    product: item.productId,
+                    quantity: item.quantity,
+                    price: item.price,
+                })),
+                subtotal,
+                shippingCost,
+                totalPrice,
+                shippingAddress,
+                shippingMethod,
+                paymentMethod: 'MERCADOPAGO',
+                paymentStatus: 'PENDIENTE',
+                status: 'PENDIENTE',
+                statusHistory: [{ status: 'PENDIENTE', changedAt: new Date() }],
+                notes,
+            });
 
-                    if (product.stock < item.quantity) {
-                        throw new Error(`Stock insuficiente para el producto: ${product.nombre}`);
-                    }
-
-                    // Descontar stock
-                    product.stock -= item.quantity;
-                    await product.save({ session });
-                }
-
-                // Crear orden
-                const generateTrackingId = () => {
-                    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                    let trackingId = '';
-                    for (let i = 0; i < 10; i++) {
-                        trackingId += characters.charAt(Math.floor(Math.random() * characters.length));
-                    }
-                    return trackingId;
-                };
-
-                const newOrder = new Order({
-                    user: userId,
-                    items: orderData.items,
-                    totalPrice: orderData.totalPrice,
-                    shippingAddress: orderData.shippingAddress,
-                    paymentMethod: orderData.paymentMethod,
-                    paymentStatus: orderData.paymentStatus,
-                    trackingId: generateTrackingId(),
-                });
-
-                await newOrder.save({ session });
-
-                await session.commitTransaction();
-                session.endSession();
-
-                res.status(201).json({ message: 'Orden creada exitosamente' });
-
-            } catch (innerError) {
-                await session.abortTransaction();
-                session.endSession();
-                console.error(innerError);
-                res.status(500).json({ message: `Error al procesar la orden: ${innerError.message}` });
-                return;
-            }
+            res.status(201).json({
+                message: 'Orden creada exitosamente',
+                order: newOrder,
+            });
 
         } catch (error) {
             console.error(error);
@@ -131,4 +110,34 @@ export class OrderController {
             return;
         }
     }
+
+    static async createOrderFromPayment(req: Request, res: Response) {
+        try {
+            const { userId, items, totalPrice, shippingAddress, paymentMethod, paymentStatus, trackingId } = req.body;
+
+            // Validar que los datos necesarios estén presentes
+            if (!userId || !items || !totalPrice || !shippingAddress || !paymentMethod || !paymentStatus) {
+                return res.status(400).json({ message: 'Datos incompletos para crear la orden' });
+            }
+
+            // Crear la orden
+            const newOrder = new Order({
+                user: userId,
+                items,
+                totalPrice,
+                shippingAddress,
+                paymentMethod,
+                paymentStatus,
+                trackingId: trackingId || null,
+            });
+
+            await newOrder.save();
+
+            res.status(201).json({ message: 'Orden creada exitosamente', order: newOrder });
+
+        } catch (error) {
+            console.error('❌ Error al guardar orden desde webhook:', error);
+        }
+    }
+
 }
