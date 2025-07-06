@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { OrderController } from '../controllers/OrderController';
-import { validationResult } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
 import { authenticate, isAdmin } from '../middleware/auth';
 

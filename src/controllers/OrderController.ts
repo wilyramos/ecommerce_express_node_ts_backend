@@ -90,10 +90,7 @@ export class OrderController {
     static async getOrderById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-
-            console.log('🔍 Obteniendo orden por ID:', id);
             const userId = req.user._id;
-            // console.log('🔍 Usuario ID:', userId);
 
 
             // const order = await Order.findById(id)
