@@ -23,27 +23,12 @@ export class PaymentsController {
             }
 
             const preferencePayload = {
-                items: items.map((item) => ({
-                    id: item.id,
-                    title: item.title,
-                    description: item.description || '',
-                    quantity: item.quantity,
-                    unit_price: parseFloat(item.unit_price),
-                    currency_id: item.currency_id || 'PEN',
-                })),
-                payer: {
-                    email: payer.email,
-                    first_name: payer.first_name || '',
-                    last_name: payer.last_name || '',
-                    phone: {
-                        area_code: payer.phone?.area_code || '51',
-                        number: payer.phone?.number || '',
-                    },
-                },
+                items: items,
+                payer: payer,
                 back_urls: {
-                    success: process.env.MP_SUCCESS_URL,
-                    failure: process.env.MP_FAILURE_URL,
-                    pending: process.env.MP_PENDING_URL,
+                    success: `${process.env.MP_SUCCESS_URL}?orderId=${orderId}`, // Use the orderId from the request body
+                    failure: `${process.env.MP_FAILURE_URL}?orderId=${orderId}`, // Use the orderId from the request body
+                    pending: `${process.env.MP_PENDING_URL}?orderId=${orderId}`, // Use the orderId from the request body
                 },
                 auto_return: 'approved',
                 metadata: {
