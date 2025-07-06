@@ -17,7 +17,6 @@ router.post('/',
 // Get Order by ID
 router.get('/:id',
     authenticate,
-    isAdmin,
     param('id').notEmpty().withMessage('El ID de la orden es obligatorio'),
     handleInputErrors,
     OrderController.getOrderById

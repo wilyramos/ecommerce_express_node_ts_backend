@@ -33,7 +33,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             next()
         }
     } catch (error) {
-        res.status(500).json({error: 'Token No Válido'})
+        console.error('Error al verificar el token:', error);
+        res.status(500).json({message: 'Token No Válido'})
     }
 }
 

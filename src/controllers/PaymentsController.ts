@@ -10,7 +10,7 @@ export class PaymentsController {
         try {
             const { items, payer, orderId } = req.body;
 
-            console.log('Creating payment preference with items:', req.body);
+            // console.log('Creating payment preference with items:', req.body);
 
             if (!items || !Array.isArray(items)) {
                 res.status(400).json({ message: 'Items are required' });
@@ -43,7 +43,7 @@ export class PaymentsController {
                 init_point: response.init_point,
             });
         } catch (error) {
-            console.error('Error creating payment preference:', error);
+            // console.error('Error creating payment preference:', error);
             res.status(500).json({ message: 'Internal Server Error' });
         }
     }

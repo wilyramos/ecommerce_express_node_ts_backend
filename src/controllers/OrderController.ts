@@ -89,21 +89,35 @@ export class OrderController {
 
     static async getOrderById(req: Request, res: Response) {
         try {
-            const orderId = req.params.id;
+            const { id } = req.params;
 
-            const order = await Order.findById(orderId)
-                .populate('user', 'name email') // Populate user details
-                .populate('items.product', 'nombre imagenes sku'); // Populate product details
+            console.log('🔍 Obteniendo orden por ID:', id);
+            const userId = req.user._id;
+            // console.log('🔍 Usuario ID:', userId);
 
-            console.log(order);
+
+            // const order = await Order.findById(id)
+            //     .populate('user', 'name email phone') // Populate user details
+            //     .populate({
+            //         path: 'items.productId',
+            //         select: 'nombre imagenes sku'
+            //     });
+
+            const order = await Order.findById(id)
 
             if (!order) {
                 res.status(404).json({ message: 'Orden no encontrada' });
                 return;
             }
 
-            res.status(200).json(order);
+            // Verificar si el usuario es el propietario de la orden
 
+            if (order.user.toString() !== userId.toString()) {
+                res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
+                return;
+            }
+
+            res.status(200).json(order);
         } catch (error) {
             // console.error(error);
             res.status(500).json({ message: 'Error al obtener la orden' });
