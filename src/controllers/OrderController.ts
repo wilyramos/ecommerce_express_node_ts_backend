@@ -24,7 +24,7 @@ export class OrderController {
 
             const newOrder = await Order.create({
                 user: req.user._id,
-                items: items.map((item : any ) => ({
+                items: items.map((item: any) => ({
                     productId: item.productId,
                     quantity: item.quantity,
                     price: item.price,
@@ -52,25 +52,27 @@ export class OrderController {
         }
     }
 
+    // Trear todas las orders para el administrador
     static async getOrders(req: Request, res: Response) {
         try {
 
             // TODO: query
             const page = parseInt(req.query.page as string) || 1;
-            const limit = parseInt(req.query.limit as string) || 10;
+            let limit = parseInt(req.query.limit as string) || 10;
             const query = req.query.query as string || '';
             const skip = (page - 1) * limit;
 
-            const orders = await Order.find({
-                $or: [
-                    { 'user.name': { $regex: query, $options: 'i' } },
-                    { 'trackingId': { $regex: query, $options: 'i' } }
-                ]
-            })
+
+            // limit a maximo 50
+            if (limit > 50) {
+                limit = 50;
+            }
+
+
+            const orders = await Order.find({})
+                .sort({ createdAt: -1 }) // Ordenar
                 .skip(skip)
                 .limit(limit)
-                .populate('user', 'name email') // Populate user details
-                .sort({ createdAt: -1 }); // Sort by creation date
 
             const totalOrders = await Order.countDocuments();
 
@@ -91,16 +93,15 @@ export class OrderController {
         try {
             const { id } = req.params;
             const userId = req.user._id;
+            const rol = req.user.rol;
 
-
-            // const order = await Order.findById(id)
-            //     .populate('user', 'name email phone') // Populate user details
-            //     .populate({
-            //         path: 'items.productId',
-            //         select: 'nombre imagenes sku'
-            //     });
+            console.log('Fetching order with ID:', id);
+            console.log('User ID:', userId);
+            console.log('User role:', rol);
 
             const order = await Order.findById(id)
+                .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
+                .populate('user', 'nombre apellidos email') // Popula el usuario si es necesario
 
             if (!order) {
                 res.status(404).json({ message: 'Orden no encontrada' });
@@ -109,7 +110,7 @@ export class OrderController {
 
             // Verificar si el usuario es el propietario de la orden
 
-            if (order.user.toString() !== userId.toString()) {
+            if (rol !== 'administrador' && order.user.toString() !== userId.toString()) {
                 res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
                 return;
             }
