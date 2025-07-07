@@ -22,17 +22,20 @@ router.get('/:id',
 );
 
 // Get Orders by User
-router.get('/user/:id',
+router.get('/user/me',
     authenticate,
-    // AuthController.getOrdersByUserId
+    OrderController.getOrdersByUser
 );
 
-// Get Orders
+// Get Orders from admin
 router.get('/',
     authenticate,
     isAdmin,
     OrderController.getOrders
 );
+
+
+
 
 // Update Order Status
 router.put('/:id',

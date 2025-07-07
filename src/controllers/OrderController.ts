@@ -62,7 +62,6 @@ export class OrderController {
             const query = req.query.query as string || '';
             const skip = (page - 1) * limit;
 
-
             // limit a maximo 50
             if (limit > 50) {
                 limit = 50;
@@ -86,14 +85,53 @@ export class OrderController {
         } catch (error) {
             // console.error(error);
             res.status(500).json({ message: 'Error al obtener las órdenes' });
+            return;
         }
     }
+
+    static async getOrdersByUser(req: Request, res: Response) {
+        try {
+
+            const page = parseInt(req.query.page as string) || 1;
+            let limit = parseInt(req.query.limit as string) || 5;
+            const userId = req.user._id;
+
+            const skip = (page - 1) * limit;
+
+            // Limitar a maximo 50
+            if (limit > 50) {
+                limit = 50;
+            }
+
+            const orders = await Order.find({ user: userId })
+                .sort({ createdAt: -1 }) // Ordenar por fecha de creación
+                .skip(skip)
+                .limit(limit)
+
+            const totalOrders = await Order.countDocuments({ user: userId });
+
+            res.status(200).json({
+                orders,
+                totalOrders,
+                currentPage: page,
+                totalPages: Math.ceil(totalOrders / limit),
+            });
+        } catch (error) {
+            // console.error(error);
+            res.status(500).json({ message: 'Error al obtener las órdenes del usuario' });
+            return;
+
+        }
+
+    }
+
 
     static async getOrderById(req: Request, res: Response) {
         try {
             const { id } = req.params;
             const userId = req.user._id;
             const rol = req.user.rol;
+
 
             console.log('Fetching order with ID:', id);
             console.log('User ID:', userId);
@@ -108,9 +146,12 @@ export class OrderController {
                 return;
             }
 
-            // Verificar si el usuario es el propietario de la orden
+            // Verificar si el usuario es el propietario de la orden o es administrador
 
-            if (rol !== 'administrador' && order.user.toString() !== userId.toString()) {
+            console.log("usuario id", order.user.toString())
+            console.log("userId", userId.toString())
+
+            if (rol !== 'administrador' && order.user._id.toString() !== userId.toString()) {
                 res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
                 return;
             }
@@ -122,6 +163,7 @@ export class OrderController {
             return;
         }
     }
+
 
     static async createOrderFromPayment(req: Request, res: Response) {
         try {
