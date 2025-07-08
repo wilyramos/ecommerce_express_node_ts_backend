@@ -720,9 +720,12 @@ export class ProductController {
     // Traer productos relacionados de otras categorías
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
+        console.log("Sluggg", slug)
         try {
             const product = await Product.findOne({ slug });
+            console.log("El producto", product)
             if (!product) {
+                console.log("no encontrado", product)
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
