@@ -120,9 +120,7 @@ export class OrderController {
             // console.error(error);
             res.status(500).json({ message: 'Error al obtener las órdenes del usuario' });
             return;
-
         }
-
     }
 
 
@@ -132,11 +130,6 @@ export class OrderController {
             const userId = req.user._id;
             const rol = req.user.rol;
 
-
-            console.log('Fetching order with ID:', id);
-            console.log('User ID:', userId);
-            console.log('User role:', rol);
-
             const order = await Order.findById(id)
                 .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
                 .populate('user', 'nombre apellidos email') // Popula el usuario si es necesario
@@ -145,11 +138,6 @@ export class OrderController {
                 res.status(404).json({ message: 'Orden no encontrada' });
                 return;
             }
-
-            // Verificar si el usuario es el propietario de la orden o es administrador
-
-            console.log("usuario id", order.user.toString())
-            console.log("userId", userId.toString())
 
             if (rol !== 'administrador' && order.user._id.toString() !== userId.toString()) {
                 res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
@@ -193,5 +181,4 @@ export class OrderController {
             console.error('❌ Error al guardar orden desde webhook:', error);
         }
     }
-
 }
