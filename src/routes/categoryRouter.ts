@@ -34,8 +34,12 @@ router.put('/update/:id',
 router.delete('/:id', authenticate, isAdmin, CategoryController.deleteCategory);
 
 
+// Traer todas las subcategorias
+
+router.get('/all/onlysubcategories', CategoryController.getSubcategories);
+
 
 // Traer todas las subcategorias pobladas
-router.get('/all/subcategories', CategoryController.getAllSubcategories);
+router.get('/all/subcategories', CategoryController.getAllSubcategoriesPobladas);
 
 export default router;

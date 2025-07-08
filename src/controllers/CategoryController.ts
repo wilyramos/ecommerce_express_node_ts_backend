@@ -307,7 +307,7 @@ export class CategoryController {
     }
 
     // Traer todas las subcategorias pobladas
-    static async getAllSubcategories(req: Request, res: Response) {
+    static async getAllSubcategoriesPobladas(req: Request, res: Response) {
         try {
             const categories = await Category.find({ parent: { $ne: null } })
                 .select('_id nombre slug descripcion parent attributes')
