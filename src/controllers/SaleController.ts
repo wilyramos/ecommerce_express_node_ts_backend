@@ -7,6 +7,7 @@ import User from '../models/User';
 
 
 export class SaleController {
+    
     static async createSale(req: Request, res: Response) {
         const session = await mongoose.startSession();
         session.startTransaction();
