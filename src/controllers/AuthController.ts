@@ -46,8 +46,6 @@ export class AuthController {
                 console.error('Error al enviar el email de bienvenida:', error);
             });
 
-
-
             res.status(201).json({
                 message: 'Usuario registrado exitosamente',
                 userId: newUser.id,
