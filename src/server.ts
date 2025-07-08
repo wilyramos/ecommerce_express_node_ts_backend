@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
     res.send('API is running...')
 })
 
-// Router
+// Routers
 app.use('/api/auth', authRouter)
 app.use('/api/category', categoryRouter)
 app.use('/api/products', productRouter)
