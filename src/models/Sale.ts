@@ -49,7 +49,7 @@ export interface ISale extends Document {
     totalPrice: number;
     totalDiscountAmount?: number;
 
-    receiptType?: 'BOLETA' | 'FACTURA';
+    receiptType?: 'TICKET' | 'BOLETA' | 'FACTURA';
     receiptNumber?: string;
 
     source: SaleSource;
