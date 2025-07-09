@@ -128,7 +128,6 @@ export class ProductController {
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
 
-            // Obtener solo los productos nuevos
             const products = await Product.find({ esNuevo: true })
                 .skip(skip)
                 .limit(limitNum)
@@ -145,6 +144,7 @@ export class ProductController {
 
         } catch (error) {
             res.status(500).json({ message: 'Error fetching new products' });
+            return;
         }
     }
 
@@ -155,20 +155,14 @@ export class ProductController {
                 limit = '10',
                 category,
                 priceRange,
-                brand,
-                color,
                 sort,
-                compatibilidad,
                 query
             } = req.query as {
                 page?: string;
                 limit?: string;
                 category?: string;
                 priceRange?: string | string[];
-                brand?: string;
-                color?: string;
                 sort?: string;
-                compatibilidad?: string;
                 query?: string;
                 [key: string]: string | string[] | undefined;
             };
@@ -211,44 +205,11 @@ export class ProductController {
                 }
             }
 
-            // --- Marca como atributo dinámico también
-            if (brand) {
-                filter[`atributos.Marca`] = { $regex: new RegExp(brand, 'i') };
-            }
 
-            // --- Color y compatibilidad como $or
+            // --- Color como $or
             const orConditions: any[] = [];
 
-            if (color) {
-                orConditions.push({ [`atributos.Color`]: { $regex: new RegExp(color, 'i') } });
-                orConditions.push({
-                    variantes: {
-                        $elemMatch: {
-                            opciones: {
-                                $elemMatch: {
-                                    nombre: { $regex: /^color$/i },
-                                    valores: { $regex: new RegExp(color, 'i') }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            if (compatibilidad) {
-                orConditions.push({
-                    variantes: {
-                        $elemMatch: {
-                            opciones: {
-                                $elemMatch: {
-                                    nombre: { $regex: /^compatibilidad$/i },
-                                    valores: { $regex: new RegExp(compatibilidad, 'i') }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+            
 
             if (orConditions.length > 0) {
                 filter.$or = orConditions;
@@ -714,18 +675,16 @@ export class ProductController {
         } catch (error) {
             // console.error("Error al actualizar el estado del producto:", error);
             res.status(500).json({ message: 'Error al actualizar el estado del producto' });
+            return;
         }
     }
 
     // Traer productos relacionados de otras categorías
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
-        console.log("Sluggg", slug)
         try {
             const product = await Product.findOne({ slug });
-            console.log("El producto", product)
             if (!product) {
-                console.log("no encontrado", product)
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
@@ -742,6 +701,7 @@ export class ProductController {
         } catch (error) {
             // console.error("Error al obtener productos recomendados:", error);
             res.status(500).json({ message: 'Error al obtener productos recomendados' });
+            return;
         }
     }
 
@@ -775,6 +735,7 @@ export class ProductController {
             });
         } catch (error) {
             res.status(500).json({ message: 'Error fetching featured products' });
+            return;
         }
     }
 }
