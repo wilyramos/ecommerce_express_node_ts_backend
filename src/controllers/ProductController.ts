@@ -77,7 +77,7 @@ export class ProductController {
                 atributos: atributos,
             };
 
-            console.log(newProduct);
+            // console.log(newProduct);
 
             const product = new Product(newProduct);
             await product.save();
@@ -100,7 +100,9 @@ export class ProductController {
 
                 .skip(skip)
                 .limit(Number(limit))
-                .sort({ createdAt: -1 });
+                .sort({ createdAt: -1 })
+                .populate('categoria', 'nombre slug');
+            console.log('desde Products normal:', products);    
 
             const totalProducts = await Product.countDocuments();
             res.status(200).json({
@@ -131,7 +133,8 @@ export class ProductController {
             const products = await Product.find({ esNuevo: true })
                 .skip(skip)
                 .limit(limitNum)
-                .sort({ createdAt: -1 });
+                .sort({ createdAt: -1 })
+                .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ esNuevo: true });
 
@@ -209,7 +212,7 @@ export class ProductController {
             // --- Color como $or
             const orConditions: any[] = [];
 
-            
+
 
             if (orConditions.length > 0) {
                 filter.$or = orConditions;
@@ -264,7 +267,8 @@ export class ProductController {
                 Product.find(filter)
                     .skip(skip)
                     .limit(limitNum)
-                    .sort(sortOptions),
+                    .sort(sortOptions)
+                    .populate('categoria', 'nombre slug'),
                 Product.countDocuments(filter)
             ]);
 
@@ -303,7 +307,9 @@ export class ProductController {
 
             const products = await Product.find(filter)
                 .skip((pageNum - 1) * limitNum)
-                .limit(limitNum);
+                .limit(limitNum)
+                .populate('categoria', 'nombre slug')
+                ;
 
             const totalProducts = await Product.countDocuments(filter);
 
@@ -344,7 +350,8 @@ export class ProductController {
 
             const products = await Product.find(filter)
                 .skip((pageNum - 1) * limitNum)
-                .limit(limitNum);
+                .limit(limitNum)
+                .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments(filter);
 
@@ -371,8 +378,9 @@ export class ProductController {
             const { id } = req.params;
             // populate category to get the name and slug
             const product = await Product.findById(id)
-                .lean()
-                .select('+costo');
+                .select('+costo')
+                .populate('categoria', 'nombre slug');
+
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
@@ -387,8 +395,9 @@ export class ProductController {
     static async getProductBySlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
-            const product = await Product.findOne({ slug })
-                .lean()
+            const product = await Product.findOne({ slug }).populate('categoria', 'nombre slug');
+
+
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
@@ -517,13 +526,18 @@ export class ProductController {
     static async getProductsByCategory(req: Request, res: Response) {
         try {
             const { categoryId } = req.params;
-            console.log('Category ID:', categoryId);
-            const category = await Category.findById(categoryId);
+            const category = await Category.findById(categoryId)
+                .select('nombre slug')
+                .lean(); // Use lean() to return a plain JavaScript object
+
+
             if (!category) {
                 res.status(404).json({ message: 'Category no encontrada' });
                 return;
             }
-            const products = await Product.find({ categoria: categoryId }).populate('categoria', 'nombre slug');
+            const products = await Product.find({ categoria: categoryId })
+                .populate('categoria', 'nombre slug')
+                .lean(); // Use lean() to return plain JavaScript objects
             res.status(200).json(products);
         } catch (error) {
             res.status(500).json({ message: 'Error fetching products by category', error });
@@ -683,7 +697,8 @@ export class ProductController {
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
         try {
-            const product = await Product.findOne({ slug });
+            const product = await Product.findOne({ slug })
+                .populate('categoria', 'nombre slug'); // Población de la categoría
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
@@ -691,12 +706,14 @@ export class ProductController {
 
             // Obtener productos recomendados de la misma categoría, menos el producto actual
             const recommendedProducts = await Product.find({
-                categoria: product.categoria,
+                categoria: product.categoria._id,
                 _id: { $ne: product._id } // Excluir el producto actual
             })
                 .limit(4) // Limitar a 4 productos recomendados
+                .populate('categoria', 'nombre slug') // Población de la categoría
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación
 
+        
             res.status(200).json(recommendedProducts);
         } catch (error) {
             // console.error("Error al obtener productos recomendados:", error);
@@ -720,7 +737,10 @@ export class ProductController {
             const products = await Product.find({ esDestacado: true })
                 .skip(skip)
                 .limit(limitNum)
-                .sort({ createdAt: -1 });
+                .sort({ createdAt: -1 })
+                .populate('categoria', 'nombre slug');
+
+            // console.log('Products relacionados:', products);
 
             const totalProducts = await Product.countDocuments({ esDestacado: true });
             if (products.length === 0) {
