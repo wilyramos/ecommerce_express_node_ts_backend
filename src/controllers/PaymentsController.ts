@@ -10,6 +10,8 @@ export class PaymentsController {
         try {
             const { items, payer, orderId } = req.body;
 
+            console.log('Received request payer:', payer);
+
             // console.log('Creating payment preference with items:', req.body);
 
             if (!items || !Array.isArray(items)) {
@@ -22,6 +24,8 @@ export class PaymentsController {
                 return;
             }
 
+            console.log("payer", payer);
+
             const preferencePayload = {
                 items: items,
                 payer: payer,
@@ -31,12 +35,14 @@ export class PaymentsController {
                     pending: `${process.env.MP_PENDING_URL}?orderId=${orderId}`, // Use the orderId from the request body
                 },
                 auto_return: 'approved',
-                metadata: {
+                metadata: { // Se puede incluir todos los datos que se necesiten
                     order_id: orderId, // Use the orderId from the request body
                 },
                 external_reference: orderId, // Use the orderId from the request body
                 notification_url: process.env.MP_NOTIFICATION_URL,
             };
+
+            console.log('Creating payment preference with payload:', preferencePayload);
 
             const response = await preference.create({ body: preferencePayload });
 
