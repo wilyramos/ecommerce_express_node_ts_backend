@@ -40,8 +40,9 @@ export class WebhookController {
                 return;
             }
 
-            const { status, metadata } = paymentData;
-            const orderId = metadata?.order_id;
+            const { status, external_reference } = paymentData;
+            const orderId = external_reference; // En el external_reference se guarda el orderId
+
 
             if (!orderId) {
                 res.status(400).json({ message: 'order_id no encontrado en metadata' });

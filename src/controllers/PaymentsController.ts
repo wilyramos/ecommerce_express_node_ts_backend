@@ -34,6 +34,7 @@ export class PaymentsController {
                 metadata: {
                     order_id: orderId, // Use the orderId from the request body
                 },
+                external_reference: orderId, // Use the orderId from the request body
                 notification_url: process.env.MP_NOTIFICATION_URL,
             };
 
