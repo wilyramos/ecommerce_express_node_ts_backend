@@ -43,6 +43,7 @@ export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
         next()
     } else {
         res.status(403).json({message: 'No autorizado'})
+        return;
     }
 }
 

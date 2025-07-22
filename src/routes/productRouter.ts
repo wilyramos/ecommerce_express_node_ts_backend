@@ -61,7 +61,11 @@ router.post('/',
     ProductController.createProduct,
 );
 
-router.get('/', ProductController.getProducts);
+router.get('/', 
+    authenticate,
+    isAdmin,
+    ProductController.getProducts
+);
 
 // Get new products
 router.get('/new', ProductController.getNewProducts);

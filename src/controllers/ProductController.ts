@@ -91,23 +91,38 @@ export class ProductController {
 
     static async getProducts(req: Request, res: Response) {
         try {
-            const { page = 1, limit = 10 } = req.query;
-            const skip = (Number(page) - 1) * Number(limit);
 
-            // obtener solo el nombre de la categoria
-            const products = await Product.find()
+            const { page = "1", limit = "10", query } = req.query;
 
-                .skip(skip)
-                .limit(Number(limit))
-                .sort({ createdAt: -1 })
-                .populate('categoria', 'nombre slug');
-            console.log('desde Products normal:', products);    
+            const currentPage = Math.max(parseInt(page as string) || 1, 1);
+            const pageSize = Math.max(parseInt(limit as string) || 10, 1);
+            const skip = (currentPage - 1) * pageSize;
 
-            const totalProducts = await Product.countDocuments();
+            let filter = {};
+
+            if (query && typeof query === "string" && query.trim() !== "") {
+                const searchRegex = new RegExp(query.trim(), "i");
+                filter = {
+                    $or: [
+                        { nombre: { $regex: searchRegex } },
+                        { descripcion: { $regex: searchRegex } },
+                    ],
+                };
+            }
+
+            const [products, totalProducts] = await Promise.all([
+                Product.find(filter)
+                    .skip(skip)
+                    .limit(pageSize)
+                    .sort({ updatedAt: -1 }) // sort by latest update
+                    .populate("categoria", "nombre slug"),
+                Product.countDocuments(filter),
+            ]);
+
             res.status(200).json({
                 products,
-                totalPages: Math.ceil(totalProducts / Number(limit)),
-                currentPage: Number(page),
+                totalPages: Math.ceil(totalProducts / pageSize),
+                currentPage: currentPage,
                 totalProducts
             });
 
@@ -673,6 +688,7 @@ export class ProductController {
     static async updateProductStatus(req: Request, res: Response) {
         const { id } = req.params;
         const { isActive } = req.body;
+        console.log("Updating product status:", { id, isActive });
 
         try {
             const product = await Product.findById(id);
@@ -712,7 +728,7 @@ export class ProductController {
                 .populate('categoria', 'nombre slug') // Población de la categoría
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación
 
-        
+
             res.status(200).json(recommendedProducts);
         } catch (error) {
             // console.error("Error al obtener productos recomendados:", error);
