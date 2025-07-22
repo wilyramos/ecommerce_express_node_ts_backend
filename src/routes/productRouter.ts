@@ -13,9 +13,11 @@ router.post('/',
     body('nombre')
         .notEmpty()
         .withMessage('Name is required'),
+
     body('descripcion')
-        .notEmpty()
-        .withMessage('La descripción es obligatoria'),
+        .isString()
+        .optional()
+        .withMessage('Description must be a string'),
 
     body('precio')
         .optional()

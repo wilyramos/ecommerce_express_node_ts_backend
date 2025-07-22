@@ -46,7 +46,6 @@ export class ProductController {
                 return;
             }
 
-
             // validate images length
             if (imagenes && imagenes.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
