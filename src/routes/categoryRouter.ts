@@ -42,4 +42,8 @@ router.get('/all/onlysubcategories', CategoryController.getSubcategories);
 // Traer todas las subcategorias pobladas
 router.get('/all/subcategories', CategoryController.getAllSubcategoriesPobladas);
 
+// Traer categorías raiz
+router.get('/patterns/all', CategoryController.getRootCategories);
+
+
 export default router;

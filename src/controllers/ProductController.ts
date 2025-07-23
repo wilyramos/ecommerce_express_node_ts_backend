@@ -106,6 +106,8 @@ export class ProductController {
                     $or: [
                         { nombre: { $regex: searchRegex } },
                         { descripcion: { $regex: searchRegex } },
+                        { sku: { $regex: searchRegex } },
+                        { barcode: { $regex: searchRegex } },
                     ],
                 };
             }
@@ -114,8 +116,8 @@ export class ProductController {
                 Product.find(filter)
                     .skip(skip)
                     .limit(pageSize)
-                    .sort({ updatedAt: -1 }) // sort by latest update
-                    .populate("categoria", "nombre slug"),
+                    .sort({ updatedAt: -1 }), // sort by latest update
+                    // .populate("categoria", "nombre slug"),
                 Product.countDocuments(filter),
             ]);
 
@@ -688,7 +690,6 @@ export class ProductController {
     static async updateProductStatus(req: Request, res: Response) {
         const { id } = req.params;
         const { isActive } = req.body;
-        console.log("Updating product status:", { id, isActive });
 
         try {
             const product = await Product.findById(id);
@@ -700,7 +701,7 @@ export class ProductController {
             product.isActive = isActive;
             await product.save();
 
-            res.status(200).json({ message: 'Estado del producto actualizado correctamente' });
+            res.status(200).json({ message: `Estado del producto actualizado correctamente a ${isActive ? 'activo' : 'inactivo'}` });
         } catch (error) {
             // console.error("Error al actualizar el estado del producto:", error);
             res.status(500).json({ message: 'Error al actualizar el estado del producto' });
