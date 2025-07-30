@@ -3,23 +3,36 @@ import mongoose from 'mongoose';
 import { Sale } from '../models/Sale';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO } from 'date-fns';
-import User from '../models/User';
 
 
 export class SaleController {
     
     static async createSale(req: Request, res: Response) {
+
+
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
             const { customerDNI, employee, items, totalDiscountAmount = 0, source, status = 'COMPLETADA', paymentMethod, paymentStatus = 'PAGADO', order } = req.body;
 
+            console.log("Creating sale with data:", {
+                customerDNI,
+                employee,
+                items,
+                totalDiscountAmount,
+                source,
+                status,
+                paymentMethod,
+                paymentStatus,
+                order
+            });
+
             const validatedItems = [];
 
             for (const item of items) {
-                const product = await Product.findById(item.product).session(session);
-                if (!product) throw new Error(`Producto no encontrado: ${item.product}`);
+                const product = await Product.findById(item.productId).session(session);
+                if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
                 if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
 
                 validatedItems.push({

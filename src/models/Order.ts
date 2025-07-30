@@ -17,6 +17,7 @@ export enum PaymentMethod {
     TRANSFERENCIA = 'TRANSFERENCIA',
     YAPE = 'YAPE',
     PLIN = 'PLIN',
+    EFECTIVO = 'EFECTIVO',
 }
 
 export enum PaymentStatus {

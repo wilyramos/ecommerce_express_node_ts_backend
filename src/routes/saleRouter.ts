@@ -8,18 +8,11 @@ import { authenticate, isAdminOrVendedor } from '../middleware/auth';
 const router = Router();
 
 router.post('/',
-    body('items').isArray({ min: 1 }).withMessage('Debe incluir al menos un producto'),
-    body('items.*.product').isMongoId().withMessage('ID de producto inválido'),
-    body('items.*.quantity').isInt({ min: 1 }).withMessage('Cantidad debe ser mayor a 0'),
-    body('items.*.price').isFloat({ min: 0 }).withMessage('Precio debe ser positivo'),
-    body('totalDiscountAmount').optional().isFloat({ min: 0 }),
-    body('source').isIn(['ONLINE', 'POS']).withMessage('Fuente inválida'),
-    body('status').optional().isIn(['COMPLETADA', 'REEMBOLSADA', 'ANULADA']),
-    body('paymentMethod').isIn(['EFECTIVO', 'TARJETA', 'TRANSFERENCIA']).withMessage('Método de pago inválido'),
-    body('paymentStatus').optional().isIn(['PAGADO', 'PENDIENTE']),
-    body('customer').isString().optional().isLength({ min: 1 }).withMessage('DNI del cliente es requerido'),
-    body('employee').optional().isMongoId(),
-    body('order').optional().isMongoId(),
+    body('items').isArray().withMessage('Los items son obligatorios'),
+    body('items.*.productId').isMongoId().withMessage('ID de producto inválido'),
+    body('items.*.quantity').isInt({ gt: 0 }).withMessage('La cantidad debe ser mayor a 0'),
+    body('totalPrice').isFloat({ gt: 0 }).withMessage('El total debe ser mayor a 0'),
+    
     authenticate,
     isAdminOrVendedor,
     handleInputErrors,
