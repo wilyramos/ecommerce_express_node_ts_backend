@@ -14,10 +14,12 @@ router.post('/create-preference',
     PaymentsController.createPreference
 );
 
+// api checkout mercadopago
+
 // Izipay
-router.post('/izipay/get-token',
-    // authenticate,
-    PaymentsController.getIzipayFormToken
-);
+// router.post('/izipay/get-token',
+//     // authenticate,
+//     // PaymentsController.getIzipayFormToken
+// );
     
 export default router;

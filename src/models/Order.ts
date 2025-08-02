@@ -32,7 +32,7 @@ export interface IShippingAddress {
     provincia: string;
     distrito: string;
     direccion: string;
-    numero: string;
+    numero?: string;
     piso?: string;
     referencia?: string;
 }
@@ -75,7 +75,7 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
     provincia: { type: String, required: true },
     distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    numero: { type: String, required: true },
+    numero: { type: String },
     piso: { type: String },
     referencia: { type: String },
 }, { _id: false });

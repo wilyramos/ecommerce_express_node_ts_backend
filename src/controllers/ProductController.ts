@@ -117,7 +117,7 @@ export class ProductController {
                     .skip(skip)
                     .limit(pageSize)
                     .sort({ updatedAt: -1 }), // sort by latest update
-                    // .populate("categoria", "nombre slug"),
+                // .populate("categoria", "nombre slug"),
                 Product.countDocuments(filter),
             ]);
 
@@ -215,14 +215,24 @@ export class ProductController {
 
             // --- Atributos dinámicos: atributos[Tamaño]=250ml, atributos[Material]=Aluminio, etc.
             for (const key in req.query) {
-                if (key.startsWith('atributos[') && key.endsWith(']')) {
-                    const attrKey = key.slice(10, -1); // Extrae el nombre del atributo entre corchetes
+                if (key.startsWith("atributos[") && key.endsWith("]")) {
+                    const attrKey = key.slice(10, -1);
                     const value = req.query[key];
-                    if (typeof value === 'string') {
-                        filter[`atributos.${attrKey}`] = { $regex: new RegExp(value, 'i') };
+
+                    if (typeof value === "string") {
+                        const valuesArray = value.split(",");
+                        filter[`atributos.${attrKey}`] = {
+                            $in: valuesArray.map((v) => new RegExp(v, "i")),
+                        };
+                    } else if (Array.isArray(value)) {
+                        filter[`atributos.${attrKey}`] = {
+                            $in: value.map((v) => new RegExp(String(v), "i")),
+                        };
                     }
                 }
             }
+
+
 
 
             // --- Color como $or

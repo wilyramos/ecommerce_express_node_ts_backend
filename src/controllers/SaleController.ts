@@ -100,7 +100,7 @@ export class SaleController {
 
             const [sales, totalSales, totalAmountResult] = await Promise.all([
                 Sale.find(query)
-                    .populate({ path: 'items.product', select: 'nombre imagenes' })
+                    // .populate({ path: 'items.product', select: 'nombre imagenes' })
                     .populate({ path: 'employee', select: 'nombre' })
                     .sort({ createdAt: -1 })
                     .skip(skip)

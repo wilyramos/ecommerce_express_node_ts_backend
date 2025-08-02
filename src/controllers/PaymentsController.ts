@@ -1,7 +1,7 @@
 // controllers/paymentController.ts
 import { Request, Response } from 'express';
 import { preference } from '../utils/mercadopago';
-import { getFormTokenFromIzipay } from '../utils/izipayService';
+import { payment } from '../utils/mercadopago';
 
 
 
@@ -56,29 +56,6 @@ export class PaymentsController {
         }
     }
 
-    static async getIzipayFormToken(req: Request, res: Response) {
-        try {
-            const { transactionId } = req.body;
+    
 
-            const amount = 10000
-
-            if (!transactionId) {
-                res.status(400).json({ message: 'transactionId es requerido' });
-                return;
-            }
-
-            const { formToken } = await getFormTokenFromIzipay(transactionId, amount);
-
-            if (!formToken) {
-                res.status(500).json({ message: 'No se pudo obtener el token desde Izipay' });
-                return;
-            }
-
-            res.status(200).json({ formToken });
-            return;
-        } catch (error) {
-            res.status(500).json({ message: 'Error interno del servidor' });
-            return;
-        }
-    }
 }

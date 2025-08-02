@@ -159,7 +159,8 @@ export class OrderController {
 
             // Validar que los datos necesarios estén presentes
             if (!userId || !items || !totalPrice || !shippingAddress || !paymentMethod || !paymentStatus) {
-                return res.status(400).json({ message: 'Datos incompletos para crear la orden' });
+                 res.status(400).json({ message: 'Datos incompletos para crear la orden' });
+                 return;
             }
 
             // Crear la orden
