@@ -235,8 +235,6 @@ export class AuthController {
         }
     }
 
-
-
     static async validateToken(req: Request, res: Response) {
         try {
             const { token } = req.params;

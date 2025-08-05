@@ -26,6 +26,7 @@ export class ProductController {
                 barcode,
                 esDestacado,
                 esNuevo,
+                isActive,
                 atributos
             } = req.body;
             // validate category exists y no tiene subcategorías
@@ -73,6 +74,7 @@ export class ProductController {
                 barcode: barcode,
                 esDestacado: esDestacado,
                 esNuevo: esNuevo,
+                isActive: isActive,
                 atributos: atributos,
             };
 
@@ -447,6 +449,7 @@ export class ProductController {
                 sku,
                 esDestacado,
                 esNuevo,
+                isActive,
                 atributos,
                 barcode,
             } = req.body;
@@ -522,6 +525,7 @@ export class ProductController {
             existingProduct.barcode = barcode || existingProduct.barcode;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
+            existingProduct.isActive = isActive !== undefined ? isActive : existingProduct.isActive;
 
 
 
