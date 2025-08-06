@@ -49,6 +49,7 @@ export interface IStatusHistory {
 }
 
 export interface IOrder extends Document {
+    orderNumber: string;
     user: Types.ObjectId | IUser;
     items: IOrderItem[];
     subtotal: number;
@@ -97,6 +98,7 @@ const statusHistorySchema = new Schema<IStatusHistory>({
 
 // Order Schema principal
 const orderSchema = new Schema<IOrder>({
+    orderNumber: { type: String, unique: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     items: { type: [orderItemSchema], required: true },
     subtotal: { type: Number, required: true },

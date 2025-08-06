@@ -21,8 +21,11 @@ export class OrderController {
                 notes,
             } = req.body;
 
+            const totalOrders = await Order.countDocuments();
+            const orderNumber = `ORD-${totalOrders + 1}`; // Generar un número de orden único   
 
             const newOrder = await Order.create({
+                orderNumber,
                 user: req.user._id,
                 items: items.map((item: any) => ({
                     productId: item.productId,
@@ -59,21 +62,44 @@ export class OrderController {
             // TODO: query
             const page = parseInt(req.query.page as string) || 1;
             let limit = parseInt(req.query.limit as string) || 10;
-            const query = req.query.query as string || '';
+            const pedido = req.query.pedido as string || '';
+            const fecha = req.query.fecha as string || '';
+            const estadoPago = req.query.estadoPago as string || '';
+            const estadoEnvio = req.query.estadoEnvio as string || '';
+
+            if (limit > 50) {
+                limit = 50; // Limitar a un máximo de 50
+            }
             const skip = (page - 1) * limit;
 
-            // limit a maximo 50
-            if (limit > 50) {
-                limit = 50;
+            const searchConditions: any = {};
+
+            if (pedido) {
+                searchConditions.$or = [
+                    { orderNumber: { $regex: pedido, $options: "i" } },
+                    { _id: { $regex: pedido, $options: "i" } },
+                ];
             }
 
 
-            const orders = await Order.find({})
+            if (fecha) {
+                searchConditions.createdAt = { $gte: new Date(fecha), $lt: new Date(fecha + 'T23:59:59') };
+            }
+
+            if (estadoPago) {
+                searchConditions.paymentStatus = estadoPago;
+            }
+
+            if (estadoEnvio) {
+                searchConditions.status = estadoEnvio;
+            }
+
+            const orders = await Order.find(searchConditions)
                 .sort({ createdAt: -1 }) // Ordenar
                 .skip(skip)
                 .limit(limit)
 
-            const totalOrders = await Order.countDocuments();
+            const totalOrders = await Order.countDocuments(searchConditions);
 
             res.status(200).json({
                 orders,
@@ -159,12 +185,16 @@ export class OrderController {
 
             // Validar que los datos necesarios estén presentes
             if (!userId || !items || !totalPrice || !shippingAddress || !paymentMethod || !paymentStatus) {
-                 res.status(400).json({ message: 'Datos incompletos para crear la orden' });
-                 return;
+                res.status(400).json({ message: 'Datos incompletos para crear la orden' });
+                return;
             }
+
+            const totalOrders = await Order.countDocuments();
+            const orderNumber = `ORD-${totalOrders + 1}`; // Generar un número de orden único
 
             // Crear la orden
             const newOrder = new Order({
+                orderNumber,
                 user: userId,
                 items,
                 totalPrice,
