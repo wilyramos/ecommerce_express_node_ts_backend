@@ -71,7 +71,6 @@ export class OrderController {
                 limit = 50; // Limitar a un máximo de 50
             }
             const skip = (page - 1) * limit;
-
             const searchConditions: any = {};
 
             if (pedido) {
@@ -80,7 +79,6 @@ export class OrderController {
                     { _id: { $regex: pedido, $options: "i" } },
                 ];
             }
-
 
             if (fecha) {
                 searchConditions.createdAt = { $gte: new Date(fecha), $lt: new Date(fecha + 'T23:59:59') };
