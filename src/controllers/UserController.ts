@@ -1,16 +1,61 @@
 import { Request, Response } from 'express';
+import User from '../models/User';
 
 
 export class UserController {
 
     static async getAllUsers(req: Request, res: Response) {
         try {
-            // Aquí iría la lógica para obtener todos los usuarios
-            res.status(200).json({ message: 'Lista de usuarios' });
-        } catch (error) {
-            res.status(500).json({ message: 'Error al obtener los usuarios', error });
-        }
 
+            const page = parseInt(req.query.page as string) || 1;
+            const limit = parseInt(req.query.limit as string) || 25;
+            const nombre = req.query.nombre as string;
+            const email = req.query.email as string;
+            const telefono = req.query.telefono as string;
+            const numeroDocumento = req.query.tipoDocumento as string;
+
+            if (limit > 100) {
+                res.status(400).json({ message: 'El límite máximo es 100' });
+                return;
+            }
+
+            const skip = (page - 1) * limit;
+
+            const searchConditions: any = {};
+
+            if (nombre) {
+                searchConditions.nombre = { $regex: new RegExp(nombre, 'i') };
+            }
+
+            if (email) {
+                searchConditions.email = { $regex: new RegExp(email, 'i') };
+            }
+
+            if (telefono) {
+                searchConditions.telefono = { $regex: new RegExp(telefono, 'i') };
+            }
+
+            if (numeroDocumento) {
+                searchConditions.numeroDocumento = { $regex: new RegExp(numeroDocumento, 'i') };
+            }
+
+            const [ totalUsers, users ] = await Promise.all([
+                User.countDocuments(searchConditions),
+                User.find(searchConditions)
+                    .skip(skip)
+                    .limit(limit).select('-password').lean().sort({ createdAt: -1 })
+            ]);
+
+            res.status(200).json({
+                totalUsers: totalUsers,
+                currentPage: page,
+                totalPages: Math.ceil(totalUsers / limit),
+                users
+            })
+        } catch (error) {
+            res.status(500).json({ message: 'Error al obtener los usuarios' });
+            return;
+        }
     }
 
     static async getUserById(req: Request, res: Response) {
@@ -50,6 +95,4 @@ export class UserController {
             res.status(500).json({ message: 'Error al obtener el perfil del usuario', error });
         }
     }
-
-
 }

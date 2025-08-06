@@ -10,6 +10,7 @@ import orderRouter from './routes/orderRouter'
 import checkoutRouter from './routes/checkoutRouter'
 import saleRouter from './routes/saleRouter'
 import webhookRouter from './routes/webhookRouter'
+import userRouter from './routes/userRouter'
 
 // Connect to MongoDB
 
@@ -28,6 +29,7 @@ app.get('/', (req, res) => {
 
 // Routers
 app.use('/api/auth', authRouter)
+app.use('/api/users', userRouter)
 app.use('/api/category', categoryRouter)
 app.use('/api/products', productRouter)
 app.use('/api/cart', cartRouter)
