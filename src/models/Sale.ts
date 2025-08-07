@@ -21,6 +21,7 @@ interface ISaleItem {
     product: Types.ObjectId | IProduct;
     quantity: number;
     price: number; // Precio unitario
+    costo: number;
 }
 
 // Cliente sin cuenta registrada

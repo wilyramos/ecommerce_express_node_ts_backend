@@ -36,4 +36,18 @@ router.get('/',
 //     // SaleController.getSaleById,
 // );
 
+// Get reports sales
+
+router.get('/report/metrics',
+    // authenticate,
+    // isAdminOrVendedor,
+    SaleController.getSalesReport,
+)
+
+router.get('/report',
+    // authenticate,
+    // isAdminOrVendedor,
+    SaleController.getSalesSummary,
+)
+
 export default router;

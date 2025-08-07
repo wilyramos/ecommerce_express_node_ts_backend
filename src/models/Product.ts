@@ -29,7 +29,7 @@ const productSchema = new Schema<IProduct>(
         slug: { type: String, trim: true, unique: true },
         descripcion: { type: String, required: false, trim: true },
         precio: { type: Number, min: 0, default: 0 },
-        costo: { type: Number, min: 0, default: 0, select: false },
+        costo: { type: Number, min: 0, default: 0 },
         imagenes: [{ type: String }],
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
         stock: { type: Number, min: 0, default: 0 },
