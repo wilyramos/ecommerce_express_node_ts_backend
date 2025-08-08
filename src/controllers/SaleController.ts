@@ -147,10 +147,6 @@ export class SaleController {
             const startDate = startOfDay(parseISO(fechaInicio));
             const endDate = endOfDay(parseISO(fechaFin));
             const diffDays = differenceInDays(endDate, startDate);
-
-            console.log("Generando reporte de ventas desde", startDate, "hasta", endDate);
-            console.log("Diferencia en días:", diffDays);
-
             // Agrupación por día o por mes
             const dateFormat = diffDays <= 31 ? "%Y-%m-%d" : "%Y-%m";
 
@@ -208,8 +204,6 @@ export class SaleController {
 
             const startDate = startOfDay(parseISO(fechaInicio));
             const endDate = endOfDay(parseISO(fechaFin));
-
-            console.log("Obteniendo resumen de ventas desde", startDate, "hasta", endDate);
 
             const [salesTotals] = await Sale.aggregate([
                 {
