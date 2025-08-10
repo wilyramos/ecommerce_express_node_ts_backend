@@ -22,7 +22,8 @@ export enum PaymentMethod {
     VISA = 'visa',
     AMEX = 'amex',
     DINERS = 'diners',
-    
+    // permitir otros métodos de pago
+    DEBVISA = 'debvisa'
 }
 
 export enum PaymentStatus {
