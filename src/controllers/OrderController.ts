@@ -18,9 +18,13 @@ export class OrderController {
                 totalPrice,
                 shippingAddress,
                 shippingMethod,
+                paymentMethod,
+                paymentStatus,
                 notes,
+                status = 'PENDIENTE', // Por defecto, el estado es PENDIENTE
             } = req.body;
 
+            console.log("Datos de la orden recibidos:", req.body);
             const totalOrders = await Order.countDocuments();
             const orderNumber = `ORD-${totalOrders + 1}`; // Generar un número de orden único   
 
@@ -37,10 +41,10 @@ export class OrderController {
                 totalPrice,
                 shippingAddress,
                 shippingMethod,
-                paymentMethod: 'MERCADOPAGO',
-                paymentStatus: 'PENDIENTE',
-                status: 'PENDIENTE',
-                statusHistory: [{ status: 'PENDIENTE', changedAt: new Date() }],
+                paymentMethod,
+                paymentStatus,
+                status,
+                statusHistory: [{ status, changedAt: new Date() }],
                 notes,
             });
 

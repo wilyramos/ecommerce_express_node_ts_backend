@@ -18,12 +18,20 @@ export enum PaymentMethod {
     YAPE = 'YAPE',
     PLIN = 'PLIN',
     EFECTIVO = 'EFECTIVO',
+    MASTERCARD = 'master',
+    VISA = 'visa',
+    AMEX = 'amex',
+    DINERS = 'diners',
+    
 }
 
 export enum PaymentStatus {
     PAGADO = 'PAGADO',
     PENDIENTE = 'PENDIENTE',
     CANCELADO = 'CANCELADO',
+    APPROVED = 'approved',
+    REJECTED = 'rejected',
+    PENDING = 'pending',
 }
 
 // Interfaces

@@ -56,6 +56,52 @@ export class PaymentsController {
         }
     }
 
-    
+    static async processPayment(req: Request, res: Response) {
+        try {   
+            const { token, payment_method_id } = req.body;
+            console.log("boddyyy", req.body)
+            if (!token || !payment_method_id) {
+                res.status(400).json({ message: 'Token and paymentMethodId are required' });
+                return;
+            }
+
+            const response = await payment.create({ 
+                body: req.body
+             });
+
+            console.log("Payment processed successfully:", response);
+            // res.status(200).json({
+            //     status: response.status,
+            //     message: 'Payment processed',
+            //     response, 
+            // });
+
+            res.status(200).json(response);
+        } catch (error) {
+            console.error('Error processing payment:', error);
+            res.status(500).json({ message: 'Internal Server Error' });
+            return;
+        }
+    }
+
+    static async verifyPayment(req: Request, res: Response) {
+        try {
+            const { paymentId } = req.params;
+
+            if (!paymentId) {
+                res.status(400).json({ message: 'Payment ID is required' });
+                return;
+            }
+
+            const response = await payment.get({ id: paymentId });
+
+            console.log(response);
+
+            res.status(200).json(response);
+        } catch (error) {
+            console.error('Error verifying payment:', error);
+            res.status(500).json({ message: 'Internal Server Error' });
+        }
+    }
 
 }

@@ -1,3 +1,5 @@
+// File: backend/src/utils/mercadopago.ts
+
 
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 

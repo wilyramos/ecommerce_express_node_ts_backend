@@ -14,6 +14,13 @@ router.post('/create-preference',
     PaymentsController.createPreference
 );
 
+// process payment mercadopago checkoutbriks
+router.post('/process-payment',
+    authenticate,
+    body('formData').notEmpty().withMessage('Form data is required'),
+    PaymentsController.processPayment
+);
+
 // api checkout mercadopago
 
 // Izipay
