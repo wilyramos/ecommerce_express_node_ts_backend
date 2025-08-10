@@ -12,7 +12,6 @@ export class WebhookController {
 
         try {
             const event = req.body;
-
             if (event.type !== 'payment' || !event.data?.id) {
                 res.status(400).json({ message: 'Evento no manejado' });
                 return;
