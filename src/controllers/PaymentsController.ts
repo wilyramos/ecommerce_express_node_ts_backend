@@ -57,7 +57,7 @@ export class PaymentsController {
     }
 
     static async processPayment(req: Request, res: Response) {
-        try {   
+        try {
             const { token, payment_method_id } = req.body;
             console.log("boddyyy", req.body)
             if (!token || !payment_method_id) {
@@ -65,9 +65,9 @@ export class PaymentsController {
                 return;
             }
 
-            const response = await payment.create({ 
+            const response = await payment.create({
                 body: req.body
-             });
+            });
 
             console.log("Payment processed successfully:", response);
             // res.status(200).json({
@@ -101,6 +101,78 @@ export class PaymentsController {
         } catch (error) {
             console.error('Error verifying payment:', error);
             res.status(500).json({ message: 'Internal Server Error' });
+        }
+    }
+
+    static async processPaymentCulqi(req: Request, res: Response) {
+        try {
+            const { token, order, amount, description, currency_code = "PEN", email } = req.body;
+
+            console.log("📦 Request body:", req.body);
+
+            if (!token && !order) {
+                res.status(400).json({ message: "Debe enviar 'token' o 'order'" });
+                return;
+            }
+
+            if (!amount || !description) {
+                res.status(400).json({ message: "Faltan campos obligatorios: amount y description" });
+                return;
+            }
+
+            const culqiApiKey = process.env.CULQI_API_KEY;
+
+            let culqiResponse;
+            let url = "";
+            let payload: any = {};
+
+            if (token) {
+                // Pago con tarjeta
+                url = "https://api.culqi.com/v2/charges";
+                payload = {
+                    amount, // debe ir en céntimos: 10.00 PEN → 1000
+                    currency_code,
+                    email,
+                    source_id: token,
+                    description,
+                };
+            } else if (order) {
+                // Pago con Yape o billetera
+                url = `https://api.culqi.com/v2/orders/${order.id}/confirm`;
+            }
+
+            culqiResponse = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${culqiApiKey}`,
+                },
+                body: token ? JSON.stringify(payload) : undefined,
+            });
+
+            const data = await culqiResponse.json();
+
+            if (!culqiResponse.ok) {
+                console.error("❌ Error de Culqi:", data);
+                res.status(culqiResponse.status).json({
+                    status: "error",
+                    message: data.user_message || "El pago no pudo ser procesado",
+                    error: data,
+                });
+                return;
+            }
+
+            console.log("✅ Culqi OK:", data);
+            res.status(200).json({
+                status: "success",
+                message: "Pago procesado exitosamente",
+                data,
+            });
+            return;
+        } catch (error) {
+            console.error("💥 Error interno:", error);
+            res.status(500).json({ message: "Error interno del servidor", error: (error as Error).message });
+            return;
         }
     }
 

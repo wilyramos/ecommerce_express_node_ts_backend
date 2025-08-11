@@ -1,9 +1,6 @@
 import Order from '../models/Order';
 import { Request, Response } from 'express';
-import Product from '../models/Product';
-import mongoose from 'mongoose';
-import { IOrderItem } from "../models/Order";
-
+import { OrderEmail } from '../emails/OrderEmail';
 
 export class OrderController {
 
@@ -47,6 +44,16 @@ export class OrderController {
                 statusHistory: [{ status, changedAt: new Date() }],
                 notes,
             });
+
+            //TODO: enviar correo de confirmación
+            // await OrderEmail.sendOrderConfirmationEmail({
+            //     email: req.user.email,
+            //     name: req.user.nombre,
+            //     orderId: newOrder._id.toString(),
+            //     totalPrice: newOrder.totalPrice,
+            //     shippingMethod: newOrder.shippingMethod,
+            //     items
+            // });
 
             res.status(201).json({
                 message: 'Orden creada exitosamente',

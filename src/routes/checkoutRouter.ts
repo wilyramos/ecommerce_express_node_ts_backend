@@ -28,5 +28,14 @@ router.post('/process-payment',
 //     // authenticate,
 //     // PaymentsController.getIzipayFormToken
 // );
-    
+
+// Culqi
+
+router.post('/process-payment-culqi',
+    authenticate,
+    // body('token').notEmpty().withMessage('Token is required'),
+    // body('order').notEmpty().withMessage('Order is required'),
+    PaymentsController.processPaymentCulqi
+);
+
 export default router;
