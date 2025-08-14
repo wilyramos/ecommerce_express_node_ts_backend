@@ -2,37 +2,20 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
 
-// Enums
+// Estados de orden y pago
 export enum OrderStatus {
-    PENDIENTE = 'PENDIENTE',
-    PROCESANDO = 'PROCESANDO',
-    ENVIADO = 'ENVIADO',
-    ENTREGADO = 'ENTREGADO',
-    CANCELADO = 'CANCELADO',
-}
-
-export enum PaymentMethod {
-    MERCADOPAGO = 'MERCADOPAGO',
-    TARJETA = 'TARJETA',
-    TRANSFERENCIA = 'TRANSFERENCIA',
-    YAPE = 'YAPE',
-    PLIN = 'PLIN',
-    EFECTIVO = 'EFECTIVO',
-    MASTERCARD = 'master',
-    VISA = 'visa',
-    AMEX = 'amex',
-    DINERS = 'diners',
-    // permitir otros métodos de pago
-    DEBVISA = 'debvisa'
+    AWAITING_PAYMENT = 'awaiting_payment',
+    PROCESSING = 'processing',
+    SHIPPED = 'shipped',
+    DELIVERED = 'delivered',
+    CANCELED = 'canceled'
 }
 
 export enum PaymentStatus {
-    PAGADO = 'PAGADO',
-    PENDIENTE = 'PENDIENTE',
-    CANCELADO = 'CANCELADO',
+    PENDING = 'pending',
     APPROVED = 'approved',
     REJECTED = 'rejected',
-    PENDING = 'pending',
+    REFUNDED = 'refunded'
 }
 
 // Interfaces
@@ -42,7 +25,7 @@ export interface IShippingAddress {
     distrito: string;
     direccion: string;
     numero?: string;
-    piso?: string;
+    pisoDpto?: string;
     referencia?: string;
 }
 
@@ -50,6 +33,14 @@ export interface IOrderItem {
     productId: Types.ObjectId | IProduct;
     quantity: number;
     price: number;
+}
+
+export interface IPaymentInfo {
+    provider: string;        // Ej: 'IZIPAY', 'MERCADOPAGO', 'STRIPE'
+    method?: string;         // Ej: 'visa', 'yape'
+    transactionId?: string;  // ID que devuelve la pasarela
+    status: PaymentStatus;
+    rawResponse?: any;       // Respuesta completa para debugging
 }
 
 export interface IStatusHistory {
@@ -64,48 +55,44 @@ export interface IOrder extends Document {
     subtotal: number;
     shippingCost: number;
     totalPrice: number;
+    currency: string;
     status: OrderStatus;
     statusHistory: IStatusHistory[];
     shippingAddress: IShippingAddress;
-    shippingMethod: string;
-    paymentMethod: PaymentMethod;
-    paymentStatus: PaymentStatus;
-    paymentId?: string;
-    trackingId?: string;
-    notes?: string;
-    isPrinted: boolean;
-    isArchived: boolean;
+    payment: IPaymentInfo;
     createdAt: Date;
     updatedAt: Date;
 }
 
-// Subschemas
+// Schemas
 const shippingAddressSchema = new Schema<IShippingAddress>({
     departamento: { type: String, required: true },
     provincia: { type: String, required: true },
     distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    numero: { type: String },
-    piso: { type: String },
-    referencia: { type: String },
+    referencia: { type: String }
 }, { _id: false });
 
 const orderItemSchema = new Schema<IOrderItem>({
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true },
-    price: { type: Number, required: true },
+    price: { type: Number, required: true }
+}, { _id: false });
+
+const paymentSchema = new Schema<IPaymentInfo>({
+    provider: { type: String, required: true },
+    method: { type: String },
+    transactionId: { type: String },
+    status: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.PENDING },
+    rawResponse: { type: Schema.Types.Mixed }
 }, { _id: false });
 
 const statusHistorySchema = new Schema<IStatusHistory>({
-    status: {
-        type: String,
-        enum: Object.values(OrderStatus),
-        required: true
-    },
+    status: { type: String, enum: Object.values(OrderStatus), required: true },
     changedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
-// Order Schema principal
+// Order principal
 const orderSchema = new Schema<IOrder>({
     orderNumber: { type: String, unique: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -113,38 +100,17 @@ const orderSchema = new Schema<IOrder>({
     subtotal: { type: Number, required: true },
     shippingCost: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
-    status: {
-        type: String,
-        enum: Object.values(OrderStatus),
-        default: OrderStatus.PENDIENTE
-    },
+    currency: { type: String, default: 'PEN' },
+    status: { type: String, enum: Object.values(OrderStatus), default: OrderStatus.AWAITING_PAYMENT },
     statusHistory: { type: [statusHistorySchema], default: [] },
     shippingAddress: { type: shippingAddressSchema, required: true },
-    shippingMethod: { type: String, default: 'DELIVERY' },
-    paymentMethod: {
-        type: String,
-        enum: Object.values(PaymentMethod),
-        required: true
-    },
-    paymentStatus: {
-        type: String,
-        enum: Object.values(PaymentStatus),
-        default: PaymentStatus.PENDIENTE
-    },
-    paymentId: { type: String },
-    trackingId: { type: String },
-    notes: { type: String },
-    isPrinted: { type: Boolean, default: false },
-    isArchived: { type: Boolean, default: false }
-}, {
-    timestamps: true
-});
+    payment: { type: paymentSchema, required: true }
+}, { timestamps: true });
 
-// Índices
+// Índices útiles
 orderSchema.index({ user: 1 });
 orderSchema.index({ status: 1 });
-orderSchema.index({ trackingId: 1 });
-orderSchema.index({ createdAt: -1 });
+orderSchema.index({ 'payment.transactionId': 1 });
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 export default Order;

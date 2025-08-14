@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
-import { IOrder, PaymentMethod, PaymentStatus } from './Order';
+import { IOrder, PaymentStatus } from './Order';
 
 // Fuente de la venta
 export enum SaleSource {
@@ -59,7 +59,7 @@ export interface ISale extends Document {
     status: SaleStatus;
     statusHistory: ISaleStatusHistory[];
 
-    paymentMethod: PaymentMethod;
+    paymentMethod: string;
     paymentStatus: PaymentStatus;
     paymentId?: string;
 
@@ -118,8 +118,10 @@ const saleSchema = new Schema<ISale>({
     statusHistory: { type: [saleStatusHistorySchema], default: [] },
 
     // Pago
-    paymentMethod: { type: String, enum: Object.values(PaymentMethod), required: true },
-    paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.PAGADO },
+    paymentMethod: { 
+        type: String, required: false, default: 'CASH',
+     },
+    paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.APPROVED },
     paymentId: { type: String },
 
     // Logística

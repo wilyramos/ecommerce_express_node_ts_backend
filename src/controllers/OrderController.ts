@@ -1,68 +1,84 @@
-import Order from '../models/Order';
+import Order, { OrderStatus, PaymentStatus } from '../models/Order';
 import { Request, Response } from 'express';
 import { OrderEmail } from '../emails/OrderEmail';
+import mongoose from 'mongoose';
+
 
 export class OrderController {
 
     static async createOrder(req: Request, res: Response) {
-        try {
 
-            // TODO: añadir session para manejar transacciones solo si la confirmación de pago es exitosa
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
             const {
                 items,
                 subtotal,
                 shippingCost,
                 totalPrice,
                 shippingAddress,
-                shippingMethod,
-                paymentMethod,
-                paymentStatus,
-                notes,
-                status = 'PENDIENTE', // Por defecto, el estado es PENDIENTE
+                paymentProvider,     // Ej: 'IZIPAY', 'MERCADOPAGO'
+                paymentMethod,       // Ej: 'visa', 'yape'
+                transactionId,       // ID devuelto por la pasarela (si ya se tiene)
+                paymentStatus = PaymentStatus.PENDING, // Por defecto pendiente
+                rawPaymentResponse,  // Respuesta completa de la pasarela (opcional)
+                currency = 'PEN'
             } = req.body;
 
-            console.log("Datos de la orden recibidos:", req.body);
-            const totalOrders = await Order.countDocuments();
-            const orderNumber = `ORD-${totalOrders + 1}`; // Generar un número de orden único   
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                res.status(400).json({ message: 'La orden debe tener al menos un producto' });
+                return;
+            }
 
-            const newOrder = await Order.create({
+            // Generar número único de orden (más seguro que countDocuments)
+            const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+            const newOrder = await Order.create([{
                 orderNumber,
                 user: req.user._id,
                 items: items.map((item: any) => ({
                     productId: item.productId,
                     quantity: item.quantity,
-                    price: item.price,
+                    price: item.price
                 })),
                 subtotal,
                 shippingCost,
                 totalPrice,
+                currency,
+                status: OrderStatus.AWAITING_PAYMENT,
+                statusHistory: [{
+                    status: OrderStatus.AWAITING_PAYMENT,
+                    changedAt: new Date()
+                }],
                 shippingAddress,
-                shippingMethod,
-                paymentMethod,
-                paymentStatus,
-                status,
-                statusHistory: [{ status, changedAt: new Date() }],
-                notes,
-            });
+                payment: {
+                    provider: paymentProvider,
+                    method: paymentMethod,
+                    transactionId,
+                    status: paymentStatus,
+                    rawResponse: rawPaymentResponse
+                }
+            }], { session });
 
-            //TODO: enviar correo de confirmación
-            // await OrderEmail.sendOrderConfirmationEmail({
-            //     email: req.user.email,
-            //     name: req.user.nombre,
-            //     orderId: newOrder._id.toString(),
-            //     totalPrice: newOrder.totalPrice,
-            //     shippingMethod: newOrder.shippingMethod,
-            //     items
-            // });
+            await session.commitTransaction();
+
+            // TODO: enviar correo de confirmación aquí
 
             res.status(201).json({
                 message: 'Orden creada exitosamente',
-                order: newOrder,
+                order: newOrder[0]
             });
+            return;
 
         } catch (error) {
-            console.error(error);
+            await session.abortTransaction();
+            console.error('Error al crear la orden:', error);
             res.status(500).json({ message: 'Error al crear la orden' });
+            return;
+        } finally {
+            session.endSession();
+            return;
         }
     }
 

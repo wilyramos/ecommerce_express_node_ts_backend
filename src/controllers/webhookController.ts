@@ -61,7 +61,7 @@ export class WebhookController {
                 return;
             }
 
-            if (order.paymentStatus === PaymentStatus.PAGADO) {
+            if (order.payment.status === PaymentStatus.APPROVED) {
                 await session.abortTransaction();
                 res.status(400).json({ message: 'La orden ya ha sido procesada' });
                 return;
@@ -87,9 +87,9 @@ export class WebhookController {
                     await product.save({ session });
                 }
 
-                order.paymentStatus = PaymentStatus.PAGADO;
-                order.status = OrderStatus.PROCESANDO;
-                order.paymentId = paymentId;
+                order.payment.status = PaymentStatus.APPROVED;
+                order.status = OrderStatus.PROCESSING;
+                order.payment.transactionId = paymentId;
                 order.statusHistory.push({ status: order.status, changedAt: new Date() });
 
                 await order.save({ session });
@@ -112,7 +112,7 @@ export class WebhookController {
                         name: user.nombre,
                         orderId: order._id.toString(),
                         totalPrice: order.totalPrice,
-                        shippingMethod: order.shippingMethod,
+                        shippingMethod: order.shippingAddress.direccion,
                         items: productos
                     });
                 }
@@ -122,9 +122,9 @@ export class WebhookController {
                 return;
 
             } else if (status === 'pending') {
-                order.paymentStatus = PaymentStatus.PENDIENTE;
-                order.status = OrderStatus.PENDIENTE;
-                order.paymentId = paymentId;
+                order.payment.status = PaymentStatus.PENDING;
+                order.status = OrderStatus.AWAITING_PAYMENT;
+                order.payment.transactionId = paymentId;
                 order.statusHistory.push({ status: order.status, changedAt: new Date() });
 
                 await order.save({ session });
@@ -136,9 +136,9 @@ export class WebhookController {
                 return;
 
             } else if (status === 'rejected') {
-                order.paymentStatus = PaymentStatus.CANCELADO;
-                order.status = OrderStatus.CANCELADO;
-                order.paymentId = paymentId;
+                order.payment.status = PaymentStatus.REJECTED;
+                order.status = OrderStatus.CANCELED;
+                order.payment.transactionId = paymentId;
                 order.statusHistory.push({ status: order.status, changedAt: new Date() });
 
                 await order.save({ session });
@@ -161,6 +161,48 @@ export class WebhookController {
             console.error('❌ Error en Webhook de Mercado Pago:', error);
             res.status(500).json({ message: 'Error interno del servidor' });
             return;
+        }
+    }
+
+    static async handleWebHookIzipay(req: Request, res: Response) {
+        try {
+            // 📌 Izipay envía todo en el campo "kr-answer"
+            const krAnswerRaw = req.body["kr-answer"];
+
+            if (!krAnswerRaw) {
+                console.error("❌ No se recibió 'kr-answer' en el body");
+                res.status(400).send("Falta kr-answer");
+                return;
+            }
+
+            // Parsear string JSON a objeto
+            const notification = JSON.parse(krAnswerRaw);
+            console.log("🔔 Notificación recibida de Izipay:", notification);
+
+            const orderStatus = notification.orderStatus;
+            const orderId = notification.orderDetails?.orderId;
+
+            console.log("📦 Status y OrderID:", orderStatus, orderId);
+
+            if (!orderId) {
+                res.status(400).json({ message: "Falta orderId en la notificación" });
+                return;
+            }
+
+            // Manejo de estados
+            if (orderStatus === "PAID") {
+                console.log(`✅ Orden ${orderId} pagada`);
+                // Actualizar DB como pagada
+            } else if (orderStatus === "UNPAID") {
+                console.log(`❌ Orden ${orderId} no pagada o rechazada`);
+                // Actualizar DB como fallida
+            }
+
+            // Respuesta obligatoria
+            res.status(200).send("OK");
+        } catch (error) {
+            console.error("💥 Error procesando webhook Izipay:", error);
+            res.status(500).send("Error interno");
         }
     }
 }

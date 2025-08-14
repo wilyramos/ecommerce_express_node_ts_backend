@@ -23,11 +23,10 @@ router.post('/process-payment',
 
 // api checkout mercadopago
 
-// Izipay
-// router.post('/izipay/get-token',
-//     // authenticate,
-//     // PaymentsController.getIzipayFormToken
-// );
+router.post('/izipay/create-payment',
+    // authenticate,
+    PaymentsController.createPaymentIzipay
+);
 
 // Culqi
 

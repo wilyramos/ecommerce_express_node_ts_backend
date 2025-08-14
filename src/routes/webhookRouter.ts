@@ -11,5 +11,9 @@ router.post('/mercadopago',
     WebhookController.handleWebHookMercadoPago  
 );
 
+router.post('/izipay',
+    WebhookController.handleWebHookIzipay
+)
+
 
 export default router;

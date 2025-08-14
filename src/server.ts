@@ -36,7 +36,10 @@ app.use('/api/cart', cartRouter)
 app.use('/api/orders', orderRouter)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/sales', saleRouter)
-app.use('/api/webhooks', webhookRouter)
+app.use('/api/webhooks', 
+    express.urlencoded({ extended: true }),
+    webhookRouter
+)
 
 
 export default app
