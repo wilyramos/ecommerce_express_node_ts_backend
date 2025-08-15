@@ -201,7 +201,7 @@ export class PaymentsController {
 
 
             const notificationUrl =
-                process.env.IZIPAY_NOTIFICATION_URL || "https://gophone.pe/checkout-re";
+                process.env.IZIPAY_NOTIFICATION_URL || "";
 
             // 2️⃣ Payload para Izipay
             const payload = {
