@@ -183,6 +183,7 @@ export class PaymentsController {
         try {
             const { amount, currency = "PEN", orderId, customer } = req.body;
 
+            const amountCents = amount * 100;
             // 1️⃣ Validaciones mínimas
             if (!amount || !orderId) {
                 res.status(400).json({
@@ -204,7 +205,7 @@ export class PaymentsController {
 
             // 2️⃣ Payload para Izipay
             const payload = {
-                amount, // céntimos (S/. 18.00 → 1800)
+                amount: amountCents, // céntimos (S/. 18.00 → 1800)
                 currency,
                 orderId,
                 customer: {

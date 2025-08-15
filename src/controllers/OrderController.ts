@@ -219,7 +219,7 @@ export class OrderController {
             const rol = req.user.rol;
 
             const order = await Order.findById(id)
-                // .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
+                .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
                 .populate('user', 'nombre apellidos email') // Popula el usuario si es necesario
 
             if (!order) {
