@@ -165,44 +165,102 @@ export class WebhookController {
     }
 
     static async handleWebHookIzipay(req: Request, res: Response) {
-        try {
-            // 📌 Izipay envía todo en el campo "kr-answer"
-            const krAnswerRaw = req.body["kr-answer"];
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
+        try {
+            const krAnswerRaw = req.body["kr-answer"];
             if (!krAnswerRaw) {
                 console.error("❌ No se recibió 'kr-answer' en el body");
                 res.status(400).send("Falta kr-answer");
                 return;
             }
 
-            // Parsear string JSON a objeto
             const notification = JSON.parse(krAnswerRaw);
-            console.log("🔔 Notificación recibida de Izipay:", notification);
-
             const orderStatus = notification.orderStatus;
-            const orderId = notification.orderDetails?.orderId;
+            const orderNumber = notification.orderDetails?.orderId;
 
-            console.log("📦 Status y OrderID:", orderStatus, orderId);
-
-            if (!orderId) {
+            if (!orderNumber) {
                 res.status(400).json({ message: "Falta orderId en la notificación" });
                 return;
             }
 
-            // Manejo de estados
-            if (orderStatus === "PAID") {
-                console.log(`✅ Orden ${orderId} pagada`);
-                // Actualizar DB como pagada
-            } else if (orderStatus === "UNPAID") {
-                console.log(`❌ Orden ${orderId} no pagada o rechazada`);
-                // Actualizar DB como fallida
+            // Solo procesar eventos relevantes
+            if (!["PAID", "UNPAID"].includes(orderStatus)) {
+                console.log(`ℹ️ Estado ${orderStatus} ignorado`);
+                await session.commitTransaction();
+                res.status(200).send("Estado no relevante");
+                return;
             }
 
-            // Respuesta obligatoria
+            const order = await Order.findById(orderNumber).session(session);
+            if (!order) {
+                res.status(404).json({ message: "Orden no encontrada" });
+                return;
+            }
+
+            // Evitar reprocesar si ya está aprobada
+            if (order.payment.status === PaymentStatus.APPROVED) {
+                console.log(`⚠️ Orden ${orderNumber} ya procesada, ignorando...`);
+                await session.commitTransaction();
+                res.status(200).send("Ya procesada");
+                return;
+            }
+
+            if (orderStatus === "PAID") {
+                console.log(`✅ Orden ${orderNumber} pagada`);
+
+                order.payment.status = PaymentStatus.APPROVED;
+                order.payment.transactionId = notification.transactions?.[0]?.uuid || null;
+                order.payment.rawResponse = notification;
+
+                try {
+                    for (const item of order.items) {
+                        const product = await Product.findById(item.productId).session(session);
+                        if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
+                        if (product.stock < item.quantity) {
+                            throw new Error(`Stock insuficiente para ${product.nombre}`);
+                        }
+                        product.stock -= item.quantity;
+                        await product.save({ session });
+                    }
+
+                    order.status = OrderStatus.PROCESSING;
+                    order.statusHistory.push({
+                        status: OrderStatus.PROCESSING,
+                        changedAt: new Date()
+                    });
+
+                } catch (stockError) {
+                    order.status = OrderStatus.PAID_BUT_OUT_OF_STOCK;
+                    order.statusHistory.push({
+                        status: OrderStatus.PAID_BUT_OUT_OF_STOCK,
+                        changedAt: new Date()
+                    });
+                }
+
+            } else if (orderStatus === "UNPAID") {
+                order.payment.status = PaymentStatus.REJECTED;
+                order.status = OrderStatus.CANCELED;
+                order.statusHistory.push({
+                    status: OrderStatus.CANCELED,
+                    changedAt: new Date()
+                });
+            }
+
+            await order.save({ session });
+            await session.commitTransaction();
+
             res.status(200).send("OK");
+            return;
+
         } catch (error) {
-            console.error("💥 Error procesando webhook Izipay:", error);
+            await session.abortTransaction();
             res.status(500).send("Error interno");
+            return;
+        } finally {
+            session.endSession();
         }
     }
+
 }

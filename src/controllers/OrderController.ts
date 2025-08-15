@@ -2,12 +2,12 @@ import Order, { OrderStatus, PaymentStatus } from '../models/Order';
 import { Request, Response } from 'express';
 import { OrderEmail } from '../emails/OrderEmail';
 import mongoose from 'mongoose';
+import Product from '../models/Product';
 
 
 export class OrderController {
 
     static async createOrder(req: Request, res: Response) {
-
         const session = await mongoose.startSession();
         session.startTransaction();
 
@@ -18,11 +18,10 @@ export class OrderController {
                 shippingCost,
                 totalPrice,
                 shippingAddress,
-                paymentProvider,     // Ej: 'IZIPAY', 'MERCADOPAGO'
-                paymentMethod,       // Ej: 'visa', 'yape'
-                transactionId,       // ID devuelto por la pasarela (si ya se tiene)
-                paymentStatus = PaymentStatus.PENDING, // Por defecto pendiente
-                rawPaymentResponse,  // Respuesta completa de la pasarela (opcional)
+                paymentMethod,
+                transactionId,
+                payment,
+                rawPaymentResponse,
                 currency = 'PEN'
             } = req.body;
 
@@ -31,13 +30,52 @@ export class OrderController {
                 return;
             }
 
-            // Generar número único de orden (más seguro que countDocuments)
+            if (!payment?.provider) {
+                res.status(400).json({ message: 'Proveedor de pago requerido' });
+                return;
+            }
+
+            // Validar que los productos existan y precios no hayan cambiado
+            const productIds = items.map(i => i.productId);
+            const dbProducts = await Product.find({ _id: { $in: productIds } }).session(session);
+
+            if (dbProducts.length !== items.length) {
+                res.status(400).json({ message: 'Uno o más productos no existen' });
+                return;
+            }
+
+            let calculatedSubtotal = 0;
+            for (const item of items) {
+                const dbProduct = dbProducts.find(p => p._id.toString() === item.productId);
+                if (!dbProduct) continue;
+
+                if (item.price !== dbProduct.precio) {
+                    res.status(400).json({
+                        message: `El precio del producto "${dbProduct.nombre}" ha cambiado`
+                    });
+                    return;
+                }
+
+                calculatedSubtotal += item.price * item.quantity;
+            }
+
+            if (calculatedSubtotal !== subtotal) {
+                res.status(400).json({ message: 'El subtotal no coincide' });
+                return;
+            }
+
+            if (subtotal + shippingCost !== totalPrice) {
+                res.status(400).json({ message: 'El total no coincide' });
+                return;
+            }
+
+            // Generar número de orden único
             const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
             const newOrder = await Order.create([{
                 orderNumber,
                 user: req.user._id,
-                items: items.map((item: any) => ({
+                items: items.map(item => ({
                     productId: item.productId,
                     quantity: item.quantity,
                     price: item.price
@@ -53,17 +91,15 @@ export class OrderController {
                 }],
                 shippingAddress,
                 payment: {
-                    provider: paymentProvider,
+                    provider: payment.provider,
                     method: paymentMethod,
                     transactionId,
-                    status: paymentStatus,
+                    status: payment.status || PaymentStatus.PENDING,
                     rawResponse: rawPaymentResponse
                 }
             }], { session });
 
             await session.commitTransaction();
-
-            // TODO: enviar correo de confirmación aquí
 
             res.status(201).json({
                 message: 'Orden creada exitosamente',
@@ -81,6 +117,7 @@ export class OrderController {
             return;
         }
     }
+
 
     // Trear todas las orders para el administrador
     static async getOrders(req: Request, res: Response) {
@@ -182,7 +219,7 @@ export class OrderController {
             const rol = req.user.rol;
 
             const order = await Order.findById(id)
-                .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
+                // .populate({ path: 'items.productId', select: 'nombre imagenes sku barcode' })
                 .populate('user', 'nombre apellidos email') // Popula el usuario si es necesario
 
             if (!order) {

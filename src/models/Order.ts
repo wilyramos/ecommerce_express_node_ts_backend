@@ -8,7 +8,8 @@ export enum OrderStatus {
     PROCESSING = 'processing',
     SHIPPED = 'shipped',
     DELIVERED = 'delivered',
-    CANCELED = 'canceled'
+    CANCELED = 'canceled',
+    PAID_BUT_OUT_OF_STOCK = 'paid_but_out_of_stock'
 }
 
 export enum PaymentStatus {
