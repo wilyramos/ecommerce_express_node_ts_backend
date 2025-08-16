@@ -191,8 +191,6 @@ export class WebhookController {
             const orderStatus = notification.orderStatus;
             const orderNumber = notification.orderDetails?.orderId;
 
-            console.log("la notificacion recibida", notification)
-
             if (!orderNumber) {
                 res.status(400).json({ message: "Falta orderId en la notificación" });
                 return;
@@ -217,11 +215,10 @@ export class WebhookController {
             };
 
             const order = await Order.findById(orderNumber)
-  .populate<{ user: IUser }>("user", "email name")
-  .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes")
-  .session(session);
+                .populate<{ user: IUser }>("user", "email name")
+                .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes")
+                .session(session);
 
-            console.log("la orden", order);
             if (!order) {
                 res.status(404).json({ message: "Orden no encontrada" });
                 return;
