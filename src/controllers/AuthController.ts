@@ -227,6 +227,11 @@ export class AuthController {
 
             await Promise.all([user.save(), tokenExists.deleteOne()]);
 
+            // Send email notification
+            AuthEmailResend.sendEmailPasswordUpdated({
+                email: user.email
+            });
+
             res.status(200).json({ message: 'Contraseña actualizada exitosamente' });
 
         } catch (error) {

@@ -183,6 +183,7 @@ export class PaymentsController {
         try {
             const { amount, currency = "PEN", orderId, customer } = req.body;
 
+            console.log("📦 Request body Izipay:", req.body);
             const amountCents = amount * 100;
             // 1️⃣ Validaciones mínimas
             if (!amount || !orderId) {
@@ -196,9 +197,6 @@ export class PaymentsController {
             const izipayPassword = process.env.IZIPAY_PASSWORD;
 
             const basicAuth = Buffer.from(`${izipayUser}:${izipayPassword}`).toString("base64");
-
-
-
 
             const notificationUrl =
                 process.env.IZIPAY_NOTIFICATION_URL || "";

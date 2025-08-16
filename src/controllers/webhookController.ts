@@ -4,7 +4,10 @@ import { preference, payment } from '../utils/mercadopago';
 import Order, { PaymentStatus, OrderStatus } from '../models/Order';
 import Product from '../models/Product';
 import mongoose from 'mongoose';
-import { OrderEmail } from '../emails/OrderEmail';
+import { OrderEmail } from '../emails/OrderEmailResend';
+import type { IUser } from '../models/User';
+
+// Email
 
 export class WebhookController {
     static async handleWebHookMercadoPago(req: Request, res: Response) {
@@ -99,13 +102,13 @@ export class WebhookController {
                 // Enviar email
                 const user = order.user as any;
                 if (user?.email) {
-                    const productos = order.items.map((item) => {
-                        const producto = item.productId as any;
-                        return {
-                            nombre: producto?.nombre || 'Producto',
-                            quantity: item.quantity
-                        };
-                    });
+                    // const productos = order.items.map((item) => {
+                    //     const producto = item.productId as any;
+                    //     return {
+                    //         nombre: producto?.nombre || 'Producto',
+                    //         quantity: item.quantity
+                    //     };
+                    // });
 
                     await OrderEmail.sendOrderConfirmationEmail({
                         email: user.email,
@@ -113,7 +116,15 @@ export class WebhookController {
                         orderId: order._id.toString(),
                         totalPrice: order.totalPrice,
                         shippingMethod: order.shippingAddress.direccion,
-                        items: productos
+                        // items: order.items.map(item => ({
+                        //     productId: {
+                        //         _id: item.productId._id.toString(),
+                        //         nombre: item.productId.nombre,
+                        //         imagenes: item.productId.imagenes
+                        //     },
+                        //     quantity: item.quantity,
+                        //     price: item.price
+                        // }))
                     });
                 }
 
@@ -180,6 +191,8 @@ export class WebhookController {
             const orderStatus = notification.orderStatus;
             const orderNumber = notification.orderDetails?.orderId;
 
+            console.log("la notificacion recibida", notification)
+
             if (!orderNumber) {
                 res.status(400).json({ message: "Falta orderId en la notificación" });
                 return;
@@ -193,7 +206,22 @@ export class WebhookController {
                 return;
             }
 
-            const order = await Order.findById(orderNumber).session(session);
+            type IOrderItem = {
+                productId: {
+                    _id: string;
+                    nombre: string;
+                    imagenes: string[];
+                },
+                quantity: number;
+                price: number;
+            };
+
+            const order = await Order.findById(orderNumber)
+  .populate<{ user: IUser }>("user", "email name")
+  .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes")
+  .session(session);
+
+            console.log("la orden", order);
             if (!order) {
                 res.status(404).json({ message: "Orden no encontrada" });
                 return;
@@ -238,6 +266,16 @@ export class WebhookController {
                         changedAt: new Date()
                     });
                 }
+
+                // Send email notification with items
+                OrderEmail.sendOrderConfirmationEmail({
+                    email: order.user.email || notification.customer.email,
+                    name: order.user.nombre || notification.customer.name,
+                    orderId: order.id,
+                    totalPrice: order.totalPrice,
+                    shippingMethod: order.payment.method || "Izipay",
+                    items: order.items,
+                });
 
             } else if (orderStatus === "UNPAID") {
                 order.payment.status = PaymentStatus.REJECTED;

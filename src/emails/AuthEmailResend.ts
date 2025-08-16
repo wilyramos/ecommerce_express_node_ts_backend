@@ -41,12 +41,12 @@ export class AuthEmailResend {
     }
 
     static async sendEmailForgotPassword({ email, token }: { email: string; token: string }) {
-    try {
-        const resetLink = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}`;
+        try {
+            const resetLink = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}`;
 
-        const emailContent = baseEmailTemplate({
-            title: "Restablecer contraseña",
-            content: `
+            const emailContent = baseEmailTemplate({
+                title: "Restablecer contraseña",
+                content: `
                 <p>Hola,</p>
                 <p>Hemos recibido una solicitud para restablecer tu contraseña.</p>
                 <p>Haz clic en el siguiente enlace para restablecerla:</p>
@@ -55,28 +55,58 @@ export class AuthEmailResend {
                 <p>Si no realizaste esta solicitud, puedes ignorar este correo.</p>
                 <p>Saludos,<br/>El equipo de GoPhone</p>
             `
-        });
+            });
 
-        const response = await resend.emails.send({
-            from: 'GoPhone Cañete <contacto@gophone.pe>',
-            to: email,
-            subject: 'Restablecimiento de contraseña',
-            html: emailContent
-        });
+            const response = await resend.emails.send({
+                from: 'GoPhone Cañete <contacto@gophone.pe>',
+                to: email,
+                subject: 'Restablecimiento de contraseña',
+                html: emailContent
+            });
 
-        return {
-            success: true,
-            message: "Email de restablecimiento de contraseña enviado exitosamente"
-        };
+            return {
+                success: true,
+                message: "Email de restablecimiento de contraseña enviado exitosamente"
+            };
 
-    } catch (error) {
-        console.error('Error enviando email de restablecimiento de contraseña:', error);
-        return {
-            success: false,
-            message: 'Error al enviar el correo',
-        };
+        } catch (error) {
+            console.error('Error enviando email de restablecimiento de contraseña:', error);
+            return {
+                success: false,
+                message: 'Error al enviar el correo',
+            };
+        }
     }
-}
 
+    static async sendEmailPasswordUpdated({ email }: { email: string }) {
+        try {
+            const emailContent = baseEmailTemplate({
+                title: "Contraseña actualizada",
+                content: `<p>Hola,</p>
+                          <p>Tu contraseña ha sido actualizada exitosamente.</p>
+                          <p>Si no realizaste esta acción, por favor contacta a soporte.</p>
+                          <p>Saludos,</p>
+                          <p>El equipo de GoPhone</p>`
+            });
 
+            const response = await resend.emails.send({
+                from: 'GoPhone Cañete <contacto@gophone.pe>',
+                to: email,
+                subject: 'Contraseña actualizada',
+                html: emailContent
+            });
+
+            return {
+                success: true,
+                message: "Email de confirmación de actualización de contraseña enviado exitosamente"
+            };
+
+        } catch (error) {
+            console.error('Error enviando email de confirmación de actualización de contraseña:', error);
+            return {
+                success: false,
+                message: 'Error al enviar el correo',
+            };
+        }
+    }
 }

@@ -51,7 +51,7 @@ export interface IStatusHistory {
 
 export interface IOrder extends Document {
     orderNumber: string;
-    user: Types.ObjectId | IUser;
+    user: Types.ObjectId | IUser; // 
     items: IOrderItem[];
     subtotal: number;
     shippingCost: number;

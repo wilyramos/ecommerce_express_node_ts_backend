@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import Product from '../models/Product';
 import Cart from '../models/Cart';
 
+// TODO: Implementar la lógica para manejar el carrito de compras
+// TODO: Integrar en la la logica 
+
 export class CartController {
     static async getCart(req: Request, res: Response) {
         try {

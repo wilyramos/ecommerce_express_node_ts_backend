@@ -1,8 +1,9 @@
 import Order, { OrderStatus, PaymentStatus } from '../models/Order';
 import { Request, Response } from 'express';
-import { OrderEmail } from '../emails/OrderEmail';
+import { OrderEmail } from '../emails/OrderEmailResend';
 import mongoose from 'mongoose';
 import Product from '../models/Product';
+import { payment } from '../utils/mercadopago';
 
 
 export class OrderController {
@@ -131,6 +132,8 @@ export class OrderController {
             const estadoPago = req.query.estadoPago as string || '';
             const estadoEnvio = req.query.estadoEnvio as string || '';
 
+            console.log({ page, limit, pedido, fecha, estadoPago, estadoEnvio });
+
             if (limit > 50) {
                 limit = 50; // Limitar a un máximo de 50
             }
@@ -140,7 +143,6 @@ export class OrderController {
             if (pedido) {
                 searchConditions.$or = [
                     { orderNumber: { $regex: pedido, $options: "i" } },
-                    { _id: { $regex: pedido, $options: "i" } },
                 ];
             }
 
@@ -149,7 +151,7 @@ export class OrderController {
             }
 
             if (estadoPago) {
-                searchConditions.paymentStatus = estadoPago;
+                searchConditions['payment.status'] = estadoPago;
             }
 
             if (estadoEnvio) {
@@ -229,7 +231,7 @@ export class OrderController {
 
             if (rol !== 'administrador' && order.user._id.toString() !== userId.toString()) {
                 res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
-                return;
+                return; 
             }
 
             res.status(200).json(order);
