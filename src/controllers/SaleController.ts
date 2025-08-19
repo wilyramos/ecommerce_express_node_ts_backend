@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Sale } from '../models/Sale';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO, differenceInDays } from 'date-fns';
+import { SaleStatus, PaymentMethod } from '../models/Sale';
 
 
 export class SaleController {
@@ -13,48 +14,56 @@ export class SaleController {
         session.startTransaction();
 
         try {
-            const { customerDNI, employee, items, totalDiscountAmount = 0, source, status = 'COMPLETADA', paymentMethod, paymentStatus = 'PAGADO', order } = req.body;
-
-            console.log("Creating sale with data:", {
-                customerDNI,
+            const {
+                customerId,
+                customerSnapshot,
                 employee,
                 items,
-                totalDiscountAmount,
-                source,
-                status,
-                paymentMethod,
-                paymentStatus,
-                order
-            });
+                totalDiscountAmount = 0,
+                status = SaleStatus.COMPLETED,
+                paymentMethod = PaymentMethod.CASH,
+                paymentStatus = 'APPROVED',
+                deliveryMethod = 'PICKUP',
+                storeLocation,
+                receiptType = 'TICKET',
+                receiptNumber,
+            } = req.body;
+
 
             const validatedItems = [];
 
             for (const item of items) {
-                const product = await Product.findById(item.productId).session(session);
-                if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
-                if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
+                const product = await Product.findById(item.product).session(session);
+                if (!product) throw new Error(`Producto no encontrado: ${item.product}`);
+                if (product.stock < item.quantity) throw new Error(`Stock insuficiente para: ${product.nombre}`);
 
                 validatedItems.push({
                     product: product._id,
                     quantity: item.quantity,
                     price: product.precio,
-                    costo: product.costo // Asumiendo que el modelo de producto tiene un campo costo
+                    cost: product.costo
                 });
 
                 product.stock -= item.quantity;
                 await product.save({ session });
-            }
+            };
+
+            const totalPrice = validatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0) - totalDiscountAmount;
 
             const sale = new Sale({
-                customerDNI,
+                customer: customerId || undefined,
+                customerSnapshot: customerSnapshot || undefined,
                 employee,
                 items: validatedItems,
+                totalPrice,
                 totalDiscountAmount,
-                source,
+                receiptType,
+                receiptNumber,
                 status,
                 paymentMethod,
                 paymentStatus,
-                order
+                deliveryMethod,
+                storeLocation
             });
 
             await sale.save({ session });
@@ -235,7 +244,7 @@ export class SaleController {
                             $sum: {
                                 $multiply: [
                                     "$items.quantity",
-                                    { $ifNull: ["$items.costo", "$items.price"] }  // Usa costo si existe, si no, el mismo precio
+                                    { $ifNull: ["$items.cost", "$items.price"] }  // Usa costo si existe, si no, el mismo precio
                                 ]
                             }
                         }

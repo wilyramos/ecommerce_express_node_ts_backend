@@ -309,6 +309,8 @@ export class CategoryController {
     // Traer todas las subcategorias pobladas
     static async getAllSubcategoriesPobladas(req: Request, res: Response) {
         try {
+            // validate 
+
             const categories = await Category.find({ parent: { $ne: null } })
                 .select('_id nombre slug descripcion parent attributes')
                 .populate('parent', '_id nombre slug')
@@ -321,7 +323,7 @@ export class CategoryController {
 
             res.status(200).json(categories);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las subcategorias', error });
+            res.status(500).json({ message: 'Error al obtener las subcategorias' });
             return;
         }
     }

@@ -1,27 +1,34 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
-import { IOrder, PaymentStatus } from './Order';
+import { PaymentStatus } from './Order';
 
-// Fuente de la venta
-export enum SaleSource {
-    ONLINE = 'ONLINE',
-    POS = 'POS',
-}
+// 
 
 // Estado de la venta
 export enum SaleStatus {
-    COMPLETADA = 'COMPLETADA',
-    REEMBOLSADA = 'REEMBOLSADA',
-    ANULADA = 'ANULADA',
+    PENDING = 'PENDING',           // Venta registrada pero aún no confirmada (ej: carrito / preventa)
+    COMPLETED = 'COMPLETED',       // Venta finalizada con éxito
+    PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED', // Algunos productos devueltos
+    REFUNDED = 'REFUNDED',         // Venta devuelta completamente
+    CANCELED = 'CANCELED',         // Venta anulada antes de completarse
 }
+
+export enum PaymentMethod {
+    CASH = 'CASH',
+    CARD = 'CARD',
+    YAPE = 'YAPE',
+    PLIN = 'PLIN',
+    TRANSFER = 'TRANSFER',
+}
+
 
 // Producto vendido
 interface ISaleItem {
     product: Types.ObjectId | IProduct;
     quantity: number;
     price: number; // Precio unitario
-    costo: number;
+    cost: number; // Costo unitario en el momento de la venta
 }
 
 // Cliente sin cuenta registrada
@@ -53,9 +60,6 @@ export interface ISale extends Document {
     receiptType?: 'TICKET' | 'BOLETA' | 'FACTURA';
     receiptNumber?: string;
 
-    source: SaleSource;
-    order?: Types.ObjectId | IOrder;
-
     status: SaleStatus;
     statusHistory: ISaleStatusHistory[];
 
@@ -74,6 +78,7 @@ const saleItemSchema = new Schema<ISaleItem>({
     product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
+    cost: { type: Number, min: 0, default: 0 },
 }, { _id: false });
 
 const customerSnapshotSchema = new Schema<ISaleCustomerSnapshot>({
@@ -106,21 +111,16 @@ const saleSchema = new Schema<ISale>({
     totalDiscountAmount: { type: Number, default: 0, min: 0 },
 
     // Comprobante
-    receiptType: { type: String, enum: ['BOLETA', 'FACTURA'], default: 'BOLETA' },
+    receiptType: { type: String, enum: ['TICKET', 'BOLETA', 'FACTURA'], default: 'TICKET' },
     receiptNumber: { type: String },
 
-    // Origen y enlace con orden online
-    source: { type: String, enum: Object.values(SaleSource), required: true },
-    order: { type: Schema.Types.ObjectId, ref: 'Order' },
-
     // Estado y seguimiento
-    status: { type: String, enum: Object.values(SaleStatus), default: SaleStatus.COMPLETADA },
+    status: { type: String, enum: Object.values(SaleStatus), default: SaleStatus.COMPLETED },
     statusHistory: { type: [saleStatusHistorySchema], default: [] },
 
     // Pago
-    paymentMethod: { 
-        type: String, required: false, default: 'CASH',
-     },
+    paymentMethod: { type: String, enum: Object.values(PaymentMethod), default: PaymentMethod.CASH },
+
     paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.APPROVED },
     paymentId: { type: String },
 
@@ -142,7 +142,6 @@ saleSchema.pre<ISale>('save', function (next) {
 // Índices útiles
 saleSchema.index({ customer: 1 });
 saleSchema.index({ employee: 1 });
-saleSchema.index({ order: 1 }, { sparse: true });
 saleSchema.index({ createdAt: -1 });
 
 export const Sale = mongoose.model<ISale>('Sale', saleSchema);
