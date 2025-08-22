@@ -71,4 +71,19 @@ router.get('/report',
     SaleController.getSalesSummary,
 )
 
+// GET TOP PRODUCTS
+router.get('/report/top-products',
+    // authenticate,
+    // isAdminOrVendedor,
+    SaleController.getTopProducts,
+)
+
+// GET REPORTS BY VENDORS
+
+router.get("/report/vendors",
+    // authenticate,
+    // isAdminOrVendedor,
+    SaleController.getReportByVendors,
+)
+    
 export default router;

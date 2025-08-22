@@ -1,9 +1,9 @@
 import Order, { OrderStatus, PaymentStatus } from '../models/Order';
 import { Request, Response } from 'express';
-import { OrderEmail } from '../emails/OrderEmailResend';
 import mongoose from 'mongoose';
 import Product from '../models/Product';
-import { payment } from '../utils/mercadopago';
+import { startOfDay, endOfDay, parseISO } from 'date-fns';
+
 
 
 export class OrderController {
@@ -119,7 +119,6 @@ export class OrderController {
         }
     }
 
-
     // Trear todas las orders para el administrador
     static async getOrders(req: Request, res: Response) {
         try {
@@ -213,7 +212,6 @@ export class OrderController {
         }
     }
 
-
     static async getOrderById(req: Request, res: Response) {
         try {
             const { id } = req.params;
@@ -231,7 +229,7 @@ export class OrderController {
 
             if (rol !== 'administrador' && order.user._id.toString() !== userId.toString()) {
                 res.status(403).json({ message: 'No tienes permiso para acceder a esta orden' });
-                return; 
+                return;
             }
 
             res.status(200).json(order);
@@ -241,7 +239,6 @@ export class OrderController {
             return;
         }
     }
-
 
     static async createOrderFromPayment(req: Request, res: Response) {
         try {
@@ -274,6 +271,85 @@ export class OrderController {
 
         } catch (error) {
             console.error('❌ Error al guardar orden desde webhook:', error);
+        }
+    }
+
+    // *** REPORTS ***
+
+
+    static async getSummaryOrders(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== "string" || typeof fechaFin !== "string") {
+                res.status(400).json({ message: "Debe proporcionar fechaInicio y fechaFin válidas" });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const orders = await Order.find({
+                createdAt: { $gte: startDate, $lte: endDate }
+            }).populate("items.productId");
+
+            // Inicializar métricas
+            let grossSales = 0;
+            let netSales = 0;
+            let numberOrdersPagadas = 0;
+            let numberOrdersPendientes = 0;
+            let numberOrdersCanceladas = 0;
+            let totalUnitsSold = 0;
+            let margin = 0;
+
+            for (const order of orders) {
+                grossSales += order.totalPrice;
+
+                const isPaid = order.payment.status === PaymentStatus.APPROVED;
+                const isPending = order.payment.status === PaymentStatus.PENDING;
+                const isCanceled = order.status === "canceled";
+
+                if (isPaid) {
+                    numberOrdersPagadas++;
+                    netSales += order.totalPrice;
+
+                    for (const item of order.items) {
+                        const product = item.productId as any;
+                        totalUnitsSold += item.quantity;
+
+                        if (product?.costo != null) {
+                            margin += (item.price - product.costo) * item.quantity;
+                        }
+                    }
+                }
+
+                if (isPending) numberOrdersPendientes++;
+                if (isCanceled) numberOrdersCanceladas++;
+            }
+
+            const avgPaidOrderValue = numberOrdersPagadas > 0 ? netSales / numberOrdersPagadas : 0;
+            const marginRate = netSales > 0 ? (margin / netSales) * 100 : 0;
+
+            const summary = {
+                grossSales,
+                netSales,
+                numberOrders: orders.length,
+                numberOrdersPagadas,
+                numberOrdersPendientes,
+                numberOrdersCanceladas,
+                totalUnitsSold,
+                margin,
+                marginRate: `${marginRate.toFixed(2)}%`,
+                avgPaidOrderValue
+            };
+
+            res.json({ summary });
+            return;
+
+        } catch (error) {
+            console.error("Error en getSummaryOrders:", error);
+            res.status(500).json({ message: "Error al obtener resumen de órdenes" });
+            return;
         }
     }
 }

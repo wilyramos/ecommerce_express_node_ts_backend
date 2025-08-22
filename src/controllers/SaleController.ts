@@ -201,7 +201,6 @@ export class SaleController {
         }
     }
 
-
     static async getSalesSummary(req: Request, res: Response) {
         try {
             const { fechaInicio, fechaFin } = req.query;
@@ -266,6 +265,141 @@ export class SaleController {
             console.error("Error al obtener el resumen de ventas:", error);
             res.status(500).json({ message: `Error al obtener el resumen de ventas: ${error.message}` });
             return;
+        }
+    }
+
+    // para obtener top de productos mas vendidos
+
+    static async getTopProducts(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin, limit = 10 } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== 'string' || typeof fechaFin !== 'string') {
+                res.status(400).json({ message: 'Debe proporcionar fechaInicio y fechaFin válidas' });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const topProducts = await Sale.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startDate, $lte: endDate },
+                        status: "COMPLETED" // solo ventas completadas
+                    }
+                },
+                { $unwind: "$items" },
+                {
+                    $group: {
+                        _id: "$items.product", // ahora usamos items.product (ObjectId de Product)
+                        totalQuantity: { $sum: "$items.quantity" },
+                        totalSales: { $sum: { $multiply: ["$items.quantity", "$items.price"] } },
+                        totalCost: { $sum: { $multiply: ["$items.quantity", "$items.cost"] } }
+                    }
+                },
+                {
+                    $addFields: {
+                        margin: { $subtract: ["$totalSales", "$totalCost"] }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "products", // nombre de la colección de productos en MongoDB
+                        localField: "_id",
+                        foreignField: "_id",
+                        as: "product"
+                    }
+                },
+                { $unwind: "$product" },
+                {
+                    $project: {
+                        _id: 0,
+                        productId: "$_id",
+                        nombre: "$product.nombre", // ajusta al campo real de tu Product
+                        totalQuantity: 1,
+                        totalSales: 1,
+                        margin: 1
+                    }
+                },
+                { $sort: { totalQuantity: -1 } }, // Ordenar por cantidad vendida
+                { $limit: Number(limit) }
+            ]);
+
+            res.json({ topProducts });
+            return;
+        } catch (error) {
+            console.error("Error al obtener los productos más vendidos:", error);
+            res.status(500).json({ message: `Error al obtener los productos más vendidos: ${error.message}` });
+            return;
+        }
+    }
+
+    static async getReportByVendors(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin} = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== 'string' || typeof fechaFin !== 'string') {
+                res.status(400).json({ message: 'Debe proporcionar fechaInicio y fechaFin válidas' });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const report = await Sale.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startDate, $lte: endDate },
+                        status: "COMPLETED"
+                    }
+                },
+                // Desglosamos items para contar unidades
+                { $unwind: "$items" },
+                {
+                    $group: {
+                        _id: "$employee", // agrupamos por vendedor
+                        totalUnits: { $sum: "$items.quantity" },
+                        totalSales: { $sum: { $multiply: ["$items.quantity", "$items.price"] } },
+                        totalCost: { $sum: { $multiply: ["$items.quantity", "$items.cost"] } },
+                        // número de ventas únicas (facturas) → usamos $addToSet
+                        salesSet: { $addToSet: "$_id" }
+                    }
+                },
+                {
+                    $addFields: {
+                        numSales: { $size: "$salesSet" }, // cantidad de ventas únicas
+                        margin: { $subtract: ["$totalSales", "$totalCost"] }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "users", // colección de empleados
+                        localField: "_id",
+                        foreignField: "_id",
+                        as: "employee"
+                    }
+                },
+                { $unwind: "$employee" },
+                {
+                    $project: {
+                        _id: 0,
+                        employeeId: "$_id",
+                        nombre: "$employee.nombre", // ajusta según tu User model
+                        numSales: 1,
+                        totalUnits: 1,
+                        totalSales: 1,
+                        margin: 1
+                    }
+                },
+                { $sort: { totalSales: -1 } },
+            ]);
+
+            res.json({ report });
+            return;
+
+        } catch (error) {
+
         }
     }
 }

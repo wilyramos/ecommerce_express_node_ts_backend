@@ -84,6 +84,12 @@ router.get('/payment-status/:status',
 );
 
 
+// REPORTS
 
+router.get('/reports/sales-summary',
+    // authenticate,
+    // isAdmin,
+    OrderController.getSummaryOrders
+);
 
 export default router;
