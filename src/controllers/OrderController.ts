@@ -343,12 +343,63 @@ export class OrderController {
                 avgPaidOrderValue
             };
 
-            res.json({ summary });
+            res.json(summary);
             return;
 
         } catch (error) {
             console.error("Error en getSummaryOrders:", error);
             res.status(500).json({ message: "Error al obtener resumen de órdenes" });
+            return;
+        }
+    }
+
+    static async getOrdersOverTime(req: Request, res: Response) {
+
+        try {
+            const { fechaInicio, fechaFin } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== "string" || typeof fechaFin !== "string") {
+                res.status(400).json({ message: "Debe proporcionar fechaInicio y fechaFin válidas" });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+            const dateFormat = "%Y-%m-%d"; // Formato de fecha para agrupar por día
+
+            const report = await Order.aggregate([
+                {
+                    $match: {
+                        "payment.status": PaymentStatus.APPROVED,
+                        createdAt: { $gte: startDate, $lte: endDate }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: { format: dateFormat, date: "$createdAt" }
+
+                        },
+                        totalSales: { $sum: "$totalPrice" },
+                        numberOfOrders: { $sum: 1 },
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        date: "$_id",
+                        numberOfOrders: 1,
+                        totalSales: 1
+                    }
+                },
+                { $sort: { date: 1 } }
+            ]);
+
+            res.json(report);
+            return
+        } catch (error) {
+            console.error("Error en getOrdersOverTime:", error);
+            res.status(500).json({ message: "Error al obtener órdenes por tiempo" });
             return;
         }
     }
