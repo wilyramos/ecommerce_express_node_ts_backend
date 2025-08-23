@@ -34,9 +34,6 @@ router.get('/',
     OrderController.getOrders
 );
 
-
-
-
 // Update Order Status
 router.put('/:id',
     authenticate,
@@ -101,9 +98,23 @@ router.get('/reports/sales-over-time',
 
 // obtener el numero de ordenes por estado
 router.get('/reports/orders-by-status',
-    // authenticate,
-    // isAdmin,
+    authenticate,
+    isAdmin,
     OrderController.getReportOrdersByStatus
+);
+
+// get orders by payment method
+router.get('/reports/orders-by-payment-method',
+    authenticate,
+    isAdmin,
+    OrderController.getReportOrdersByMethodPayment
+);
+
+// get orders by city location
+router.get('/reports/orders-by-city',
+    authenticate,
+    isAdmin,
+    OrderController.getReportOrdersByCity
 );
 
 export default router;

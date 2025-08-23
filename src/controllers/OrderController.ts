@@ -446,4 +446,94 @@ export class OrderController {
             return;
         }
     }
+
+    static async getReportOrdersByMethodPayment(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== "string" || typeof fechaFin !== "string") {
+                res.status(400).json({ message: "Debe proporcionar fechaInicio y fechaFin válidas" });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const report = await Order.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startDate, $lte: endDate }
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$payment.method",
+                        numberOfOrders: { $sum: 1 },
+                        totalSales: { $sum: "$totalPrice" },
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        method: "$_id",
+                        numberOfOrders: 1,
+                        totalSales: 1
+                    }
+                },
+                { $sort: { method: 1 } }
+            ]);
+
+            res.json(report);
+            return
+        } catch (error) {
+            console.error("Error en getReportOrdersByMethodPayment:", error);
+            res.status(500).json({ message: "Error al obtener reporte de órdenes por método de pago" });
+            return;
+        }
+    }
+
+    static async getReportOrdersByCity(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== "string" || typeof fechaFin !== "string") {
+                res.status(400).json({ message: "Debe proporcionar fechaInicio y fechaFin válidas" });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const report = await Order.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startDate, $lte: endDate }
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$shippingAddress.departamento",
+                        numberOfOrders: { $sum: 1 },
+                        totalSales: { $sum: "$totalPrice" },
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        department: "$_id",
+                        numberOfOrders: 1,
+                        totalSales: 1
+                    }
+                },
+                { $sort: { department: 1 } }
+            ]);
+
+            res.json(report);
+            return
+        } catch (error) {
+            console.error("Error en getReportOrdersByCity:", error);
+            res.status(500).json({ message: "Error al obtener reporte de órdenes por ciudad" });
+            return;
+        }
+    }
 }
