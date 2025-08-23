@@ -18,6 +18,7 @@ export interface IProduct extends Document {
     esDestacado?: boolean;
     esNuevo?: boolean;
     atributos?: Record<string, string>;
+    especificaciones?: Record<string, string>;
 }
 
 // Subschemas
@@ -39,6 +40,7 @@ const productSchema = new Schema<IProduct>(
         esDestacado: { type: Boolean, default: false },
         esNuevo: { type: Boolean, default: false },
         atributos: { type: Map, of: String, default: {} },
+        especificaciones: { type: Map, of: String, default: {} },// TODO:   iMPLEMENTAR ESTO EN EL FRONT
     },
     { timestamps: true }
 );

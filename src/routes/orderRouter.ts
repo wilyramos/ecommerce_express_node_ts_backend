@@ -99,4 +99,11 @@ router.get('/reports/sales-over-time',
     OrderController.getOrdersOverTime
 );
 
+// obtener el numero de ordenes por estado
+router.get('/reports/orders-by-status',
+    // authenticate,
+    // isAdmin,
+    OrderController.getReportOrdersByStatus
+);
+
 export default router;

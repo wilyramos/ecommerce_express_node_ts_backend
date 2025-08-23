@@ -403,4 +403,47 @@ export class OrderController {
             return;
         }
     }
+
+    static async getReportOrdersByStatus(req: Request, res: Response) {
+        try {
+            const { fechaInicio, fechaFin } = req.query;
+
+            if (!fechaInicio || !fechaFin || typeof fechaInicio !== "string" || typeof fechaFin !== "string") {
+                res.status(400).json({ message: "Debe proporcionar fechaInicio y fechaFin válidas" });
+                return;
+            }
+
+            const startDate = startOfDay(parseISO(fechaInicio));
+            const endDate = endOfDay(parseISO(fechaFin));
+
+            const report = await Order.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startDate, $lte: endDate }
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$status",
+                        numberOfOrders: { $sum: 1 },
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        status: "$_id",
+                        numberOfOrders: 1,
+                    }
+                },
+                { $sort: { status: 1 } }
+            ]);
+
+            res.json(report);
+            return
+        } catch (error) {
+            console.error("Error en getReportOrdersByStatus:", error);
+            res.status(500).json({ message: "Error al obtener reporte de órdenes por estado" });
+            return;
+        }
+    }
 }
