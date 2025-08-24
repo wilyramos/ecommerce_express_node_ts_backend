@@ -48,6 +48,13 @@ router.get('/',
     SaleController.getSales,
 );
 
+// Generar pdf
+router.get('/:id/pdf',
+    // authenticate,
+    // isAdminOrVendedor,
+    SaleController.getSalePdf,
+);
+
 // Endpoint para obtener una venta por ID
 // router.get('/:id',
 //     authenticate,
@@ -57,8 +64,8 @@ router.get('/',
 //     // SaleController.getSaleById,
 // );
 
-// Get reports sales
-
+// ****************//
+// REPORTS
 router.get('/report/metrics',
     // authenticate,
     // isAdminOrVendedor,

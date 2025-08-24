@@ -4,6 +4,9 @@ import { Sale } from '../models/Sale';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO, differenceInDays } from 'date-fns';
 import { SaleStatus, PaymentMethod } from '../models/Sale';
+import PDFDocument from "pdfkit";
+import { generateBoletaPDF, generateFacturaPDF, generateTicketPDF } from '../utils/generateTicket';
+
 
 
 export class SaleController {
@@ -69,7 +72,10 @@ export class SaleController {
             await sale.save({ session });
             await session.commitTransaction();
 
-            res.status(201).json({ message: 'Venta creada correctamente' });
+            res.status(201).json({ 
+                message: 'Venta creada correctamente',
+                saleId: sale._id
+             });
         } catch (error) {
             await session.abortTransaction();
             res.status(500).json({ message: `Error al crear la venta: ${error.message}` });
@@ -337,7 +343,7 @@ export class SaleController {
 
     static async getReportByVendors(req: Request, res: Response) {
         try {
-            const { fechaInicio, fechaFin} = req.query;
+            const { fechaInicio, fechaFin } = req.query;
 
             if (!fechaInicio || !fechaFin || typeof fechaInicio !== 'string' || typeof fechaFin !== 'string') {
                 res.status(400).json({ message: 'Debe proporcionar fechaInicio y fechaFin válidas' });
@@ -400,6 +406,53 @@ export class SaleController {
 
         } catch (error) {
 
+        }
+    }
+
+    static async getSalePdf(req: Request, res: Response) {
+        const saleId = req.params.id;
+
+        try {
+            const sale = await Sale.findById(saleId).populate("items.product");
+
+            if (!sale) {
+                res.status(404).json({ message: "Venta no encontrada" });
+                return;
+            }
+
+            const doc = new PDFDocument();
+            let buffers: Buffer[] = [];
+
+            doc.on("data", buffers.push.bind(buffers));
+            doc.on("end", () => {
+                const pdfData = Buffer.concat(buffers);
+                res.setHeader("Content-Type", "application/pdf");
+                res.setHeader(
+                    "Content-Disposition",
+                    `attachment; filename="${sale.receiptType}-${saleId}.pdf"`
+                );
+                res.send(pdfData);
+            });
+
+            switch (sale.receiptType) {
+                case "TICKET":
+                    generateTicketPDF(doc, sale);
+                    break;
+                case "BOLETA":
+                    generateBoletaPDF(doc, sale);
+                    break;
+                case "FACTURA":
+                    generateFacturaPDF(doc, sale);
+                    break;
+                default:
+                    generateTicketPDF(doc, sale);
+            }
+
+            doc.end();
+        } catch (error) {
+            console.error("Error al generar PDF:", error);
+            res.status(500).json({ message: "Error al generar PDF" });
+            return;
         }
     }
 }
