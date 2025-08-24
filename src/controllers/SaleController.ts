@@ -5,8 +5,7 @@ import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO, differenceInDays } from 'date-fns';
 import { SaleStatus, PaymentMethod } from '../models/Sale';
 import PDFDocument from "pdfkit";
-import { generateBoletaPDF, generateFacturaPDF, generateTicketPDF } from '../utils/generateTicket';
-
+import { generateSalePDF } from '../utils/generateTicket';
 
 
 export class SaleController {
@@ -72,10 +71,10 @@ export class SaleController {
             await sale.save({ session });
             await session.commitTransaction();
 
-            res.status(201).json({ 
+            res.status(201).json({
                 message: 'Venta creada correctamente',
                 saleId: sale._id
-             });
+            });
         } catch (error) {
             await session.abortTransaction();
             res.status(500).json({ message: `Error al crear la venta: ${error.message}` });
@@ -420,7 +419,7 @@ export class SaleController {
                 return;
             }
 
-            const doc = new PDFDocument();
+            const doc = new PDFDocument({ size: "A4", margin: 40 });
             let buffers: Buffer[] = [];
 
             doc.on("data", buffers.push.bind(buffers));
@@ -434,19 +433,8 @@ export class SaleController {
                 res.send(pdfData);
             });
 
-            switch (sale.receiptType) {
-                case "TICKET":
-                    generateTicketPDF(doc, sale);
-                    break;
-                case "BOLETA":
-                    generateBoletaPDF(doc, sale);
-                    break;
-                case "FACTURA":
-                    generateFacturaPDF(doc, sale);
-                    break;
-                default:
-                    generateTicketPDF(doc, sale);
-            }
+            // Genera el PDF según tipo
+            generateSalePDF(doc, sale);
 
             doc.end();
         } catch (error) {
