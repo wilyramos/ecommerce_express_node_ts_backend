@@ -11,6 +11,7 @@ import checkoutRouter from './routes/checkoutRouter'
 import saleRouter from './routes/saleRouter'
 import webhookRouter from './routes/webhookRouter'
 import userRouter from './routes/userRouter'
+import purchaseRouter from './routes/purchaseRouter'
 
 // Connect to MongoDB
 
@@ -39,7 +40,9 @@ app.use('/api/sales', saleRouter)
 app.use('/api/webhooks', 
     express.urlencoded({ extended: true }),
     webhookRouter
-)
+),
+app.use('/api/purchases', purchaseRouter)
+
 
 
 export default app

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { AuthController } from '../controllers/AuthController';
 import { handleInputErrors } from '../middleware/validation';
-import { authenticate } from '../middleware/auth';
+import { authenticate, isAdminOrVendedor } from '../middleware/auth';
 
 
 const router = Router();
@@ -57,11 +57,12 @@ router.get('/validate-token/:token',
 router.post('/create-user-if-not-exists',
     body('email').isEmail().withMessage('Correo electrónico inválido'),
     body('nombre').notEmpty().withMessage('Nombre es requerido'),
-    body('apellidos').notEmpty().withMessage('Apellidos son requeridos'),
+    body('apellidos').optional().isString().withMessage('Apellidos deben ser una cadena de texto'),
     body('tipoDocumento').isIn(['DNI', 'RUC', 'CE']).withMessage('Tipo de documento inválido'),
     body('numeroDocumento').notEmpty().withMessage('Número de documento es requerido'),
     body('telefono').optional().isString().withMessage('Teléfono debe ser una cadena de texto'),
     handleInputErrors,
+    isAdminOrVendedor,
     AuthController.createUserIfNotExists,
 )
 
