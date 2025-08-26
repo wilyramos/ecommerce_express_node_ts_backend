@@ -40,6 +40,15 @@ router.post('/',
     SaleController.createSale,
 );
 
+// Endpoint para obtener una venta por ID
+router.get('/:id',
+    authenticate,
+    isAdminOrVendedor,
+    param('id').isMongoId().withMessage('ID de venta inválido'),
+    handleInputErrors,
+    SaleController.getSale,
+);
+
 // Endpoint para obtener ventas con filtros opcionales en el query
 
 router.get('/',

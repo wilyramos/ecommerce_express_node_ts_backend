@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
 import { PaymentStatus } from './Order';
+import { Counter } from './Counter';
 
 // 
 
@@ -137,6 +138,28 @@ saleSchema.pre<ISale>('save', function (next) {
     const itemsTotal = this.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     this.totalPrice = Math.max(0, itemsTotal - (this.totalDiscountAmount || 0));
     next();
+});
+
+// Agregar el número de comprobante
+
+saleSchema.pre<ISale>("save", async function (next) {
+    if (!this.isNew || this.receiptNumber) return next();
+
+    try {
+        const counter = await Counter.findOneAndUpdate(
+            { name: this.receiptType },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        // Ejemplo: B001-00012345
+        this.receiptNumber = `${this.receiptType[0]}001-${counter.seq
+            .toString()
+            .padStart(8, "0")}`;
+
+        next();
+    } catch (err) {
+        next(err as any);
+    }
 });
 
 // Índices útiles

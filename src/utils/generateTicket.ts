@@ -90,7 +90,6 @@ export const generateSalePDF = (doc: PDFKit.PDFDocument, sale: ISale) => {
        .text(formatCurrency(sale.totalPrice), { align: "right" });
     
     doc.font("Helvetica").moveDown(2);
-    doc.text(`Método de Pago: ${sale.paymentMethod}`);
     
     // --- Footer ---
     doc.moveDown();

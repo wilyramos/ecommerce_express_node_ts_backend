@@ -84,11 +84,26 @@ export class SaleController {
         }
     }
 
+    static async getSale(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const sale = await Sale.findById(id).populate({ path: 'items.product', select: 'nombre imagenes' });
+            if (!sale) {
+                res.status(404).json({ message: 'Venta no encontrada' });
+                return;
+            }
+            res.json(sale);
+        } catch (error) {
+            res.status(500).json({ message: `Error al obtener la venta: ${error.message}` });
+        }
+    }
+
     static async getSales(req: Request, res: Response) {
         try {
             const { search, fechaInicio, fechaFin, page = '1', limit = '10' } = req.query;
+            const userId = req.user._id;
 
-            const query: any = {};
+            const query: any = { employee: userId };
 
             // Filtro por DNI
             if (search && typeof search === 'string') {
@@ -146,6 +161,7 @@ export class SaleController {
             });
         } catch (error) {
             res.status(500).json({ message: `Error al obtener las ventas: ${error.message}` });
+            return;
         }
     }
 
