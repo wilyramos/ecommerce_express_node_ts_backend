@@ -81,7 +81,7 @@ router.get('/report/metrics',
     SaleController.getSalesReport,
 )
 
-router.get('/report',
+router.get('/report/summary',
     // authenticate,
     // isAdminOrVendedor,
     SaleController.getSalesSummary,

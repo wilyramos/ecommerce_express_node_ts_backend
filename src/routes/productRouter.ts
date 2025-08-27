@@ -88,6 +88,13 @@ router.get('/search',
     ProductController.searchProducts
 );
 
+// get a list of products 
+
+router.get('/list',
+    
+    ProductController.searchListProducts
+);
+
 router.get('/filter',
 
     body('page')

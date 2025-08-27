@@ -101,6 +101,8 @@ export class SaleController {
     static async getSales(req: Request, res: Response) {
         try {
             const { search, fechaInicio, fechaFin, page = '1', limit = '10' } = req.query;
+
+            console.log("Fechas:", fechaInicio, "a", fechaFin);
             const userId = req.user._id;
 
             const query: any = { employee: userId };
@@ -225,6 +227,8 @@ export class SaleController {
     static async getSalesSummary(req: Request, res: Response) {
         try {
             const { fechaInicio, fechaFin } = req.query;
+
+            console.log("Fechas:", fechaInicio, "a", fechaFin);
 
             if (!fechaInicio || !fechaFin || typeof fechaInicio !== 'string' || typeof fechaFin !== 'string') {
                 res.status(400).json({ message: 'Debe proporcionar fechaInicio y fechaFin válidas' });

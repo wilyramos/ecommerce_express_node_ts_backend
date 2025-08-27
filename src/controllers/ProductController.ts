@@ -136,6 +136,32 @@ export class ProductController {
         }
     }
 
+    static async searchListProducts(req: Request, res: Response) {
+
+        const { q } = req.query;
+
+        if (!q || typeof q !== "string") {
+            res.status(400).json({ message: 'Invalid query' });
+            return;
+        }
+        
+        try {
+            const products = await Product.find({
+                $or: [
+                    { nombre: { $regex: q, $options: "i" } },
+                    { descripcion: { $regex: q, $options: "i" } },
+                    { sku: { $regex: q, $options: "i" } },
+                    { barcode: { $regex: q, $options: "i" } },
+                ]
+            });
+
+            res.status(200).json(products);
+        } catch (error) {
+            res.status(500).json({ message: 'Error searching products' });
+            return;
+        }
+    }
+
     // Get product with pagination
     static async getNewProducts(req: Request, res: Response) {
         try {
