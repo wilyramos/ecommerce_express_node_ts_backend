@@ -66,7 +66,7 @@ export class ProductController {
                 slug,
                 descripcion,
                 precio: Number(precio),
-                costo: Number(costo),
+                costo,
                 imagenes: imagenes,
                 categoria,
                 stock: Number(stock),
@@ -85,7 +85,7 @@ export class ProductController {
             res.status(201).json({ message: 'Product created successfully' });
 
         } catch (error) {
-            // console.error('Error creating product:', error);
+            console.error('Error creating product:', error);
             res.status(500).json({ message: 'Error creating product' });
             return;
         }

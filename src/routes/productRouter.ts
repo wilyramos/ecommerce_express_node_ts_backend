@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { ProductController } from '../controllers/ProductController';
 import { handleInputErrors } from '../middleware/validation';
-import { authenticate, isAdmin } from '../middleware/auth';
+import { authenticate, isAdmin, isAdminOrVendedor } from '../middleware/auth';
 
 
 const router = Router();
@@ -63,7 +63,7 @@ router.post('/',
 
 router.get('/', 
     authenticate,
-    isAdmin,
+    isAdminOrVendedor,
     ProductController.getProducts
 );
 
