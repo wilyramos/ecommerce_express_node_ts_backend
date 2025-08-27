@@ -140,6 +140,7 @@ export class ProductController {
 
         const { q } = req.query;
 
+        const limit = 10;
         if (!q || typeof q !== "string") {
             res.status(400).json({ message: 'Invalid query' });
             return;
@@ -153,7 +154,7 @@ export class ProductController {
                     { sku: { $regex: q, $options: "i" } },
                     { barcode: { $regex: q, $options: "i" } },
                 ]
-            });
+            }).limit(limit);
 
             res.status(200).json(products);
         } catch (error) {
