@@ -145,7 +145,7 @@ export class ProductController {
             res.status(400).json({ message: 'Invalid query' });
             return;
         }
-        
+
         try {
             const products = await Product.find({
                 $or: [
@@ -383,6 +383,25 @@ export class ProductController {
         } catch (error) {
             console.error('Error searching products:', error);
             res.status(500).json({ message: 'Error al buscar productos' });
+        }
+    }
+
+    static async searchProductsIndex(req: Request, res: Response) {
+        try {
+            const { query } = req.query;
+            const searchText = query?.toString().trim() || "";
+
+            const products = await Product.find({ nombre: { $regex: searchText, $options: "i" } })
+                .select("nombre slug")
+                .limit(10);
+
+            // Responder directamente con el array
+            res.status(200).json(products);
+
+        } catch (error) {
+            console.error('Error searching products in index:', error);
+            res.status(500).json({ message: 'Error al buscar productos en el índice' });
+            return;
         }
     }
 

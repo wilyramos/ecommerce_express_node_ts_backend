@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
+import { body, query } from 'express-validator';
 import { ProductController } from '../controllers/ProductController';
 import { handleInputErrors } from '../middleware/validation';
 import { authenticate, isAdmin, isAdminOrVendedor } from '../middleware/auth';
@@ -86,6 +86,15 @@ router.get('/search',
         .withMessage('Limit must be a number'),
     handleInputErrors,
     ProductController.searchProducts
+);
+
+// Search products in index
+router.get('/searchindex',
+    query('query')
+        .isString()
+        .withMessage('Query must be a string'),
+    handleInputErrors,
+    ProductController.searchProductsIndex
 );
 
 // get a list of products 
