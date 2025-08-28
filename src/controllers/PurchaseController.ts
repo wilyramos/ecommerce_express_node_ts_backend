@@ -61,11 +61,12 @@ export class PurchaseController {
         const { id } = req.params;
 
         try {
-            const purchase = await Purchase.findById(id).populate('items.productId');
+            const purchase = await Purchase.findById(id).populate('items.productId', 'nombre sku barcode imagenes');
             if (!purchase) {
                 res.status(404).json({ message: 'Compra no encontrada' });
                 return;
             }
+
             res.json(purchase);
         } catch (error: any) {
             console.error(error);
@@ -75,19 +76,48 @@ export class PurchaseController {
 
     static async getPurchases(req: Request, res: Response) {
         try {
+            const { page = "1", limit = "10", numeroCompra, proveedor, fecha } = req.query;
 
-            const { query } = req;
-            const page = Number(query.page) || 0;
-            const limit = Number(query.limit) || 10;
+            const pageNumber = Number(page) || 1;
+            const limitNumber = Number(limit) || 10;
 
-            const purchases = await Purchase.find()
+            const filters: any = {}
+
+            // validar que el numeor de compra sea un number
+
+            if (numeroCompra) {
+                const parsedNumero = Number(numeroCompra);
+                if (!isNaN(parsedNumero)) {
+                    filters.numeroCompra = parsedNumero;
+                } else {
+                    res.status(400).json({ message: "El número de compra debe ser un número válido" });
+                    return;
+                }
+            } if (proveedor) {
+                filters.proveedor = { $regex: new RegExp(proveedor as string, "i") };
+            }
+
+            if (fecha) {
+                // ejemplo: fecha = "2025-08-27"
+                const start = new Date(fecha as string);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(fecha as string);
+                end.setHours(23, 59, 59, 999);
+                filters.createdAt = { $gte: start, $lte: end };
+            }
+
+            const purchases = await Purchase.find(filters)
                 .sort({ createdAt: -1 })
-                .limit(limit)
-                .skip(page * limit);
+                .limit(limitNumber)
+                .skip((pageNumber - 1) * limitNumber)
 
-            const total = await Purchase.countDocuments();
-            res.json({ 
-                total, page, limit, purchases 
+            const total = await Purchase.countDocuments(filters);
+
+            res.json({
+                total,
+                page: pageNumber,
+                limit: limitNumber,
+                purchases,
             });
         } catch (error: any) {
             console.error(error);

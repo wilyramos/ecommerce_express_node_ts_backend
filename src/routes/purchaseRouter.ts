@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
+import { body, query } from 'express-validator';
 import { handleInputErrors } from '../middleware/validation';
 import { authenticate, isAdminOrVendedor } from '../middleware/auth';
 import { PurchaseController } from '../controllers/PurchaseController';
@@ -16,7 +16,15 @@ router.post('/',
     // isAdminOrVendedor,
     PurchaseController.createPurchase
 );
-router.get('/', PurchaseController.getPurchases);
+
+router.get('/',
+   
+
+    handleInputErrors,
+    PurchaseController.getPurchases
+);
+
+
 router.get('/:id', PurchaseController.getPurchase);
 
 
