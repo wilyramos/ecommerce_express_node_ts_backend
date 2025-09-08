@@ -392,7 +392,7 @@ export class ProductController {
             const searchText = query?.toString().trim() || "";
 
             const products = await Product.find({ nombre: { $regex: searchText, $options: "i" } })
-                .select("nombre slug imagenes")
+                .select("nombre precio slug imagenes")
                 .limit(10);
 
             // Responder directamente con el array
