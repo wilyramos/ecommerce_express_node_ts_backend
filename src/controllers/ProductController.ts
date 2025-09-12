@@ -27,7 +27,7 @@ export class ProductController {
                 esDestacado,
                 esNuevo,
                 isActive,
-                atributos
+                atributos, especificaciones
             } = req.body;
             // validate category exists y no tiene subcategorías
             const [selectedCategory, hasChildren] = await Promise.all([
@@ -59,6 +59,12 @@ export class ProductController {
                 return;
             }
 
+            // Validate specifications if provided
+            if (especificaciones && !Array.isArray(especificaciones)) {
+                res.status(400).json({ message: 'Especificaciones deben ser un array' });
+                return;
+            }
+
             const slug = await generateUniqueSlug(nombre);
 
             const newProduct = {
@@ -76,6 +82,7 @@ export class ProductController {
                 esNuevo: esNuevo,
                 isActive: isActive,
                 atributos: atributos,
+                especificaciones: especificaciones,
             };
 
             // console.log(newProduct);
@@ -498,6 +505,7 @@ export class ProductController {
                 isActive,
                 atributos,
                 barcode,
+                especificaciones
             } = req.body;
 
             const productId = req.params.id;
@@ -547,6 +555,11 @@ export class ProductController {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
+            // Validar specifications si se proporcionan
+            if (especificaciones && !Array.isArray(especificaciones)) {
+                res.status(400).json({ message: 'Especificaciones deben ser un array' });
+                return;
+            }
 
             // Validate Slug
             const slug = slugify(nombre, { lower: true, strict: true });
@@ -572,8 +585,7 @@ export class ProductController {
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
             existingProduct.isActive = isActive !== undefined ? isActive : existingProduct.isActive;
-
-
+            existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
