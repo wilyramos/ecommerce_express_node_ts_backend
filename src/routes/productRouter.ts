@@ -174,6 +174,10 @@ router.get('/:slug/related', ProductController.getProductsRelated);
 // get Traer los productos destacados
 router.get('/destacados/all', ProductController.getDestacadosProducts);
 
+// get all products for sitemap
+
+router.get('/all/slug', ProductController.getAllProductsSlug);
+
 
 
 export default router;

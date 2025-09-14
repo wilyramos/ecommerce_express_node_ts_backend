@@ -846,4 +846,14 @@ export class ProductController {
             return;
         }
     }
+
+    static async getAllProductsSlug(req: Request, res: Response) {
+        try {
+            const products = await Product.find().select('slug updatedAt')
+            res.status(200).json(products);
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching all products slug' });
+            return;
+        }
+    }
 }
