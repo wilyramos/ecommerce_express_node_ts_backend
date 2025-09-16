@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
 import { ICategory } from './Category';
+import { IBrand } from './Brand';
 
 interface ISpecification {
     key: string;
@@ -14,6 +15,7 @@ export interface IProduct extends Document {
     costo?: number;
     imagenes?: string[];
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
+    brand?: mongoose.Types.ObjectId | PopulatedDoc<IBrand>;
     stock?: number;
     sku?: string;
     barcode?: string;
@@ -43,6 +45,7 @@ const productSchema = new Schema<IProduct>(
         costo: { type: Number, min: 0, default: 0 },
         imagenes: [{ type: String }],
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
+        brand: { type: Types.ObjectId, ref: 'Brand' },
         stock: { type: Number, min: 0, default: 0 },
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
