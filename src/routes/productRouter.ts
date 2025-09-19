@@ -41,6 +41,7 @@ router.post('/',
     body('categoria')
         .notEmpty()
         .withMessage('Category is required'),
+        
     body('stock')
         .notEmpty()
         .isNumeric()
@@ -143,6 +144,10 @@ router.delete('/:id', authenticate, isAdmin, ProductController.deleteProduct);
 router.get('/category/:categoryId',
     ProductController.getProductsByCategory);
 
+
+router.get('/brand/:brandSlug', ProductController.getProductsByBrandSlug);
+
+
 // router.get('/category/:categoryId', ProductController.getProductsByCategory);
 
 // uploadImage Product
@@ -177,6 +182,9 @@ router.get('/destacados/all', ProductController.getDestacadosProducts);
 // get all products for sitemap
 
 router.get('/all/slug', ProductController.getAllProductsSlug);
+
+// get products by brand
+
 
 
 

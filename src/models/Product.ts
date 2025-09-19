@@ -40,7 +40,7 @@ const productSchema = new Schema<IProduct>(
     {
         nombre: { type: String, required: true, trim: true },
         slug: { type: String, trim: true, unique: true },
-        descripcion: { type: String, trim: true },
+        descripcion: { type: String },
         precio: { type: Number, min: 0, default: 0 },
         costo: { type: Number, min: 0, default: 0 },
         imagenes: [{ type: String }],
