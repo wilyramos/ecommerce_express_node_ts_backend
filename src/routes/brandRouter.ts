@@ -38,6 +38,9 @@ router.put('/:id',
     BrandController.updateBrand,
 );
 
+// get brand by slug
+router.get('/slug/:slug', BrandController.getBrandBySlug);
+
 
 router.get('/active', BrandController.getActiveBrands);
 

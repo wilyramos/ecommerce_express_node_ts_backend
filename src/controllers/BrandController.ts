@@ -57,6 +57,21 @@ export class BrandController {
         }
     }
 
+    static async getBrandBySlug(req: Request, res: Response) {
+        const { slug } = req.params;
+        try {
+            const brand = await Brand.findOne({ slug });
+            if (!brand) {
+                res.status(404).json({ message: 'Brand not found' });
+                return;
+            }
+            res.status(200).json(brand);
+        } catch (error) {
+            console.error('Error fetching brand:', error);
+            res.status(500).json({ message: 'Server error' });
+        }
+    }
+
     static async updateBrand(req: Request, res: Response) {
         const { id } = req.params;
         const { nombre, descripcion, logo } = req.body;
