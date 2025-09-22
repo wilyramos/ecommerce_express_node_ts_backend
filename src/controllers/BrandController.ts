@@ -134,16 +134,16 @@ export class BrandController {
                 return;
             }
 
-            const resulst = await cloudinary.uploader.upload(file.path, {
+            const results = await cloudinary.uploader.upload(file.path, {
                 folder: "brands",
                 public_id: uuid(),
                 transformation: [
                     { width: 500, height: 500, crop: "limit" }
                 ]
             });
-            console.log('Cloudinary upload result:', resulst);
+            console.log('Cloudinary upload result:', results);
 
-            res.status(200).json({ message: 'Image uploaded successfully', image: resulst.secure_url });
+            res.status(200).json({ message: 'Image uploaded successfully', image: results.secure_url });
         } catch (error) {
             console.error('Error deleting brand:', error);
             res.status(500).json({ message: 'Server error in uploading image' });

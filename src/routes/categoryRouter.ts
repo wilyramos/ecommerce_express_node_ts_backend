@@ -7,12 +7,36 @@ import { authenticate, isAdmin } from '../middleware/auth';
 
 const router = Router();
 
-router.post('/create', authenticate, isAdmin,
+router.post(
+    "/create",
+    authenticate,
+    isAdmin,
 
-    body('nombre').notEmpty().withMessage('Name is required'),
-    body('descripcion').notEmpty().withMessage('Description is required'),
+    // Validaciones
+    body("nombre")
+        .notEmpty()
+        .withMessage("Name is required"),
+
+    body("descripcion")
+        .notEmpty()
+        .withMessage("Description is required"),
+
+    body("image")
+        .optional()
+        .isString()
+        .withMessage("Image must be a string (URL)"),
+
+    body("isActive")
+        .optional()
+        .isBoolean()
+        .withMessage("isActive must be a boolean"),
+
+    body("attributes")
+        .optional()
+        .isArray()
+        .withMessage("Attributes must be an array"),
     handleInputErrors,
-    CategoryController.createCategory   
+    CategoryController.createCategory
 );
 
 router.get('/', CategoryController.getCategories);

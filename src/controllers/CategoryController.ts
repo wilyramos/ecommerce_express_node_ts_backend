@@ -2,12 +2,13 @@ import { Request, Response } from 'express';
 import slugify from 'slugify';
 import Category from '../models/Category';
 import Product from '../models/Product';
-
+import { v4 as uuid } from 'uuid';
+import cloudinary from '../config/cloudinary';
 
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, parent, attributes, variants } = req.body;
+            const { nombre, descripcion, parent, attributes, image, isActive } = req.body;
             const slug = slugify(nombre, { lower: true, strict: true });
 
             const ExistingCategory = await Category.findOne({ slug });
@@ -26,7 +27,7 @@ export class CategoryController {
             }
 
             // Validar que los atributos sean válidos
-            
+
             if (attributes) {
                 if (!Array.isArray(attributes)) {
                     res.status(400).json({ message: "Los atributos deben ser un array" });
@@ -41,28 +42,15 @@ export class CategoryController {
                 }
             }
 
-            // Validar que las variantes sean válidas
-            if (variants) {
-                if (!Array.isArray(variants) ) {
-                    res.status(400).json({ message: "Las variantes deben ser un array" });
-                    return;
-                }
-
-                for (const variant of variants) {
-                    if (!variant.name || !Array.isArray(variant.values) || variant.values.length === 0) {
-                        res.status(400).json({ message: "Cada variante debe tener un nombre y al menos un valor" });
-                        return;
-                    }
-                }
-            }
 
             const newCategory = new Category({
                 nombre,
                 descripcion,
                 slug,
-                parent: parent || null, // Si no se proporciona parent, se establece como null,
+                parent: parent || null,
+                image: image,
+                isActive: isActive,
                 attributes,
-                variants
             });
 
             await newCategory.save();
@@ -90,7 +78,7 @@ export class CategoryController {
         try {
             const { id } = req.params;
             const category = await Category.findById(id)
-                .select('_id nombre slug descripcion parent attributes variants')
+                .select('_id nombre slug descripcion parent attributes variants image isActive')
                 .populate('parent', '_id nombre slug');
             if (!category) {
                 res.status(404).json({ message: 'Categoria no encontrada' });
@@ -109,7 +97,7 @@ export class CategoryController {
         try {
             const { slug } = req.params;
             const category = await Category.findOne({ slug })
-                .select('_id nombre slug descripcion parent attributes')
+                .select('_id nombre slug descripcion parent attributes image isActive')
                 .populate('parent', '_id nombre slug');
 
             if (!category) {
@@ -126,7 +114,7 @@ export class CategoryController {
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { nombre, descripcion, parent, attributes, variants } = req.body;
+            const { nombre, descripcion, parent, attributes, variants, image, isActive } = req.body;
 
             const slug = slugify(nombre, { lower: true, strict: true });
 
@@ -172,7 +160,7 @@ export class CategoryController {
 
             // Validar que las variantes sean válidas
             if (variants) {
-                if (!Array.isArray(variants) ) {
+                if (!Array.isArray(variants)) {
                     res.status(400).json({ message: "Las variantes deben ser un array" });
                     return;
                 }
@@ -192,7 +180,9 @@ export class CategoryController {
                 slug,
                 parent: parent ? parent : null, // Si no se proporciona parent, se establece como null
                 attributes,
-                variants
+                variants,
+                image: image || existingCategory.image,
+                isActive: isActive !== undefined ? isActive : existingCategory.isActive,
             }, { new: true });
 
             if (!updatedCategory) {
@@ -328,4 +318,26 @@ export class CategoryController {
         }
     }
 
+    static async uploadCategoryImage(req: Request, res: Response) {
+        try {
+            const file = (req as any).file;
+            if (!file) {
+                res.status(400).json({ message: 'No file uploaded' });
+                return;
+            }
+
+            const results = await cloudinary.uploader.upload(file.path, {
+                folder: 'categories',
+                public_id: uuid(),
+                transformation: [
+                    { width: 800, height: 600, crop: "limit" }
+                ]
+            });
+            res.status(200).json({ image: results.secure_url });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error uploading file' });
+            return;
+        }
+    }
 }

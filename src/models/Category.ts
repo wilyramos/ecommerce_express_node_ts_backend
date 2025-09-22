@@ -11,11 +11,12 @@ export interface ICategory extends Document {
     descripcion?: string;
     slug?: string;
     parent?: Types.ObjectId; // Subcategoría (si aplica)
+    image?: string;          // Banner o icono de la categoría
+    isActive?: boolean;      // Control de visibilidad / soft delete
     attributes?: ICategoryAttribute[];
     createdAt?: Date;
     updatedAt?: Date;
 }
-
 
 // Subschema para atributos
 const categoryAttributeSchema = new Schema<ICategoryAttribute>(
@@ -25,7 +26,6 @@ const categoryAttributeSchema = new Schema<ICategoryAttribute>(
     },
     { _id: false }
 );
-
 
 // Esquema principal de categoría
 const categorySchema = new Schema<ICategory>(
@@ -39,6 +39,9 @@ const categorySchema = new Schema<ICategory>(
             ref: 'Category',
             default: null, // null si es categoría raíz
         },
+
+        image: { type: String, trim: true },        // Nueva propiedad
+        isActive: { type: Boolean, default: true }, // Control de visibilidad
 
         attributes: [categoryAttributeSchema], // Atributos informativos
     },
