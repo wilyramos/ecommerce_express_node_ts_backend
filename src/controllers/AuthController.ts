@@ -346,4 +346,50 @@ export class AuthController {
             return;
         }
     }
+
+    static async oauthLogin(req: Request, res: Response) {
+        try {
+                const { provider, providerId, email, nombre } = req.body;
+                if (!provider || !providerId || !email) {
+                    res.status(400).json({ message: 'Datos incompletos para OAuth' });
+                    return;
+                }
+                let user = await User.findOne({ 'providers.provider': provider, 'providers.providerId': providerId });
+                if (!user) {
+                    // Buscar por email en caso ya exista una cuenta con ese email
+                    user = await User.findOne({ email });
+                }
+                if (user) {
+                    // Asociar cuenta existente con cuenta del proveedor OAuth si no está ya asociada
+                    // const alreadyLinked = user.providers.some(p => p.provider === provider && p.providerId === providerId);
+                    // if (!alreadyLinked) {
+                    //     user.providers.push({ provider, providerId });
+                    //     await user.save();
+                    // }
+                }
+                else {
+                    // Crear nuevo usuario
+                    user = new User({
+                        nombre,
+                        email,
+                        providers: [{ provider, providerId }]
+                    });
+                    await user.save();
+                    // Send email de bienvenida
+                    AuthEmailResend.sendWelcomeEmail({
+                        email: user.email,
+                        name: user.nombre
+                    });
+                }
+                const token = generateJWT({ id: user.id });
+                res.status(200).json({
+                    message: 'Inicio de sesión OAuth exitoso',
+                    userId: user.id,
+                    token,
+                    role: user.rol,
+                });
+        } catch (error) {
+            res.status(500).json({ message: 'Error en el login OAuth' });
+        }
+    }
 }

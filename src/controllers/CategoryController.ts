@@ -302,7 +302,7 @@ export class CategoryController {
             // validate 
 
             const categories = await Category.find({ parent: { $ne: null } })
-                .select('_id nombre slug descripcion parent attributes')
+                .select('_id nombre slug descripcion parent attributes image')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
 
