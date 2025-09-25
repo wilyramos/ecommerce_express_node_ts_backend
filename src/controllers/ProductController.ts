@@ -189,7 +189,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
-                .populate('categoria', 'nombre slug');
+                // .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ esNuevo: true });
 
@@ -831,7 +831,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
-                .populate('categoria', 'nombre slug');
+                // .populate('categoria', 'nombre slug');
 
             // console.log('Products relacionados:', products);
 
