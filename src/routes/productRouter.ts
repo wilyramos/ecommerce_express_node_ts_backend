@@ -98,6 +98,9 @@ router.get('/searchindex',
     ProductController.searchProductsIndex
 );
 
+// getProductsMainPage
+router.get('/mainpage', ProductController.getProductsMainPage);
+
 // get a list of products 
 
 router.get('/list',

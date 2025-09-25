@@ -22,7 +22,7 @@ export interface IProduct extends Document {
     isActive: boolean;
     esDestacado?: boolean;
     esNuevo?: boolean;
-    atributos?: Record<string, string>;
+    atributos?: Record<string, string>; // Atributos dinámicos basados en la categoría sirven para filtros
     especificaciones?: ISpecification[];
 }
 

@@ -13,7 +13,7 @@ export interface ICategory extends Document {
     parent?: Types.ObjectId; // Subcategoría (si aplica)
     image?: string;          // Banner o icono de la categoría
     isActive?: boolean;      // Control de visibilidad / soft delete
-    attributes?: ICategoryAttribute[];
+    attributes?: ICategoryAttribute[]; // Atributos que serviran para los productos ademas de almacenar los filtros en la categoria
     createdAt?: Date;
     updatedAt?: Date;
 }

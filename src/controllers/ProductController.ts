@@ -904,4 +904,101 @@ export class ProductController {
             return;
         }
     }
+
+    static async getProductsMainPage(req: Request, res: Response) {
+        try {
+
+            const { query, page, limit } = req.query as {
+                query?: string;
+                page?: string;
+                limit?: string;
+            }
+
+            const pageNum = parseInt(page || '1', 10);
+            const limitNum = parseInt(limit || '10', 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            // Query general
+            const searchQuery: any = { isActive: true };
+
+            if (query && query.trim() !== "") {
+                const regex = new RegExp(query.trim(), 'i');
+                searchQuery.$or = [
+                    { nombre: regex },
+                    { descripcion: regex }
+                ];
+            }
+
+            const productsPromise = Product.find(searchQuery)
+                .skip(skip)
+                .limit(limitNum)
+                .sort({ createdAt: -1 })
+                // .populate('categoria', 'nombre slug')
+                // .populate('brand', 'nombre');
+
+            const totalPromise = Product.countDocuments(searchQuery);
+
+
+            // Filters dynamics based on found products
+
+            const filtersPromise = Product.aggregate([
+                { $match: searchQuery },
+                {
+                    $facet: {
+                        brands: [
+                            { $group: { _id: "$brand" } },
+                            {
+                                $lookup: {
+                                    from: "brands",
+                                    localField: "_id",
+                                    foreignField: "_id",
+                                    as: "brand",
+                                },
+                            },
+                            { $unwind: "$brand" },
+                            { $project: { id: "$brand._id", nombre: "$brand.nombre" } },
+                        ],
+                        // priceRange: [
+                        //     {
+                        //         $group: {
+                        //             _id: null,
+                        //             min: { $min: "$precio" },
+                        //             max: { $max: "$precio" },
+                        //         },
+                        //     },
+                        // ],
+                        atributos: [
+                            { $project: { atributos: { $objectToArray: "$atributos" } } },
+                            { $unwind: "$atributos" },
+                            {
+                                $group: {
+                                    _id: "$atributos.k",
+                                    values: { $addToSet: "$atributos.v" },
+                                },
+                            },
+                            { $project: { name: "$_id", values: 1, _id: 0 } },
+                        ],
+                    },
+                },
+            ]);
+
+            const [filters, products, totalProducts] = await Promise.all([
+                filtersPromise,
+                productsPromise,
+                totalPromise
+            ]);
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts,
+                filters
+            });
+
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching main page products' });
+            return;
+        }
+    }
 }
