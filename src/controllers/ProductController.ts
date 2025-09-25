@@ -935,12 +935,20 @@ export class ProductController {
                 searchQuery.categoria = category;
             }
 
+            // Buscar el brand por su slug
+            if (rest.brand) {
+                const brandDoc = await Brand.findOne({ slug: rest.brand });
+                if (brandDoc) {
+                    searchQuery.brand = brandDoc._id;
+                }
+            }
+
             // 🏷️ Filtro por marcas (pueden llegar varias)
-            if (req.query.brand) {
-                const brands = Array.isArray(req.query.brand)
-                    ? req.query.brand
-                    : [req.query.brand];
-                searchQuery.brand = { $in: brands };
+            if (rest.brands) {
+                const brands = Array.isArray(rest.brands) ? rest.brands : [rest.brands];
+                const brandDocs = await Brand.find({ slug: { $in: brands } });
+                const brandIds = brandDocs.map(b => b._id);
+                searchQuery.brand = { $in: brandIds };
             }
 
             // 💲 Filtro por rango de precios "min-max"
