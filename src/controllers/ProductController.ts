@@ -885,7 +885,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
-                // .populate('categoria', 'nombre slug');
+            // .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ brand: brand._id });
 
@@ -943,14 +943,6 @@ export class ProductController {
                 }
             }
 
-            // 🏷️ Filtro por marcas (pueden llegar varias)
-            if (rest.brands) {
-                const brands = Array.isArray(rest.brands) ? rest.brands : [rest.brands];
-                const brandDocs = await Brand.find({ slug: { $in: brands } });
-                const brandIds = brandDocs.map(b => b._id);
-                searchQuery.brand = { $in: brandIds };
-            }
-
             // 💲 Filtro por rango de precios "min-max"
             if (priceRange) {
                 const [min, max] = priceRange.split("-").map(Number);
@@ -962,6 +954,11 @@ export class ProductController {
             // 🧩 Filtros dinámicos por atributos
             // Ej: ?Color=Rojo&Color=Verde&Talla=M
             Object.keys(rest).forEach((key) => {
+
+                if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) {
+                    return; 
+                }
+
                 const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
                 if (values.length > 0) {
                     searchQuery[`atributos.${key}`] = { $in: values };
