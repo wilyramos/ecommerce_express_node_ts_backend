@@ -803,7 +803,7 @@ export class ProductController {
                 _id: { $ne: product._id } // Excluir el producto actual
             })
                 .limit(4) // Limitar a 4 productos recomendados
-                .populate('categoria', 'nombre slug') // Población de la categoría
+                // .populate('categoria', 'nombre slug') // Población de la categoría
                 .sort({ createdAt: -1 }); // Ordenar por fecha de creación
 
 
