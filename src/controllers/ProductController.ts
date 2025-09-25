@@ -189,7 +189,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
-                // .populate('categoria', 'nombre slug');
+            // .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ esNuevo: true });
 
@@ -332,8 +332,8 @@ export class ProductController {
                 Product.find(filter)
                     .skip(skip)
                     .limit(limitNum)
-                    .sort(sortOptions)
-                    .populate('categoria', 'nombre slug'),
+                    .sort(sortOptions),
+                // .populate('categoria', 'nombre slug'),
                 Product.countDocuments(filter)
             ]);
 
@@ -831,7 +831,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
-                // .populate('categoria', 'nombre slug');
+            // .populate('categoria', 'nombre slug');
 
             // console.log('Products relacionados:', products);
 
@@ -907,39 +907,88 @@ export class ProductController {
 
     static async getProductsMainPage(req: Request, res: Response) {
         try {
-
-            const { query, page, limit } = req.query as {
+            const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
                 query?: string;
                 page?: string;
                 limit?: string;
-            }
+                category?: string;
+                priceRange?: string;
+                sort?: string;
+                [key: string]: any;
+            };
 
-            const pageNum = parseInt(page || '1', 10);
-            const limitNum = parseInt(limit || '10', 10);
+            const pageNum = parseInt(page || "1", 10);
+            const limitNum = parseInt(limit || "10", 10);
             const skip = (pageNum - 1) * limitNum;
 
-            // Query general
+            // Query base
             const searchQuery: any = { isActive: true };
 
+            // 🔎 Búsqueda por texto
             if (query && query.trim() !== "") {
-                const regex = new RegExp(query.trim(), 'i');
-                searchQuery.$or = [
-                    { nombre: regex },
-                    { descripcion: regex }
-                ];
+                const regex = new RegExp(query.trim(), "i");
+                searchQuery.$or = [{ nombre: regex }, { descripcion: regex }];
             }
 
+            // 📂 Filtro por categoría
+            if (category) {
+                searchQuery.categoria = category;
+            }
+
+            // 🏷️ Filtro por marcas (pueden llegar varias)
+            if (req.query.brand) {
+                const brands = Array.isArray(req.query.brand)
+                    ? req.query.brand
+                    : [req.query.brand];
+                searchQuery.brand = { $in: brands };
+            }
+
+            // 💲 Filtro por rango de precios "min-max"
+            if (priceRange) {
+                const [min, max] = priceRange.split("-").map(Number);
+                searchQuery.precio = {};
+                if (!isNaN(min)) searchQuery.precio.$gte = min;
+                if (!isNaN(max)) searchQuery.precio.$lte = max;
+            }
+
+            // 🧩 Filtros dinámicos por atributos
+            // Ej: ?Color=Rojo&Color=Verde&Talla=M
+            Object.keys(rest).forEach((key) => {
+                const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
+                if (values.length > 0) {
+                    searchQuery[`atributos.${key}`] = { $in: values };
+                }
+            });
+
+            // 📑 Orden
+            let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
+            if (sort) {
+                switch (sort) {
+                    case "price-asc":
+                        sortQuery = { precio: 1 };
+                        break;
+                    case "price-desc":
+                        sortQuery = { precio: -1 };
+                        break;
+                    case "name-asc":
+                        sortQuery = { nombre: 1 };
+                        break;
+                    case "name-desc":
+                        sortQuery = { nombre: -1 };
+                        break;
+                    case "recientes":
+                        sortQuery = { createdAt: -1 };
+                        break;
+                }
+            }
+
+            // 📦 Promesas en paralelo
             const productsPromise = Product.find(searchQuery)
                 .skip(skip)
                 .limit(limitNum)
-                .sort({ createdAt: -1 })
-                // .populate('categoria', 'nombre slug')
-                // .populate('brand', 'nombre');
+                .sort(sortQuery);
 
             const totalPromise = Product.countDocuments(searchQuery);
-
-
-            // Filters dynamics based on found products
 
             const filtersPromise = Product.aggregate([
                 { $match: searchQuery },
@@ -956,17 +1005,8 @@ export class ProductController {
                                 },
                             },
                             { $unwind: "$brand" },
-                            { $project: { id: "$brand._id", nombre: "$brand.nombre" } },
+                            { $project: { id: "$brand._id", nombre: "$brand.nombre", slug: "$brand.slug" } },
                         ],
-                        // priceRange: [
-                        //     {
-                        //         $group: {
-                        //             _id: null,
-                        //             min: { $min: "$precio" },
-                        //             max: { $max: "$precio" },
-                        //         },
-                        //     },
-                        // ],
                         atributos: [
                             { $project: { atributos: { $objectToArray: "$atributos" } } },
                             { $unwind: "$atributos" },
@@ -985,7 +1025,7 @@ export class ProductController {
             const [filters, products, totalProducts] = await Promise.all([
                 filtersPromise,
                 productsPromise,
-                totalPromise
+                totalPromise,
             ]);
 
             res.status(200).json({
@@ -993,11 +1033,11 @@ export class ProductController {
                 totalPages: Math.ceil(totalProducts / limitNum),
                 currentPage: pageNum,
                 totalProducts,
-                filters
+                filters,
             });
-
         } catch (error) {
-            res.status(500).json({ message: 'Error fetching main page products' });
+            console.error(error);
+            res.status(500).json({ message: "Error fetching main page products" });
             return;
         }
     }
