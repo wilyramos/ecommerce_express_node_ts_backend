@@ -128,7 +128,8 @@ export class ProductController {
                 Product.find(filter)
                     .skip(skip)
                     .limit(pageSize)
-                    .sort({ updatedAt: -1 }), // sort by latest update
+                    .sort({ updatedAt: -1 })
+                    .populate("brand", "nombre slug"),
                 // .populate("categoria", "nombre slug"),
                 Product.countDocuments(filter),
             ]);
@@ -189,6 +190,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug')
             // .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ esNuevo: true });
@@ -332,7 +334,8 @@ export class ProductController {
                 Product.find(filter)
                     .skip(skip)
                     .limit(limitNum)
-                    .sort(sortOptions),
+                    .sort(sortOptions)
+                    .populate('brand', 'nombre slug'),
                 // .populate('categoria', 'nombre slug'),
                 Product.countDocuments(filter)
             ]);
@@ -435,7 +438,8 @@ export class ProductController {
             const products = await Product.find(filter)
                 .skip((pageNum - 1) * limitNum)
                 .limit(limitNum)
-                .populate('categoria', 'nombre slug');
+                .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug');
 
             const totalProducts = await Product.countDocuments(filter);
 
@@ -463,7 +467,8 @@ export class ProductController {
             // populate category to get the name and slug
             const product = await Product.findById(id)
                 .select('+costo')
-                .populate('categoria', 'nombre slug');
+                .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug');
 
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
@@ -479,7 +484,9 @@ export class ProductController {
     static async getProductBySlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
-            const product = await Product.findOne({ slug }).populate('categoria', 'nombre slug');
+            const product = await Product.findOne({ slug })
+                .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug');
 
 
             if (!product) {
@@ -630,6 +637,7 @@ export class ProductController {
             }
             const products = await Product.find({ categoria: categoryId })
                 .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug')
                 .lean(); // Use lean() to return plain JavaScript objects
             res.status(200).json(products);
         } catch (error) {
@@ -792,6 +800,7 @@ export class ProductController {
         try {
             const product = await Product.findOne({ slug })
                 .populate('categoria', 'nombre slug'); // Población de la categoría
+            
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
@@ -804,7 +813,8 @@ export class ProductController {
             })
                 .limit(4) // Limitar a 4 productos recomendados
                 // .populate('categoria', 'nombre slug') // Población de la categoría
-                .sort({ createdAt: -1 }); // Ordenar por fecha de creación
+                .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug');
 
 
             res.status(200).json(recommendedProducts);
@@ -831,9 +841,10 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug')
             // .populate('categoria', 'nombre slug');
 
-            // console.log('Products relacionados:', products);
+            console.log("Destacados products:", products);
 
             const totalProducts = await Product.countDocuments({ esDestacado: true });
             if (products.length === 0) {
@@ -885,6 +896,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug')
             // .populate('categoria', 'nombre slug');
 
             const totalProducts = await Product.countDocuments({ brand: brand._id });
@@ -945,18 +957,19 @@ export class ProductController {
 
             // 💲 Filtro por rango de precios "min-max"
             if (priceRange) {
-                const [min, max] = priceRange.split("-").map(Number);
-                searchQuery.precio = {};
-                if (!isNaN(min)) searchQuery.precio.$gte = min;
-                if (!isNaN(max)) searchQuery.precio.$lte = max;
+                const [minStr, maxStr] = priceRange.split("-");
+                const min = Number(minStr);
+                const max = Number(maxStr);
+                if (!isNaN(min) && !isNaN(max) && min >= 0 && max >= 0 && min <= max) {
+                    searchQuery.precio = { $gte: min, $lte: max };
+                }
             }
 
-            // 🧩 Filtros dinámicos por atributos
             // Ej: ?Color=Rojo&Color=Verde&Talla=M
             Object.keys(rest).forEach((key) => {
 
                 if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) {
-                    return; 
+                    return;
                 }
 
                 const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
@@ -991,7 +1004,8 @@ export class ProductController {
             const productsPromise = Product.find(searchQuery)
                 .skip(skip)
                 .limit(limitNum)
-                .sort(sortQuery);
+                .sort(sortQuery)
+                .populate('brand', 'nombre slug');
 
             const totalPromise = Product.countDocuments(searchQuery);
 
@@ -1022,6 +1036,15 @@ export class ProductController {
                                 },
                             },
                             { $project: { name: "$_id", values: 1, _id: 0 } },
+                        ],
+                        price: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    min: { $min: "$precio" },
+                                    max: { $max: "$precio" },
+                                },
+                            },
                         ],
                     },
                 },
