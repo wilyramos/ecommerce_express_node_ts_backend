@@ -978,7 +978,7 @@ export class ProductController {
                 }
             });
 
-            // 📑 Orden
+            // 📑 Orde
             let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
             if (sort) {
                 switch (sort) {
