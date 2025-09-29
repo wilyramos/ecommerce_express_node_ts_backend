@@ -62,7 +62,6 @@ router.delete('/:id', authenticate, isAdmin, CategoryController.deleteCategory);
 
 router.get('/all/onlysubcategories', CategoryController.getSubcategories);
 
-
 // Traer todas las subcategorias pobladas
 router.get('/all/subcategories', CategoryController.getAllSubcategoriesPobladas);
 

@@ -299,12 +299,13 @@ export class CategoryController {
     // Traer todas las subcategorias pobladas
     static async getAllSubcategoriesPobladas(req: Request, res: Response) {
         try {
-            // validate 
+            // get only subcategoriesActive
 
-            const categories = await Category.find({ parent: { $ne: null } })
+            const categories = await Category.find({ parent: { $ne: null }, isActive: true })
                 .select('_id nombre slug descripcion parent attributes image')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
+
 
             if (categories.length === 0) {
                 res.status(404).json({ message: 'No se encontraron subcategorias' });
