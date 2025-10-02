@@ -15,10 +15,13 @@ export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
         try {
+
+            console.log("req.body", req.body);
             const {
                 nombre,
                 descripcion,
                 precio,
+                precioComparativo,
                 costo,
                 imagenes,
                 categoria,
@@ -67,6 +70,11 @@ export class ProductController {
                 return;
             }
 
+            if ( precioComparativo && Number(precioComparativo) < Number(precio)) {
+                res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
+                return;
+            }
+
             const slug = await generateUniqueSlug(nombre);
 
             const newProduct = {
@@ -74,6 +82,7 @@ export class ProductController {
                 slug,
                 descripcion,
                 precio: Number(precio),
+                precioComparativo: Number(precioComparativo),
                 costo,
                 imagenes: imagenes,
                 categoria,
@@ -505,6 +514,7 @@ export class ProductController {
                 nombre,
                 descripcion,
                 precio,
+                precioComparativo,
                 costo,
                 imagenes,
                 categoria,
@@ -571,6 +581,10 @@ export class ProductController {
                 res.status(400).json({ message: 'Especificaciones deben ser un array' });
                 return;
             }
+            if ( precioComparativo && Number(precioComparativo) < Number(precio)) {
+                res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
+                return;
+            }
 
             // Validate Slug
             const slug = slugify(nombre, { lower: true, strict: true });
@@ -588,6 +602,7 @@ export class ProductController {
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
             if (precio != null) existingProduct.precio = precio;
+            if (precioComparativo != null) existingProduct.precioComparativo = precioComparativo;
             if (costo != null) existingProduct.costo = costo;
             if (imagenes) existingProduct.imagenes = imagenes;
             if (stock != null) existingProduct.stock = stock;

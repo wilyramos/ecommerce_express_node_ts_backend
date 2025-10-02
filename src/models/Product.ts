@@ -12,6 +12,7 @@ export interface IProduct extends Document {
     slug: string;
     descripcion?: string;
     precio?: number;
+    precioComparativo?: number;
     costo?: number;
     imagenes?: string[];
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
@@ -42,6 +43,7 @@ const productSchema = new Schema<IProduct>(
         slug: { type: String, trim: true, unique: true },
         descripcion: { type: String },
         precio: { type: Number, min: 0, default: 0 },
+        precioComparativo: { type: Number, min: 0, required: false },
         costo: { type: Number, min: 0, default: 0 },
         imagenes: [{ type: String }],
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },

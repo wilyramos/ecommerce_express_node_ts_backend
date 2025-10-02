@@ -26,6 +26,13 @@ router.post('/',
         .custom((value) => value >= 0)
         .withMessage('El precio debe ser cero o mayor'),
 
+    body('precioComparativo')
+        .optional()
+        .isNumeric()
+        .withMessage('El precio comparativo debe ser un número')
+        .custom((value) => value >= 0)
+        .withMessage('El precio comparativo debe ser cero o mayor'),
+
     body('costo')
         .optional()
         .isNumeric()

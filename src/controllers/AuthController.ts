@@ -283,12 +283,13 @@ export class AuthController {
                 telefono
             });
 
-            // TODO: 
-
             await newUser.save();
 
-            // TODO: Enviar un email de bienvenida o confirmación si es necesario
-            // AuthEmail.sendWelcomeEmail(newUser.email, newUser.nombre);
+            // Send email de bienvenida
+            AuthEmailResend.sendWelcomeEmail({
+                email: newUser.email,
+                name: newUser.nombre
+            });
 
             res.status(201).json({
                 message: 'Usuario nuevo creado exitosamente',
