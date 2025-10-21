@@ -1,4 +1,4 @@
-import express from 'express' 
+import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
 import dotenv from 'dotenv'
@@ -14,6 +14,11 @@ import userRouter from './routes/userRouter'
 import purchaseRouter from './routes/purchaseRouter'
 import brandRouter from './routes/brandRouter'
 
+//Cors
+import cors from 'cors'
+
+// OPENAPI swagger //TODO: finish it
+
 // Connect to MongoDB
 
 dotenv.config()
@@ -24,6 +29,13 @@ connectDB()
 
 app.use(morgan('dev'))
 app.use(express.json())
+
+// Cors
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}))
 
 app.get('/', (req, res) => {
     res.send('API is running...')

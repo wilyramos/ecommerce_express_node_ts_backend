@@ -14,6 +14,12 @@ router.post('/create-preference',
     PaymentsController.createPreference
 );
 
+router.post('/create-preference-orderid',
+    authenticate,
+    body('orderId').notEmpty().withMessage('Order ID is required'),
+    PaymentsController.createPreferenceWithOrderId
+);
+
 // process payment mercadopago checkoutbriks
 router.post('/process-payment',
     authenticate,

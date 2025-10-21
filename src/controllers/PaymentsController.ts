@@ -2,8 +2,9 @@
 import { Request, Response } from 'express';
 import { preference } from '../utils/mercadopago';
 import { payment } from '../utils/mercadopago';
-
-
+import Order from '../models/Order';
+import User from '../models/User';
+import Product from '../models/Product';
 
 export class PaymentsController {
 
@@ -42,7 +43,6 @@ export class PaymentsController {
                 external_reference: orderId, // Use the orderId from the request body
                 notification_url: process.env.MP_NOTIFICATION_URL,
             };
-
             console.log('Creating payment preference with payload:', preferencePayload);
 
             const response = await preference.create({ body: preferencePayload });
@@ -52,6 +52,78 @@ export class PaymentsController {
             });
         } catch (error) {
             // console.error('Error creating payment preference:', error);
+            res.status(500).json({ message: 'Internal Server Error' });
+        }
+    }
+
+    static async createPreferenceWithOrderId(req: Request, res: Response) {
+        try {
+            const { orderId } = req.body;
+            if (!orderId) {
+                res.status(400).json({ message: 'orderId is required' });
+                return;
+            }
+
+            // buscar la orden en la base de datos y obtener los items y la información del pagador
+            const order = await Order.findById(orderId);
+
+            console.log("order", order);
+            if (!order) {
+                res.status(404).json({ message: 'Order not found' });
+                return;
+            }
+
+            const user = await User.findById(order.user);
+            console.log("user", user);
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
+            // Buscar los cada item del pedido en la base de datos si es necesario
+            const items = await Promise.all(order.items.map(async (item) => {
+                const product = await Product.findById(item.productId);
+                return {
+                    id: String(product._id),
+                    title: product.nombre,
+                    quantity: item.quantity,
+                    unit_price: product.precio
+                };
+            }));
+
+            console.log("items", items);
+
+            const payer = {
+                email: user.email,
+                first_name: user.nombre,
+                // Agregar más campos si es necesario
+            };
+            const preferencePayload = {
+                items: items,
+                payer: payer,
+                back_urls: {
+                    success: `${process.env.MP_SUCCESS_URL}?orderId=${orderId}`,
+                    failure: `${process.env.MP_FAILURE_URL}?orderId=${orderId}`,
+                    pending: `${process.env.MP_PENDING_URL}?orderId=${orderId}`,
+                },
+                auto_return: 'approved',
+                metadata: {
+                    order_id: orderId
+                },
+                external_reference: orderId,
+                notification_url: process.env.MP_NOTIFICATION_URL
+            };
+
+            console.log('Creating payment preference with payload:', preferencePayload);
+
+            const response = await preference.create({ body: preferencePayload });
+
+            console.log('Payment preference created successfully:', response);
+
+            res.status(200).json({
+                init_point: response.init_point
+            });
+        } catch (error) {
             res.status(500).json({ message: 'Internal Server Error' });
         }
     }
