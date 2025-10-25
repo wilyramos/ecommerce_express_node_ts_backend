@@ -82,7 +82,7 @@ export class ProductController {
                 slug,
                 descripcion,
                 precio: Number(precio),
-                precioComparativo: Number(precioComparativo),
+                precioComparativo: precioComparativo ? Number(precioComparativo) : undefined,
                 costo,
                 imagenes: imagenes,
                 categoria,
@@ -598,11 +598,17 @@ export class ProductController {
 
             existingProduct.slug = slug;
 
+            console.log("Updating precioComparativo:", precioComparativo);
+
             // Asignar valores
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
             if (precio != null) existingProduct.precio = precio;
-            if (precioComparativo != null) existingProduct.precioComparativo = precioComparativo;
+            if (precioComparativo === undefined) {
+                existingProduct.precioComparativo = undefined;
+            } else if (precioComparativo != null) {
+                existingProduct.precioComparativo = precioComparativo;
+            }
             if (costo != null) existingProduct.costo = costo;
             if (imagenes) existingProduct.imagenes = imagenes;
             if (stock != null) existingProduct.stock = stock;
