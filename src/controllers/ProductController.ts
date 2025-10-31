@@ -70,7 +70,7 @@ export class ProductController {
                 return;
             }
 
-            if ( precioComparativo && Number(precioComparativo) < Number(precio)) {
+            if (precioComparativo && Number(precioComparativo) < Number(precio)) {
                 res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
                 return;
             }
@@ -112,47 +112,88 @@ export class ProductController {
 
     static async getProducts(req: Request, res: Response) {
         try {
+            const {
+                page = "1",
+                limit = "10",
+                nombre,
+                sku,
+                precioSort,
+                stockSort,
+                isActive,
+                esNuevo,
+                esDestacado,
+                query
+            } = req.query as Record<string, string>;
 
-            const { page = "1", limit = "10", query } = req.query;
-
-            const currentPage = Math.max(parseInt(page as string) || 1, 1);
-            const pageSize = Math.max(parseInt(limit as string) || 10, 1);
+            const currentPage = Math.max(parseInt(page) || 1, 1);
+            const pageSize = Math.max(parseInt(limit) || 10, 1);
             const skip = (currentPage - 1) * pageSize;
 
-            let filter = {};
+            const filter: Record<string, any> = {};
 
-            if (query && typeof query === "string" && query.trim() !== "") {
+            // Búsqueda global
+            if (query) {
                 const searchRegex = new RegExp(query.trim(), "i");
-                filter = {
-                    $or: [
-                        { nombre: { $regex: searchRegex } },
-                        { descripcion: { $regex: searchRegex } },
-                        { sku: { $regex: searchRegex } },
-                        { barcode: { $regex: searchRegex } },
-                    ],
-                };
+                filter.$or = [
+                    { nombre: { $regex: searchRegex } },
+                    { descripcion: { $regex: searchRegex } },
+                    { sku: { $regex: searchRegex } },
+                    { barcode: { $regex: searchRegex } },
+                ];
+            }
+
+            // Filtros específicos
+            if (nombre) filter.nombre = { $regex: new RegExp(nombre, "i") };
+            if (sku) filter.sku = { $regex: new RegExp(sku, "i") };
+
+            if (isActive === "true" || isActive === "false") {
+                filter.isActive = isActive === "true";
+            }
+
+            if (esNuevo === "true" || esNuevo === "false") {
+                filter.esNuevo = esNuevo === "true";
+            }
+
+            if (esDestacado === "true" || esDestacado === "false") {
+                filter.esDestacado = esDestacado === "true";
+            }
+
+            // Ordenamiento
+            const sort: Record<string, 1 | -1> = {};
+
+            if (precioSort === "asc" || precioSort === "desc") {
+                sort.precio = precioSort === "asc" ? 1 : -1;
+            }
+
+            if (stockSort === "asc" || stockSort === "desc") {
+                sort.stock = stockSort === "asc" ? 1 : -1;
+            }
+
+            // Si no hay sort elegido, ordenar por fecha de actualización
+            if (Object.keys(sort).length === 0) {
+                sort.updatedAt = -1;
             }
 
             const [products, totalProducts] = await Promise.all([
                 Product.find(filter)
                     .skip(skip)
                     .limit(pageSize)
-                    .sort({ updatedAt: -1 })
+                    .sort(sort)
                     .populate("brand", "nombre slug"),
-                // .populate("categoria", "nombre slug"),
+
                 Product.countDocuments(filter),
             ]);
 
             res.status(200).json({
                 products,
                 totalPages: Math.ceil(totalProducts / pageSize),
-                currentPage: currentPage,
-                totalProducts
+                currentPage,
+                totalProducts,
             });
 
         } catch (error) {
-            res.status(500).json({ message: 'Error fetching products' });
-            return;
+            console.error(error);
+            res.status(500).json({ message: "Error fetching products" });
         }
     }
 
@@ -581,7 +622,7 @@ export class ProductController {
                 res.status(400).json({ message: 'Especificaciones deben ser un array' });
                 return;
             }
-            if ( precioComparativo && Number(precioComparativo) < Number(precio)) {
+            if (precioComparativo && Number(precioComparativo) < Number(precio)) {
                 res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
                 return;
             }
@@ -821,7 +862,7 @@ export class ProductController {
         try {
             const product = await Product.findOne({ slug })
                 .populate('categoria', 'nombre slug'); // Población de la categoría
-            
+
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
