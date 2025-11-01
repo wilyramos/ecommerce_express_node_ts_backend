@@ -32,7 +32,8 @@ export class ProductController {
                 esNuevo,
                 isActive,
                 atributos, especificaciones,
-                brand
+                brand,
+                diasEnvio
             } = req.body;
             // validate category exists y no tiene subcategorías
             const [selectedCategory, hasChildren] = await Promise.all([
@@ -75,6 +76,8 @@ export class ProductController {
                 return;
             }
 
+            const dias = diasEnvio ? Number(diasEnvio) : 1;
+
             const slug = await generateUniqueSlug(nombre);
 
             const newProduct = {
@@ -94,7 +97,8 @@ export class ProductController {
                 isActive: isActive,
                 atributos: atributos,
                 especificaciones: especificaciones,
-                brand: brand
+                brand: brand,
+                diasEnvio: dias,
             };
 
             // console.log(newProduct);
@@ -567,7 +571,8 @@ export class ProductController {
                 atributos,
                 barcode,
                 especificaciones,
-                brand
+                brand,
+                diasEnvio
             } = req.body;
 
             const productId = req.params.id;
@@ -627,6 +632,14 @@ export class ProductController {
                 return;
             }
 
+            // Validar diasEnvio
+            if (diasEnvio && Number(diasEnvio) <= 0) {
+                res.status(400).json({ message: 'Los días de envío deben ser un número positivo' });
+                return;
+            }
+
+            const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
+
             // Validate Slug
             const slug = slugify(nombre, { lower: true, strict: true });
             if (slug !== existingProduct.slug) {
@@ -660,6 +673,7 @@ export class ProductController {
             existingProduct.isActive = isActive !== undefined ? isActive : existingProduct.isActive;
             existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
             existingProduct.brand = brand || existingProduct.brand;
+            existingProduct.diasEnvio = dias;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });

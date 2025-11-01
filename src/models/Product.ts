@@ -23,8 +23,10 @@ export interface IProduct extends Document {
     isActive: boolean;
     esDestacado?: boolean;
     esNuevo?: boolean;
-    atributos?: Record<string, string>; // Atributos dinámicos basados en la categoría sirven para filtros
+    atributos?: Record<string, string>;
     especificaciones?: ISpecification[];
+    diasEnvio?: number;
+    fechaDisponibilidad?: Date;
 }
 
 // --- Sub-schema de especificación ---
@@ -56,8 +58,11 @@ const productSchema = new Schema<IProduct>(
         esNuevo: { type: Boolean, default: false },
         atributos: { type: Map, of: String, default: {} },
         especificaciones: [specificationSchema],
+        diasEnvio: { type: Number, min: 0, default: 1 },
     },
     { timestamps: true }
 );
 
 export default mongoose.model<IProduct>('Product', productSchema);
+
+//Todo: Agregar fechaDisponibilidad al schema del producto para preventas
