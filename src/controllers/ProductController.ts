@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import Category from '../models/Category';
-import Product from '../models/Product';
+import Product, { type IProduct } from '../models/Product';
 import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
@@ -8,6 +8,7 @@ import cloudinary from '../config/cloudinary';
 import slugify from 'slugify';
 import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
+import type { Types } from 'mongoose';
 
 
 
@@ -687,14 +688,9 @@ export class ProductController {
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
             // Validate Slug if the name has changed
-            const slug = slugify(nombre, { lower: true, strict: true });
-
-            if (slug !== existingProduct.slug) {
-                const existingSlug = await Product.findOne({ slug, _id: { $ne: productId } });
-                if (existingSlug) {
-                    res.status(400).json({ message: 'Ya existe un producto con ese slug' });
-                    return;
-                }
+            if (nombre && nombre !== existingProduct.nombre) {
+                const newSlug = await generateUniqueSlug(nombre);
+                existingProduct.slug = newSlug;
             }
 
             console.log("Updating precioComparativo:", precioComparativo);
@@ -916,36 +912,132 @@ export class ProductController {
         }
     }
 
-    // Traer productos relacionados de otras categorías
+
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
+        const LIMIT_TOTAL = 4; // Límite total de productos a mostrar
+
         try {
+            // 1. Encontrar el producto base
             const product = await Product.findOne({ slug })
-                .populate('categoria', 'nombre slug'); // Población de la categoría
+                .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug');
 
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
 
-            // Obtener productos recomendados de la misma categoría, menos el producto actual
-            const recommendedProducts = await Product.find({
-                categoria: product.categoria._id,
-                _id: { $ne: product._id } // Excluir el producto actual
-            })
-                .limit(4) // Limitar a 4 productos recomendados
-                // .populate('categoria', 'nombre slug') // Población de la categoría
-                .sort({ createdAt: -1 })
-                .populate('brand', 'nombre slug');
+            // Aseguramos el tipo para el ID actual y de las categorías/marcas
+            const currentProductId: Types.ObjectId = product._id as Types.ObjectId;
+            // Usamos el ID de la categoría para las búsquedas
+            const categoryId: Types.ObjectId = (product.categoria as any)._id as Types.ObjectId;
+            const brandId: Types.ObjectId | null = product.brand ? (product.brand as any)._id as Types.ObjectId : null;
+
+            const selectedIds = new Set<Types.ObjectId>([currentProductId]);
+            let recommendedProducts: IProduct[] = [];
+
+            // --- ESTRATEGIA 1: Productos de la misma categoría, aleatorios (Pool más grande) ---
+
+            const categoryMatch = {
+                categoria: categoryId,
+                _id: { $ne: currentProductId },
+                isActive: true
+            };
+
+            const randomCategoryProducts = await Product.aggregate([
+                { $match: categoryMatch },
+                { $sample: { size: LIMIT_TOTAL * 2 } },
+                {
+                    $lookup: {
+                        from: 'brands',
+                        localField: 'brand',
+                        foreignField: '_id',
+                        as: 'brand'
+                    }
+                },
+                { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                { $project: { __v: 0 } } // 💡 Cambio: Eliminamos 'categoria: 0' para que se envíe el ID como string
+            ]) as (IProduct & { _id: Types.ObjectId })[];
+
+            randomCategoryProducts.forEach(p => {
+                const pId = p._id as Types.ObjectId;
+                if (!selectedIds.has(pId)) {
+                    selectedIds.add(pId);
+                    recommendedProducts.push(p);
+                }
+            });
+
+            if (recommendedProducts.length >= LIMIT_TOTAL) {
+                recommendedProducts = recommendedProducts.slice(0, LIMIT_TOTAL);
+                res.status(200).json(recommendedProducts);
+                return;
+            }
+
+            // --- ESTRATEGIA 2: Productos de la misma marca (Relleno de prioridad) ---
+
+            if (brandId) {
+                const excludedIdsArray = Array.from(selectedIds);
+
+                const brandMatch = {
+                    brand: brandId,
+                    _id: { $nin: excludedIdsArray },
+                    isActive: true
+                };
+
+                const brandProducts = await Product.find(brandMatch)
+                    .limit(LIMIT_TOTAL - recommendedProducts.length)
+                    .sort({ 'esDestacado': -1, createdAt: -1 })
+                    .populate('brand', 'nombre slug')
+                // 💡 Cambio: No usamos .select('-categoria') para que la categoría se envíe como ID (string)
+                // Si se popula la marca, la categoría por defecto se envía como ObjectId string
+                // a menos que se use .select() para excluirla explícitamente.
+
+                brandProducts.forEach(p => {
+                    const pId = p._id as Types.ObjectId;
+                    if (!selectedIds.has(pId)) {
+                        selectedIds.add(pId);
+                        recommendedProducts.push(p);
+                    }
+                });
+            }
+
+            if (recommendedProducts.length >= LIMIT_TOTAL) {
+                recommendedProducts = recommendedProducts.slice(0, LIMIT_TOTAL);
+                res.status(200).json(recommendedProducts);
+                return;
+            }
+
+            // --- ESTRATEGIA 3: Productos de Relleno Aleatorio/Popular (Último recurso) ---
+
+            const excludedIdsFinalArray = Array.from(selectedIds);
+
+            const fillProducts = await Product.aggregate([
+                { $match: { _id: { $nin: excludedIdsFinalArray }, isActive: true } },
+                { $sample: { size: LIMIT_TOTAL - recommendedProducts.length } },
+                {
+                    $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' }
+                },
+                { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                { $project: { __v: 0 } } // 💡 Cambio: Eliminamos 'categoria: 0' para que se envíe el ID como string
+            ]) as (IProduct & { _id: Types.ObjectId })[];
+
+            fillProducts.forEach(p => {
+                recommendedProducts.push(p);
+            });
 
 
-            res.status(200).json(recommendedProducts);
+            // 4. Devolver los resultados finales, limitados si se sobrepasan
+            res.status(200).json(recommendedProducts.slice(0, LIMIT_TOTAL));
+
         } catch (error) {
-            // console.error("Error al obtener productos recomendados:", error);
+            console.error("Error al obtener productos recomendados:", error);
             res.status(500).json({ message: 'Error al obtener productos recomendados' });
             return;
         }
     }
+
+
 
 
     static async getDestacadosProducts(req: Request, res: Response) {
