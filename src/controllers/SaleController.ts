@@ -37,18 +37,42 @@ export class SaleController {
             for (const item of items) {
                 const product = await Product.findById(item.product).session(session);
                 if (!product) throw new Error(`Producto no encontrado: ${item.product}`);
-                if (product.stock < item.quantity) throw new Error(`Stock insuficiente para: ${product.nombre}`);
+
+                let price = product.precio || 0;
+                let cost = product.costo || 0;
+
+                if (item.variantId) {
+                    // Buscamos la variante por su _id
+                    const variant = product.variants?.find(v => v._id.toString() === item.variantId);
+                    if (!variant) throw new Error(`Variante no encontrada para el producto: ${product.nombre}`);
+                    if (variant.stock < item.quantity) throw new Error(`Stock insuficiente para la variante: ${product.nombre}`);
+
+                    // Decrementamos stock de la variante
+                    variant.stock -= item.quantity;
+
+                    // Ajustamos precio y costo si la variante los tiene
+                    price = variant.precio ?? price;
+                    cost = variant.costo ?? cost;
+
+                    // Actualizamos stock total del producto
+                    product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+                } else {
+                    // Sin variante, solo decrementamos stock del producto
+                    if ((product.stock || 0) < item.quantity) throw new Error(`Stock insuficiente para: ${product.nombre}`);
+                    product.stock -= item.quantity;
+                }
 
                 validatedItems.push({
                     product: product._id,
+                    variant: item.variantId || undefined, // guardamos la referencia de la variante
                     quantity: item.quantity,
-                    price: product.precio,
-                    cost: product.costo
+                    price,
+                    cost,
                 });
 
-                product.stock -= item.quantity;
                 await product.save({ session });
-            };
+            }
+
 
             const totalPrice = validatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0) - totalDiscountAmount;
 

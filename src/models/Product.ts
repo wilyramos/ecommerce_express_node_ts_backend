@@ -8,9 +8,11 @@ interface ISpecification {
 }
 
 export interface IVariant {
+    _id?: Types.ObjectId; // <- esto permite usar variant._id
     nombre?: string; // Ej: "Rojo / 128GB"
     precio?: number;
     precioComparativo?: number;
+    costo?: number;
     stock: number;
     sku?: string;
     barcode?: string;
