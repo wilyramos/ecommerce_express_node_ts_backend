@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
 import Category from '../models/Category';
-import Product, { type IProduct } from '../models/Product';
+import Product, { type IProduct, type IVariant } from '../models/Product';
 import formidable from 'formidable';
 // import cloudinary from 'cloudinary';
 import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
-import slugify from 'slugify';
 import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
 import type { Types } from 'mongoose';
@@ -80,7 +79,8 @@ export class ProductController {
             const slug = await generateUniqueSlug(nombre);
 
             /**  Procesar variantes */
-            let preparedVariants: any[] = [];
+            /**  Procesar variantes */
+            let preparedVariants: IVariant[] = [];
 
             if (variants && Array.isArray(variants)) {
                 preparedVariants = variants.map((v) => {
@@ -88,14 +88,22 @@ export class ProductController {
                         throw new Error("Cada variante debe tener atributos válidos");
                     }
 
+                    // Crear nombre automáticamente si no existe
+                    const nombreGenerado = v.nombre
+                        ? v.nombre
+                        : Object.keys(v.atributos)
+                            .sort() // ordenar keys para consistencia
+                            .map((key) => `${v.atributos[key]}`) // solo valores
+                            .join(" / "); // unir con " / " como separación típica
+
                     return {
-                        nombre: v.nombre || Object.values(v.atributos).join(" / "),
+                        nombre: nombreGenerado,
                         precio: v.precio ? Number(v.precio) : undefined,
                         precioComparativo: v.precioComparativo ? Number(v.precioComparativo) : undefined,
                         stock: v.stock ? Number(v.stock) : 0,
                         sku: v.sku,
                         barcode: v.barcode,
-                        imagen: v.imagen,
+                        imagenes: v.imagenes ?? [],
                         atributos: v.atributos,
                     };
                 });
@@ -110,10 +118,8 @@ export class ProductController {
                     }
                     seen.add(key);
                 }
-            } else if (variants && !Array.isArray(variants)) {
-                res.status(400).json({ message: "Variants debe ser un array" });
-                return;
             }
+
 
             const totalStockFromVariants =
                 preparedVariants.length > 0
@@ -623,7 +629,7 @@ export class ProductController {
                 return;
             }
 
-            // Validar si la categoría cambió
+            // Validar y actualizar categoría
             let categoriaCambio = false;
             if (categoria && categoria !== existingProduct.categoria.toString()) {
                 const selectedCategory = await Category.findById(categoria);
@@ -632,7 +638,6 @@ export class ProductController {
                     return;
                 }
 
-                // Validar que no tenga subcategorías
                 const hasChildren = await Category.exists({ parent: categoria });
                 if (hasChildren) {
                     res.status(400).json({ message: 'No se puede cambiar a una categoría que tiene subcategorías' });
@@ -643,43 +648,37 @@ export class ProductController {
                 existingProduct.categoria = categoria;
             }
 
-
-            // Validar atributos si se proporcionan
             if (atributos && typeof atributos !== 'object') {
                 res.status(400).json({ message: 'Los atributos deben ser un objeto' });
                 return;
             }
 
-            // Si cambió la categoría, limpiar atributos y asignar los nuevos (si se proporcionan)
             if (categoriaCambio) {
                 existingProduct.atributos = atributos || {};
             } else if (atributos) {
-                // Si no cambió la categoría pero se envían nuevos atributos, se actualizan
                 existingProduct.atributos = atributos;
             }
 
-            // validate images length
             if (imagenes && imagenes.length > 5) {
                 res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
-            // Validar specifications si se proporcionan
+
             if (especificaciones && !Array.isArray(especificaciones)) {
                 res.status(400).json({ message: 'Especificaciones deben ser un array' });
                 return;
             }
+
             if (precioComparativo && Number(precioComparativo) < Number(precio)) {
                 res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
                 return;
             }
 
-            // Validar diasEnvio
             if (diasEnvio && Number(diasEnvio) <= 0) {
                 res.status(400).json({ message: 'Los días de envío deben ser un número positivo' });
                 return;
-            };
+            }
 
-            // validar variantes
             if (variants && !Array.isArray(variants)) {
                 res.status(400).json({ message: 'Variants debe ser un array' });
                 return;
@@ -687,26 +686,67 @@ export class ProductController {
 
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
-            // Validate Slug if the name has changed
+            // Actualizar slug si cambió el nombre
             if (nombre && nombre !== existingProduct.nombre) {
                 const newSlug = await generateUniqueSlug(nombre);
                 existingProduct.slug = newSlug;
             }
 
-            console.log("Updating precioComparativo:", precioComparativo);
+            // Procesar variantes: generar nombre automático y validar
+            let preparedVariants: IVariant[] | undefined;
+            if (variants && Array.isArray(variants)) {
+                preparedVariants = variants.map((v) => {
+                    if (!v.atributos || typeof v.atributos !== "object") {
+                        throw new Error("Cada variante debe tener atributos válidos");
+                    }
 
-            // Asignar valores
+                    const nombreGenerado = v.nombre
+                        ? v.nombre
+                        : Object.keys(v.atributos)
+                            .sort()
+                            .map((key) => `${v.atributos[key]}`)
+                            .join(" / ");
+
+                    return {
+                        nombre: nombreGenerado,
+                        precio: v.precio != null ? Number(v.precio) : undefined,
+                        precioComparativo: v.precioComparativo != null ? Number(v.precioComparativo) : undefined,
+                        stock: v.stock != null ? Number(v.stock) : 0,
+                        sku: v.sku,
+                        barcode: v.barcode,
+                        imagenes: v.imagenes ?? [],
+                        atributos: v.atributos,
+                    };
+                });
+
+                // Evitar duplicados
+                const seen = new Set();
+                for (const v of preparedVariants) {
+                    const key = JSON.stringify(v.atributos);
+                    if (seen.has(key)) {
+                        res.status(400).json({ message: "Variantes duplicadas detectadas" });
+                        return;
+                    }
+                    seen.add(key);
+                }
+
+                existingProduct.variants = preparedVariants;
+
+                // Actualizar stock total desde variantes si existen
+                existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
+            } else if (!variants) {
+                // Si no se envían variantes, mantener stock manual si existe
+                if (stock != null) existingProduct.stock = stock;
+            }
+
+            // Actualizar otros campos
             existingProduct.nombre = nombre || existingProduct.nombre;
             existingProduct.descripcion = descripcion || existingProduct.descripcion;
-            if (precio != null) existingProduct.precio = precio;
-            if (precioComparativo === undefined) {
-                existingProduct.precioComparativo = undefined;
-            } else if (precioComparativo != null) {
-                existingProduct.precioComparativo = precioComparativo;
-            }
-            if (costo != null) existingProduct.costo = costo;
+            if (precio != null) existingProduct.precio = Number(precio);
+            if (precioComparativo === undefined) existingProduct.precioComparativo = undefined;
+            else if (precioComparativo != null) existingProduct.precioComparativo = Number(precioComparativo);
+            if (costo != null) existingProduct.costo = Number(costo);
             if (imagenes) existingProduct.imagenes = imagenes;
-            if (stock != null) existingProduct.stock = stock;
             existingProduct.sku = sku || existingProduct.sku;
             existingProduct.barcode = barcode || existingProduct.barcode;
             existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
@@ -715,15 +755,16 @@ export class ProductController {
             existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
             existingProduct.brand = brand || existingProduct.brand;
             existingProduct.diasEnvio = dias;
-            if (variants) existingProduct.variants = variants;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
-        } catch (error) {
-            res.status(500).json({ message: 'Error updating product', error });
+        } catch (error: any) {
+            console.error("Error updating product:", error);
+            res.status(500).json({ message: 'Error updating product', error: error.message || error });
             return;
         }
     }
+
 
     static async deleteProduct(req: Request, res: Response) {
         try {
