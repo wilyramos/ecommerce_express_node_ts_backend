@@ -50,12 +50,12 @@ router.post('/',
         .withMessage('Category is required'),
         
     body('stock')
-        .notEmpty()
+        .optional()
         .isNumeric()
-        .withMessage('Stock is required and must be a number')
-        .custom(value => value > -1)
+        .withMessage('Stock must be a number')
+        .custom(value => value >= 0)
         .withMessage('Stock must be zero or greater'),
-        
+                
     body('sku')
         .optional()
         .isString()
@@ -65,6 +65,11 @@ router.post('/',
         .optional()
         .isObject()
         .withMessage('Los atributos deben ser un objeto'),
+
+    body('especificaciones')
+        .optional()
+        .isArray()
+        .withMessage('Las especificaciones deben ser un arreglo'),
     handleInputErrors,
     ProductController.createProduct,
 );

@@ -14,9 +14,8 @@ import Brand from '../models/Brand';
 export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
+        console.log("Creating product with data:", req.body);
         try {
-
-            console.log("req.body", req.body);
             const {
                 nombre,
                 descripcion,
@@ -31,54 +30,94 @@ export class ProductController {
                 esDestacado,
                 esNuevo,
                 isActive,
-                atributos, especificaciones,
+                atributos,
+                especificaciones,
                 brand,
-                diasEnvio
+                diasEnvio,
+                variants
             } = req.body;
-            // validate category exists y no tiene subcategorías
+
+            // Validar categoría
             const [selectedCategory, hasChildren] = await Promise.all([
                 Category.findById(categoria),
                 Category.exists({ parent: categoria }),
             ]);
 
             if (!selectedCategory) {
-                res.status(400).json({ message: 'La categoría no existe' });
+                res.status(400).json({ message: "La categoría no existe" });
                 return;
             }
-
             if (hasChildren) {
                 res.status(400).json({
-                    message: 'No se puede crear un producto en una categoría que tiene subcategorías',
+                    message: "No se puede crear un producto en una categoría que tiene subcategorías",
                 });
                 return;
             }
 
-            // validate images length
+            // Validaciones generales
             if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
                 return;
             }
 
-            // Validate atributos if provided
-            if (atributos && typeof atributos !== 'object') {
-                res.status(400).json({ message: 'Atributos deben ser un objeto' });
+            if (atributos && typeof atributos !== "object") {
+                res.status(400).json({ message: "Atributos deben ser un objeto" });
                 return;
             }
 
-            // Validate specifications if provided
             if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: 'Especificaciones deben ser un array' });
+                res.status(400).json({ message: "Especificaciones deben ser un array" });
                 return;
             }
 
             if (precioComparativo && Number(precioComparativo) < Number(precio)) {
-                res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
+                res.status(400).json({ message: "El precio comparativo no puede ser menor al precio" });
                 return;
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : 1;
-
             const slug = await generateUniqueSlug(nombre);
+
+            /**  Procesar variantes */
+            let preparedVariants: any[] = [];
+
+            if (variants && Array.isArray(variants)) {
+                preparedVariants = variants.map((v) => {
+                    if (!v.atributos || typeof v.atributos !== "object") {
+                        throw new Error("Cada variante debe tener atributos válidos");
+                    }
+
+                    return {
+                        nombre: v.nombre || Object.values(v.atributos).join(" / "),
+                        precio: v.precio ? Number(v.precio) : undefined,
+                        precioComparativo: v.precioComparativo ? Number(v.precioComparativo) : undefined,
+                        stock: v.stock ? Number(v.stock) : 0,
+                        sku: v.sku,
+                        barcode: v.barcode,
+                        imagen: v.imagen,
+                        atributos: v.atributos,
+                    };
+                });
+
+                // Evitar variantes duplicadas por atributos
+                const seen = new Set();
+                for (const v of preparedVariants) {
+                    const key = JSON.stringify(v.atributos);
+                    if (seen.has(key)) {
+                        res.status(400).json({ message: "Variantes duplicadas detectadas" });
+                        return;
+                    }
+                    seen.add(key);
+                }
+            } else if (variants && !Array.isArray(variants)) {
+                res.status(400).json({ message: "Variants debe ser un array" });
+                return;
+            }
+
+            const totalStockFromVariants =
+                preparedVariants.length > 0
+                    ? preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0)
+                    : Number(stock) || 0;
 
             const newProduct = {
                 nombre,
@@ -87,29 +126,29 @@ export class ProductController {
                 precio: Number(precio),
                 precioComparativo: precioComparativo ? Number(precioComparativo) : undefined,
                 costo,
-                imagenes: imagenes,
+                imagenes,
                 categoria,
-                stock: Number(stock),
-                sku: sku,
-                barcode: barcode,
-                esDestacado: esDestacado,
-                esNuevo: esNuevo,
-                isActive: isActive,
-                atributos: atributos,
-                especificaciones: especificaciones,
-                brand: brand,
+                stock: totalStockFromVariants,
+                sku,
+                barcode,
+                esDestacado,
+                esNuevo,
+                isActive,
+                atributos,
+                especificaciones,
+                brand,
                 diasEnvio: dias,
+                variants: preparedVariants,
             };
-
-            // console.log(newProduct);
 
             const product = new Product(newProduct);
             await product.save();
-            res.status(201).json({ message: 'Product created successfully' });
 
-        } catch (error) {
-            console.error('Error creating product:', error);
-            res.status(500).json({ message: 'Error creating product' });
+            res.status(201).json({ message: "Producto creado correctamente" });
+
+        } catch (error: any) {
+            console.error("Error creating product:", error);
+            res.status(500).json({ message: error.message || "Error creating product" });
             return;
         }
     }
@@ -572,7 +611,8 @@ export class ProductController {
                 barcode,
                 especificaciones,
                 brand,
-                diasEnvio
+                diasEnvio,
+                variants
             } = req.body;
 
             const productId = req.params.id;
@@ -636,21 +676,26 @@ export class ProductController {
             if (diasEnvio && Number(diasEnvio) <= 0) {
                 res.status(400).json({ message: 'Los días de envío deben ser un número positivo' });
                 return;
+            };
+
+            // validar variantes
+            if (variants && !Array.isArray(variants)) {
+                res.status(400).json({ message: 'Variants debe ser un array' });
+                return;
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
-            // Validate Slug
+            // Validate Slug if the name has changed
             const slug = slugify(nombre, { lower: true, strict: true });
+
             if (slug !== existingProduct.slug) {
-                const existingSlug = await Product.findOne({ slug });
+                const existingSlug = await Product.findOne({ slug, _id: { $ne: productId } });
                 if (existingSlug) {
                     res.status(400).json({ message: 'Ya existe un producto con ese slug' });
                     return;
                 }
             }
-
-            existingProduct.slug = slug;
 
             console.log("Updating precioComparativo:", precioComparativo);
 
@@ -674,6 +719,7 @@ export class ProductController {
             existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
             existingProduct.brand = brand || existingProduct.brand;
             existingProduct.diasEnvio = dias;
+            if (variants) existingProduct.variants = variants;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });

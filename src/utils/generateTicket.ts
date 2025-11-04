@@ -5,7 +5,7 @@ const COMPANY = {
     nombre: "GOPHONE",
     ruc: "1072516715",
     direccion: "Jr. Bernardo Ohggins 120 - San Vicente de Cañete, Lima - Perú",
-    telefono: "907103353",
+    telefono: "925054636",
 };
 
 // Colores modernos
