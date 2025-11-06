@@ -198,7 +198,8 @@ router.get('/destacados/all', ProductController.getDestacadosProducts);
 
 router.get('/all/slug', ProductController.getAllProductsSlug);
 
-// get products by brand
+// get products for front page
+router.get('/frontpage/all', ProductController.getFrontPageProducts);
 
 
 

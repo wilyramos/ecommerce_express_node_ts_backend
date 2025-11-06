@@ -34,7 +34,8 @@ export class ProductController {
                 especificaciones,
                 brand,
                 diasEnvio,
-                variants
+                variants,
+                isFrontPage
             } = req.body;
 
             // Validar categoría
@@ -146,6 +147,7 @@ export class ProductController {
                 brand,
                 diasEnvio: dias,
                 variants: preparedVariants,
+                isFrontPage
             };
 
             const product = new Product(newProduct);
@@ -619,7 +621,8 @@ export class ProductController {
                 especificaciones,
                 brand,
                 diasEnvio,
-                variants
+                variants,
+                isFrontPage
             } = req.body;
 
             const productId = req.params.id;
@@ -755,6 +758,7 @@ export class ProductController {
             existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
             existingProduct.brand = brand || existingProduct.brand;
             existingProduct.diasEnvio = dias;
+            existingProduct.isFrontPage = isFrontPage !== undefined ? isFrontPage : existingProduct.isFrontPage;
 
             await existingProduct.save();
             res.status(200).json({ message: 'Producto actualizado correctamente' });
@@ -1116,6 +1120,43 @@ export class ProductController {
             res.status(500).json({ message: 'Error fetching featured products' });
             return;
         }
+    }
+
+    static async getFrontPageProducts(req: Request, res: Response) {
+        try {
+             const { page = '1', limit = '10' } = req.query as {
+                page?: string;
+                limit?: string;
+            };
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            const products = await Product.find({ isFrontPage: true })
+                .skip(skip)
+                .limit(limitNum)
+                .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug')
+            // .populate('categoria', 'nombre slug');
+
+            const totalProducts = await Product.countDocuments({ isFrontPage: true });
+
+            if (products.length === 0) {
+                res.status(404).json({ message: 'No se encontraron productos para la página principal' });
+                return;
+            }
+
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+        } catch (error) {
+            res.status(500).json({ message: 'Error fetching front page products' });
+            return;
+        }
+
     }
 
     static async getAllProductsSlug(req: Request, res: Response) {

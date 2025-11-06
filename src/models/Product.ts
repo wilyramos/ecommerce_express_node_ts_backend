@@ -40,7 +40,8 @@ export interface IProduct extends Document {
     especificaciones?: ISpecification[];
     diasEnvio?: number;
     fechaDisponibilidad?: Date;
-    variants?: IVariant[]; // Variants 
+    variants?: IVariant[]; // Variants
+    isFrontPage?: boolean;
 }
 
 // --- Sub-schema de especificación ---
@@ -90,6 +91,7 @@ const productSchema = new Schema<IProduct>(
         diasEnvio: { type: Number, min: 0, default: 1 },
         fechaDisponibilidad: { type: Date },
         variants: [variantSchema], // Variants
+        isFrontPage: { type: Boolean, default: false },
     },
     { timestamps: true }
 );
