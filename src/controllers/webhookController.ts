@@ -1,6 +1,6 @@
 // controllers/paymentController.ts
 import { Request, Response } from 'express';
-import { preference, payment } from '../utils/mercadopago';
+import { payment } from '../utils/mercadopago';
 import Order, { PaymentStatus, OrderStatus } from '../models/Order';
 import Product from '../models/Product';
 import mongoose from 'mongoose';
@@ -184,7 +184,6 @@ export class WebhookController {
         try {
             const krAnswerRaw = req.body["kr-answer"];
             if (!krAnswerRaw) {
-                console.error("❌ No se recibió 'kr-answer' en el body");
                 res.status(400).send("Falta kr-answer");
                 return;
             }
@@ -211,14 +210,15 @@ export class WebhookController {
                     _id: string;
                     nombre: string;
                     imagenes: string[];
-                },
+                };
                 quantity: number;
                 price: number;
+                variantId?: string;
             };
 
             const order = await Order.findById(orderNumber)
-                .populate<{ user: IUser }>("user", "email name")
-                .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes")
+                .populate<{ user: IUser }>("user", "email nombre")
+                .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes variants stock")
                 .session(session);
 
             if (!order) {
@@ -235,7 +235,6 @@ export class WebhookController {
             }
 
             if (orderStatus === "PAID") {
-                console.log(`✅ Orden ${orderNumber} pagada`);
 
                 order.payment.status = PaymentStatus.APPROVED;
                 order.payment.transactionId = notification.transactions?.[0]?.uuid || null;
@@ -245,10 +244,22 @@ export class WebhookController {
                     for (const item of order.items) {
                         const product = await Product.findById(item.productId).session(session);
                         if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
-                        if (product.stock < item.quantity) {
-                            throw new Error(`Stock insuficiente para ${product.nombre}`);
+
+                        if (item.variantId) {
+                            const variant = product.variants?.find(v => v._id.toString() === item.variantId?.toString());
+                            if (!variant)
+                                throw new Error(`Variante no encontrada para el producto ${product.nombre}`);
+                            if (variant.stock < item.quantity)
+                                throw new Error(`Stock insuficiente para la variante ${variant.nombre || ''} de ${product.nombre}`);
+
+                            variant.stock -= item.quantity;
+                        } else {
+                            // 🔹 Sin variante: descontar stock general
+                            if (product.stock < item.quantity)
+                                throw new Error(`Stock insuficiente para ${product.nombre}`);
+                            product.stock -= item.quantity;
                         }
-                        product.stock -= item.quantity;
+
                         await product.save({ session });
                     }
 
@@ -259,6 +270,7 @@ export class WebhookController {
                     });
 
                 } catch (stockError) {
+                    console.error("⚠️ Error de stock:", stockError);
                     order.status = OrderStatus.PAID_BUT_OUT_OF_STOCK;
                     order.statusHistory.push({
                         status: OrderStatus.PAID_BUT_OUT_OF_STOCK,
@@ -266,10 +278,10 @@ export class WebhookController {
                     });
                 }
 
-                // Send email notification with items
+                // Enviar email
                 OrderEmail.sendOrderConfirmationEmail({
-                    email: order.user.email || notification.customer.email,
-                    name: order.user.nombre || notification.customer.name,
+                    email: order.user.email || notification.customer?.email,
+                    name: order.user.nombre || notification.customer?.name,
                     orderId: order.id,
                     totalPrice: order.totalPrice,
                     shippingMethod: order.payment.method || "Izipay",
@@ -293,6 +305,7 @@ export class WebhookController {
 
         } catch (error) {
             await session.abortTransaction();
+            console.error("❌ Error en Webhook Izipay:", error);
             res.status(500).send("Error interno");
             return;
         } finally {
