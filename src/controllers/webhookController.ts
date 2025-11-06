@@ -71,7 +71,7 @@ export class WebhookController {
             }
 
             if (status === 'approved') {
-                // Descontar stock
+                // Descontar stock considerando variantes
                 for (const item of order.items) {
                     const product = await Product.findById(item.productId._id).session(session);
                     if (!product) {
@@ -80,13 +80,33 @@ export class WebhookController {
                         return;
                     }
 
-                    if (product.stock < item.quantity) {
-                        await session.abortTransaction();
-                        res.status(400).json({ message: `Stock insuficiente para: ${product.nombre}` });
-                        return;
+                    // Si tiene variante
+                    if (item.variantId) {
+                        const variant = product.variants?.find(v => v._id.toString() === item.variantId?.toString());
+                        if (!variant) {
+                            await session.abortTransaction();
+                            res.status(404).json({ message: `Variante no encontrada para el producto: ${product.nombre}` });
+                            return;
+                        }
+
+                        if (variant.stock < item.quantity) {
+                            await session.abortTransaction();
+                            res.status(400).json({ message: `Stock insuficiente para la variante ${variant.nombre || ''} del producto ${product.nombre}` });
+                            return;
+                        }
+
+                        variant.stock -= item.quantity;
+                    } else {
+                        // Sin variante: descontar stock general
+                        if (product.stock < item.quantity) {
+                            await session.abortTransaction();
+                            res.status(400).json({ message: `Stock insuficiente para: ${product.nombre}` });
+                            return;
+                        }
+
+                        product.stock -= item.quantity;
                     }
 
-                    product.stock -= item.quantity;
                     await product.save({ session });
                 }
 
@@ -99,40 +119,22 @@ export class WebhookController {
                 await session.commitTransaction();
                 session.endSession();
 
-                // Enviar email
                 const user = order.user as any;
                 if (user?.email) {
-                    // const productos = order.items.map((item) => {
-                    //     const producto = item.productId as any;
-                    //     return {
-                    //         nombre: producto?.nombre || 'Producto',
-                    //         quantity: item.quantity
-                    //     };
-                    // });
-
                     await OrderEmail.sendOrderConfirmationEmail({
                         email: user.email,
                         name: user.nombre,
                         orderId: order._id.toString(),
                         totalPrice: order.totalPrice,
                         shippingMethod: order.shippingAddress.direccion,
-                        // items: order.items.map(item => ({
-                        //     productId: {
-                        //         _id: item.productId._id.toString(),
-                        //         nombre: item.productId.nombre,
-                        //         imagenes: item.productId.imagenes
-                        //     },
-                        //     quantity: item.quantity,
-                        //     price: item.price
-                        // }))
                     });
                 }
 
                 console.log(`✅ Pago aprobado y orden procesada: ${orderId}`);
                 res.status(200).json({ message: 'Pago aprobado y orden procesada' });
                 return;
-
-            } else if (status === 'pending') {
+            }
+            else if (status === 'pending') {
                 order.payment.status = PaymentStatus.PENDING;
                 order.status = OrderStatus.AWAITING_PAYMENT;
                 order.payment.transactionId = paymentId;
@@ -297,5 +299,4 @@ export class WebhookController {
             session.endSession();
         }
     }
-
 }
