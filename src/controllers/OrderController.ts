@@ -36,7 +36,7 @@ export class OrderController {
                 return;
             }
 
-            // Validar que los productos existan y precios no hayan cambiado
+            // Obtener productos desde DB
             const productIds = items.map(i => i.productId);
             const dbProducts = await Product.find({ _id: { $in: productIds } }).session(session);
 
@@ -46,20 +46,83 @@ export class OrderController {
             }
 
             let calculatedSubtotal = 0;
+            const orderItems: any[] = [];
+
             for (const item of items) {
                 const dbProduct = dbProducts.find(p => p._id.toString() === item.productId);
                 if (!dbProduct) continue;
 
-                if (item.price !== dbProduct.precio) {
+                let finalPrice = dbProduct.precio || 0;
+                let nombre = dbProduct.nombre;
+                let imagen: string | undefined;
+                let variantAttributes: Record<string, string> = {};
+
+                // Si es variante
+                if (item.variantId) {
+                    const variant = dbProduct.variants?.find(v => v._id.toString() === item.variantId);
+                    if (!variant) {
+                        res.status(400).json({
+                            message: `La variante seleccionada para "${dbProduct.nombre}" no existe`
+                        });
+                        return;
+                    }
+
+                    finalPrice = variant.precio ?? dbProduct.precio ?? 0;
+                    nombre = `${dbProduct.nombre} ${variant.nombre ?? ''}`;
+                    imagen = variant.imagenes?.[0] || dbProduct.imagenes?.[0];
+
+                    // Conversión segura de atributos
+                    if (variant.atributos instanceof Map) {
+                        variantAttributes = Object.fromEntries(variant.atributos.entries());
+                    } else if (variant.atributos && typeof variant.atributos === 'object') {
+                        variantAttributes = { ...variant.atributos };
+                    } else {
+                        variantAttributes = {};
+                    }
+
+                    // Validar stock de la variante
+                    if ((variant.stock ?? 0) < item.quantity) {
+                        res.status(400).json({
+                            message: `No hay suficiente stock para "${nombre}". Disponible: ${variant.stock}`
+                        });
+                        return;
+                    }
+
+                } else {
+                    // Producto simple
+                    imagen = dbProduct.imagenes?.[0];
+
+                    // Validar stock del producto simple
+                    if ((dbProduct.stock ?? 0) < item.quantity) {
+                        res.status(400).json({
+                            message: `No hay suficiente stock para "${nombre}". Disponible: ${dbProduct.stock}`
+                        });
+                        return;
+                    }
+                }
+
+                // Validar precio enviado por frontend
+                if (item.price !== finalPrice) {
                     res.status(400).json({
-                        message: `El precio del producto "${dbProduct.nombre}" ha cambiado`
+                        message: `El precio del producto "${nombre}" ha cambiado`
                     });
                     return;
                 }
 
-                calculatedSubtotal += item.price * item.quantity;
+                calculatedSubtotal += finalPrice * item.quantity;
+
+                orderItems.push({
+                    productId: dbProduct._id,
+                    variantId: item.variantId,
+                    variantAttributes,
+                    quantity: item.quantity,
+                    price: finalPrice,
+                    nombre,
+                    imagen
+                });
             }
 
+            // Validar subtotal y total
             if (calculatedSubtotal !== subtotal) {
                 res.status(400).json({ message: 'El subtotal no coincide' });
                 return;
@@ -76,11 +139,7 @@ export class OrderController {
             const newOrder = await Order.create([{
                 orderNumber,
                 user: req.user._id,
-                items: items.map(item => ({
-                    productId: item.productId,
-                    quantity: item.quantity,
-                    price: item.price
-                })),
+                items: orderItems,
                 subtotal,
                 shippingCost,
                 totalPrice,
@@ -115,9 +174,9 @@ export class OrderController {
             return;
         } finally {
             session.endSession();
-            return;
         }
     }
+
 
     // Trear todas las orders para el administrador
     static async getOrders(req: Request, res: Response) {

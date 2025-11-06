@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
 
-// Estados de orden y pago
+// Status 
 export enum OrderStatus {
     AWAITING_PAYMENT = 'awaiting_payment',
     PROCESSING = 'processing',
@@ -32,16 +32,20 @@ export interface IShippingAddress {
 
 export interface IOrderItem {
     productId: Types.ObjectId | IProduct;
+    variantId?: Types.ObjectId;
+    variantAttributes?: Record<string, string>;
     quantity: number;
     price: number;
+    nombre: string; // nombre histórico producto + variante
+    imagen?: string;
 }
 
 export interface IPaymentInfo {
-    provider: string;        // Ej: 'IZIPAY', 'MERCADOPAGO', 'STRIPE'
-    method?: string;         // Ej: 'visa', 'yape'
-    transactionId?: string;  // ID que devuelve la pasarela
+    provider: string;
+    method?: string;
+    transactionId?: string;
     status: PaymentStatus;
-    rawResponse?: any;       // Respuesta completa para debugging
+    rawResponse?: any;
 }
 
 export interface IStatusHistory {
@@ -51,7 +55,7 @@ export interface IStatusHistory {
 
 export interface IOrder extends Document {
     orderNumber: string;
-    user: Types.ObjectId | IUser; // 
+    user: Types.ObjectId | IUser;
     items: IOrderItem[];
     subtotal: number;
     shippingCost: number;
@@ -76,8 +80,12 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
 
 const orderItemSchema = new Schema<IOrderItem>({
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: Schema.Types.ObjectId },
+    variantAttributes: { type: Map, of: String },
     quantity: { type: Number, required: true },
-    price: { type: Number, required: true }
+    price: { type: Number, required: true },
+    nombre: { type: String, required: true },
+    imagen: { type: String }
 }, { _id: false });
 
 const paymentSchema = new Schema<IPaymentInfo>({
@@ -93,7 +101,7 @@ const statusHistorySchema = new Schema<IStatusHistory>({
     changedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
-// Order principal
+// Schema principal de la orden
 const orderSchema = new Schema<IOrder>({
     orderNumber: { type: String, unique: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -114,4 +122,5 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ 'payment.transactionId': 1 });
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
+
 export default Order;
