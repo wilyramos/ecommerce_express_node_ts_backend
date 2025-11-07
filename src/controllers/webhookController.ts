@@ -7,9 +7,8 @@ import mongoose from 'mongoose';
 import { OrderEmail } from '../emails/OrderEmailResend';
 import type { IUser } from '../models/User';
 
-// Email
-
 export class WebhookController {
+    // --- MERCADO PAGO ---
     static async handleWebHookMercadoPago(req: Request, res: Response) {
         const session = await mongoose.startSession();
 
@@ -27,7 +26,6 @@ export class WebhookController {
                 paymentData = await payment.get({ id: paymentId });
             } catch (mpError) {
                 console.error('❌ Error al obtener el pago desde Mercado Pago:', mpError);
-
                 if (mpError?.status === 404) {
                     res.status(404).json({ message: 'Pago no encontrado en Mercado Pago' });
                     return;
@@ -43,8 +41,7 @@ export class WebhookController {
             }
 
             const { status, external_reference } = paymentData;
-            const orderId = external_reference; // En el external_reference se guarda el orderId
-
+            const orderId = external_reference;
 
             if (!orderId) {
                 res.status(400).json({ message: 'order_id no encontrado en metadata' });
@@ -79,7 +76,6 @@ export class WebhookController {
                         return;
                     }
 
-                    // Si tiene variante
                     if (item.variantId) {
                         const variant = product.variants?.find(v => v._id.toString() === item.variantId?.toString());
                         if (!variant) {
@@ -95,14 +91,15 @@ export class WebhookController {
                         }
 
                         variant.stock -= item.quantity;
+
+                        // Actualizar el stock total del producto
+                        product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
                     } else {
-                        // Sin variante: descontar stock general
                         if (product.stock < item.quantity) {
                             await session.abortTransaction();
                             res.status(400).json({ message: `Stock insuficiente para: ${product.nombre}` });
                             return;
                         }
-
                         product.stock -= item.quantity;
                     }
 
@@ -178,6 +175,7 @@ export class WebhookController {
         }
     }
 
+    // --- IZIPAY ---
     static async handleWebHookIzipay(req: Request, res: Response) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -198,7 +196,6 @@ export class WebhookController {
                 return;
             }
 
-            // Solo procesar eventos relevantes
             if (!["PAID", "UNPAID"].includes(orderStatus)) {
                 console.log(`ℹ️ Estado ${orderStatus} ignorado`);
                 await session.commitTransaction();
@@ -215,7 +212,6 @@ export class WebhookController {
                 return;
             }
 
-            // Evitar reprocesar si ya está aprobada
             if (order.payment.status === PaymentStatus.APPROVED) {
                 console.log(`⚠️ Orden ${orderNumber} ya procesada, ignorando...`);
                 await session.commitTransaction();
@@ -224,7 +220,6 @@ export class WebhookController {
             }
 
             if (orderStatus === "PAID") {
-
                 order.payment.status = PaymentStatus.APPROVED;
                 order.payment.transactionId = notification.transactions?.[0]?.uuid || null;
                 order.payment.rawResponse = notification;
@@ -242,8 +237,10 @@ export class WebhookController {
                                 throw new Error(`Stock insuficiente para la variante ${variant.nombre || ''} de ${product.nombre}`);
 
                             variant.stock -= item.quantity;
+
+                            // Actualizar stock total
+                            product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
                         } else {
-                            // 🔹 Sin variante: descontar stock general
                             if (product.stock < item.quantity)
                                 throw new Error(`Stock insuficiente para ${product.nombre}`);
                             product.stock -= item.quantity;
@@ -267,7 +264,6 @@ export class WebhookController {
                     });
                 }
 
-                // Enviar email
                 console.log(`✅ Los items de la orden son:`, order.items);
                 OrderEmail.sendOrderConfirmationEmail({
                     email: order.user.email || notification.customer?.email,

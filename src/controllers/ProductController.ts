@@ -622,90 +622,49 @@ export class ProductController {
                 brand,
                 diasEnvio,
                 variants,
-                isFrontPage
+                isFrontPage,
             } = req.body;
 
             const productId = req.params.id;
             const existingProduct = await Product.findById(productId);
             if (!existingProduct) {
-                res.status(404).json({ message: 'Producto no encontrado' });
+                res.status(404).json({ message: "Producto no encontrado" });
                 return;
             }
 
-            // Validar y actualizar categoría
-            let categoriaCambio = false;
-            if (categoria && categoria !== existingProduct.categoria.toString()) {
-                const selectedCategory = await Category.findById(categoria);
-                if (!selectedCategory) {
-                    res.status(400).json({ message: 'La categoría no existe' });
-                    return;
-                }
-
-                const hasChildren = await Category.exists({ parent: categoria });
-                if (hasChildren) {
-                    res.status(400).json({ message: 'No se puede cambiar a una categoría que tiene subcategorías' });
-                    return;
-                }
-
-                categoriaCambio = true;
-                existingProduct.categoria = categoria;
-            }
-
-            if (atributos && typeof atributos !== 'object') {
-                res.status(400).json({ message: 'Los atributos deben ser un objeto' });
-                return;
-            }
-
-            if (categoriaCambio) {
-                existingProduct.atributos = atributos || {};
-            } else if (atributos) {
-                existingProduct.atributos = atributos;
-            }
-
+            // --- Validaciones generales ---
             if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
+                return;
+            }
+
+            if (atributos && typeof atributos !== "object") {
+                res.status(400).json({ message: "Los atributos deben ser un objeto" });
                 return;
             }
 
             if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: 'Especificaciones deben ser un array' });
+                res.status(400).json({ message: "Especificaciones deben ser un array" });
                 return;
             }
 
             if (precioComparativo && Number(precioComparativo) < Number(precio)) {
-                res.status(400).json({ message: 'El precio comparativo no puede ser menor que el precio' });
-                return;
-            }
-
-            if (diasEnvio && Number(diasEnvio) <= 0) {
-                res.status(400).json({ message: 'Los días de envío deben ser un número positivo' });
-                return;
-            }
-
-            if (variants && !Array.isArray(variants)) {
-                res.status(400).json({ message: 'Variants debe ser un array' });
+                res.status(400).json({ message: "El precio comparativo no puede ser menor que el precio" });
                 return;
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
-            // Actualizar slug si cambió el nombre
-            if (nombre && nombre !== existingProduct.nombre) {
-                const newSlug = await generateUniqueSlug(nombre);
-                existingProduct.slug = newSlug;
-            }
-
-            // Procesar variantes: generar nombre automático y validar
+            // --- Procesar variantes ---
             let preparedVariants: IVariant[] | undefined;
             if (variants && Array.isArray(variants)) {
                 preparedVariants = variants.map((v) => {
-                    if (!v.atributos || typeof v.atributos !== "object") {
+                    if (!v.atributos || typeof v.atributos !== "object")
                         throw new Error("Cada variante debe tener atributos válidos");
-                    }
 
-                    const nombreGenerado = v.nombre
-                        ? v.nombre
-                        : Object.keys(v.atributos)
+                    const nombreGenerado =
+                        v.nombre ||
+                        Object.keys(v.atributos)
                             .sort()
                             .map((key) => `${v.atributos[key]}`)
                             .join(" / ");
@@ -733,41 +692,52 @@ export class ProductController {
                     seen.add(key);
                 }
 
+                // Actualizar variantes y stock total
                 existingProduct.variants = preparedVariants;
-
-                // Actualizar stock total desde variantes si existen
                 existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
-            } else if (!variants) {
-                // Si no se envían variantes, mantener stock manual si existe
-                if (stock != null) existingProduct.stock = stock;
+            } else if (variants && variants.length === 0) {
+                // Si se eliminan todas las variantes, usar stock manual
+                existingProduct.variants = [];
+                existingProduct.stock = Number(stock) || 0;
+            } else if (stock != null) {
+                // Si no se envían variantes, actualizar stock manualmente
+                existingProduct.stock = Number(stock);
             }
 
-            // Actualizar otros campos
-            existingProduct.nombre = nombre || existingProduct.nombre;
-            existingProduct.descripcion = descripcion || existingProduct.descripcion;
+            // --- Actualizar otros campos ---
+            if (nombre && nombre !== existingProduct.nombre) {
+                existingProduct.slug = await generateUniqueSlug(nombre);
+                existingProduct.nombre = nombre;
+            }
+
+            if (descripcion) existingProduct.descripcion = descripcion;
             if (precio != null) existingProduct.precio = Number(precio);
-            if (precioComparativo === undefined) existingProduct.precioComparativo = undefined;
-            else if (precioComparativo != null) existingProduct.precioComparativo = Number(precioComparativo);
+            if (precioComparativo !== undefined)
+                existingProduct.precioComparativo =
+                    precioComparativo != null ? Number(precioComparativo) : undefined;
             if (costo != null) existingProduct.costo = Number(costo);
             if (imagenes) existingProduct.imagenes = imagenes;
-            existingProduct.sku = sku || existingProduct.sku;
-            existingProduct.barcode = barcode || existingProduct.barcode;
-            existingProduct.esDestacado = esDestacado !== undefined ? esDestacado : existingProduct.esDestacado;
-            existingProduct.esNuevo = esNuevo !== undefined ? esNuevo : existingProduct.esNuevo;
-            existingProduct.isActive = isActive !== undefined ? isActive : existingProduct.isActive;
-            existingProduct.especificaciones = especificaciones || existingProduct.especificaciones;
-            existingProduct.brand = brand || existingProduct.brand;
+            if (sku) existingProduct.sku = sku;
+            if (barcode) existingProduct.barcode = barcode;
+            if (brand) existingProduct.brand = brand;
+            if (atributos) existingProduct.atributos = atributos;
+            if (especificaciones) existingProduct.especificaciones = especificaciones;
             existingProduct.diasEnvio = dias;
-            existingProduct.isFrontPage = isFrontPage !== undefined ? isFrontPage : existingProduct.isFrontPage;
+            existingProduct.esDestacado = esDestacado ?? existingProduct.esDestacado;
+            existingProduct.esNuevo = esNuevo ?? existingProduct.esNuevo;
+            existingProduct.isActive = isActive ?? existingProduct.isActive;
+            existingProduct.isFrontPage = isFrontPage ?? existingProduct.isFrontPage;
 
             await existingProduct.save();
-            res.status(200).json({ message: 'Producto actualizado correctamente' });
-        } catch (error: any) {
+            res.status(200).json({ message: "Producto actualizado correctamente" });
+            return;
+        } catch (error) {
             console.error("Error updating product:", error);
-            res.status(500).json({ message: 'Error updating product', error: error.message || error });
+            res.status(500).json({ message: "Error actualizando producto", error: error.message });
             return;
         }
     }
+
 
 
     static async deleteProduct(req: Request, res: Response) {
@@ -1124,7 +1094,7 @@ export class ProductController {
 
     static async getFrontPageProducts(req: Request, res: Response) {
         try {
-             const { page = '1', limit = '10' } = req.query as {
+            const { page = '1', limit = '10' } = req.query as {
                 page?: string;
                 limit?: string;
             };
