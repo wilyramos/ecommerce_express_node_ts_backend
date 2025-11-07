@@ -9,7 +9,7 @@ export class OrderEmail {
     orderId,
     totalPrice,
     shippingMethod,
-    items = []
+    items = [],
   }: {
     email: string;
     name?: string;
@@ -20,69 +20,55 @@ export class OrderEmail {
   }) {
     try {
       const itemsHtml = items
-        .map((item) => {
-          const variantText =
-            item.variantAttributes && Object.keys(item.variantAttributes).length > 0
-              ? `<div style="font-size:12px; color:#6b7280; margin-top:4px;">
-                  ${Object.entries(item.variantAttributes)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(" / ")}
-                </div>`
-              : "";
-
-          return `
-            <tr style="border-bottom:1px solid #eee;">
-              <td style="padding:10px 0; text-align:center;">
-                <img src="${item.imagen || "https://gophone.pe/logo.png"}"
-                     alt="${item.nombre}"
-                     style="width:60px; height:auto; border-radius:6px; object-fit:cover;" />
+        .map(
+          (item) => `
+            <tr>
+              <td style="padding:10px 0; border-bottom:1px solid #f0f0f0;">
+                <img 
+                  src="${item.imagen || "https://gophone.pe/logo.png"}"
+                  alt="${item.nombre}"
+                  style="width:55px; height:auto; border-radius:6px;"
+                />
               </td>
-              <td style="padding:10px 0; text-align:left;">
-                <div style="font-weight:500; color:#111827;">${item.nombre}</div>
-                ${variantText}
+              <td style="padding:10px; border-bottom:1px solid #f0f0f0;">
+                <div style="font-weight:500;">${item.nombre}</div>
               </td>
-              <td style="padding:10px 0; text-align:center; color:#374151;">
+              <td style="text-align:center; border-bottom:1px solid #f0f0f0;">
                 ${item.quantity}
               </td>
-              <td style="padding:10px 0; text-align:right; color:#111827;">
+              <td style="text-align:right; border-bottom:1px solid #f0f0f0;">
                 S/. ${item.price.toFixed(2)}
               </td>
-              <td style="padding:10px 0; text-align:right; font-weight:500; color:#111827;">
-                S/. ${(item.price * item.quantity).toFixed(2)}
+              <td style="text-align:right; border-bottom:1px solid #f0f0f0;">
+                <strong>S/. ${(item.price * item.quantity).toFixed(2)}</strong>
               </td>
-            </tr>
-          `;
-        })
+            </tr>`
+        )
         .join("");
 
       const emailContent = baseEmailTemplate({
         title: "Gracias por tu compra 🛍️",
         content: `
-          <div style="font-family:Inter, Arial, sans-serif; color:#111827; font-size:15px; line-height:1.6;">
-            <p>Hola <strong>${name || "cliente"}</strong>,</p>
-            <p>
-              Nos alegra informarte que hemos recibido tu pedido
-              <strong>#${orderId}</strong> y está siendo procesado.
+          <div style="font-family:Inter,Arial,sans-serif; color:#111827; line-height:1.6;">
+            <p style="font-size:15px;">Hola ${name || "cliente"},</p>
+            <p style="font-size:15px;">
+              Hemos recibido tu pedido <strong>#${orderId}</strong> y ya está siendo procesado.
             </p>
 
-            <div style="margin:20px 0; background:#f9fafb; border-radius:8px; padding:16px;">
-              <p style="margin:0; font-size:14px; color:#374151;">
-                <strong>Método de envío:</strong> ${shippingMethod}
-              </p>
-            </div>
+            <p style="margin-top:8px; font-size:15px;">
+              <strong>Método de envío:</strong> ${shippingMethod}
+            </p>
 
-            <h3 style="margin-top:24px; font-size:16px; font-weight:600; color:#111827;">
-              Resumen de tu pedido
-            </h3>
+            <h3 style="margin-top:20px; font-size:17px; font-weight:600;">Resumen de tu pedido</h3>
 
-            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+            <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:14px;">
               <thead>
-                <tr style="text-align:left; border-bottom:2px solid #e5e7eb; color:#6b7280; font-size:13px;">
-                  <th style="padding:8px 0;">Imagen</th>
-                  <th style="padding:8px 0;">Producto</th>
-                  <th style="padding:8px 0; text-align:center;">Cant.</th>
-                  <th style="padding:8px 0; text-align:right;">Precio</th>
-                  <th style="padding:8px 0; text-align:right;">Subtotal</th>
+                <tr style="color:#6b7280; text-align:left;">
+                  <th style="padding-bottom:6px;">Imagen</th>
+                  <th style="padding-bottom:6px;">Producto</th>
+                  <th style="padding-bottom:6px;">Cant.</th>
+                  <th style="padding-bottom:6px; text-align:right;">Precio</th>
+                  <th style="padding-bottom:6px; text-align:right;">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
@@ -90,40 +76,41 @@ export class OrderEmail {
               </tbody>
             </table>
 
-            <div style="margin-top:20px; border-top:1px solid #e5e7eb; padding-top:12px; text-align:right;">
-              <p style="margin:4px 0; font-size:14px; color:#374151;">Envío: <strong>S/. 0.00</strong></p>
-              <p style="margin:4px 0; font-size:16px; font-weight:600; color:#111827;">
-                Total pagado: S/. ${totalPrice.toFixed(2)}
-              </p>
-            </div>
+            <p style="text-align:right; font-size:15px; margin-top:10px; color:#374151;">
+              Envío: <strong>S/. 0.00</strong>
+            </p>
 
-            <p style="margin-top:24px; color:#4b5563; font-size:14px;">
+            <p style="text-align:right; font-size:16px; margin-top:4px; font-weight:600;">
+              Total pagado: S/. ${totalPrice.toFixed(2)}
+            </p>
+
+            <p style="margin-top:20px; font-size:14px; color:#4b5563;">
               Recibirás una notificación cuando tu pedido sea enviado.
             </p>
 
-            <p style="margin-top:16px;">
-              Gracias por comprar en <strong style="color:#111827;">GoPhone</strong> 💙
+            <p style="margin-top:10px; font-size:14px;">
+              Gracias por elegir <strong>GoPhone</strong> 💙
             </p>
           </div>
-        `
+        `,
       });
 
       await resend.emails.send({
-        from: "GoPhone Cañete <contacto@gophone.pe>",
+        from: "GoPhone <contacto@gophone.pe>",
         to: email,
-        subject: `Tu pedido #${orderId} ha sido confirmado ✅`,
-        html: emailContent
+        subject: "Tu pedido ha sido confirmado 🛍️",
+        html: emailContent,
       });
 
       return {
         success: true,
-        message: "Email de confirmación enviado correctamente"
+        message: "Email de confirmación enviado correctamente",
       };
     } catch (error) {
       console.error("❌ Error al enviar el email de confirmación:", error);
       return {
         success: false,
-        message: "Error al enviar el email de confirmación"
+        message: "Error al enviar el email de confirmación",
       };
     }
   }
