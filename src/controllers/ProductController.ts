@@ -508,7 +508,7 @@ export class ProductController {
 
             const products = await Product.find({ nombre: { $regex: searchText, $options: "i" } })
                 .select("nombre precio slug imagenes")
-                .limit(10);
+                .limit(8);
 
             // Responder directamente con el array
             res.status(200).json(products);
