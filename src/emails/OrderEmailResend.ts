@@ -47,7 +47,7 @@ export class OrderEmail {
         .join("");
 
       const emailContent = baseEmailTemplate({
-        title: "Gracias por tu compra 🛍️",
+        title: "Gracias por tu compra",
         content: `
           <div style="font-family:Inter,Arial,sans-serif; color:#111827; line-height:1.6;">
             <p style="font-size:15px;">Hola ${name || "cliente"},</p>
@@ -76,10 +76,6 @@ export class OrderEmail {
               </tbody>
             </table>
 
-            <p style="text-align:right; font-size:15px; margin-top:10px; color:#374151;">
-              Envío: <strong>S/. 0.00</strong>
-            </p>
-
             <p style="text-align:right; font-size:16px; margin-top:4px; font-weight:600;">
               Total pagado: S/. ${totalPrice.toFixed(2)}
             </p>
@@ -89,7 +85,7 @@ export class OrderEmail {
             </p>
 
             <p style="margin-top:10px; font-size:14px;">
-              Gracias por elegir <strong>GoPhone</strong> 💙
+              Gracias por elegir <strong>GoPhone</strong>
             </p>
           </div>
         `,
