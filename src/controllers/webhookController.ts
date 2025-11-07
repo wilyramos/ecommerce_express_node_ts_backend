@@ -6,7 +6,6 @@ import Product from '../models/Product';
 import mongoose from 'mongoose';
 import { OrderEmail } from '../emails/OrderEmailResend';
 import type { IUser } from '../models/User';
-import type { IOrderItem } from '../models/Order';
 
 // Email
 
@@ -55,7 +54,6 @@ export class WebhookController {
             session.startTransaction();
 
             const order = await Order.findById(orderId)
-                .populate('items.productId')
                 .populate('user')
                 .session(session);
 
@@ -121,6 +119,7 @@ export class WebhookController {
                 session.endSession();
 
                 const user = order.user as any;
+                console.log(`📧Items de la orden:`, order.items);
                 if (user?.email) {
                     await OrderEmail.sendOrderConfirmationEmail({
                         email: user.email,
@@ -209,7 +208,6 @@ export class WebhookController {
 
             const order = await Order.findById(orderNumber)
                 .populate<{ user: IUser }>("user", "email nombre")
-                .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes variants stock")
                 .session(session);
 
             if (!order) {
@@ -270,6 +268,7 @@ export class WebhookController {
                 }
 
                 // Enviar email
+                console.log(`✅ Los items de la orden son:`, order.items);
                 OrderEmail.sendOrderConfirmationEmail({
                     email: order.user.email || notification.customer?.email,
                     name: order.user.nombre || notification.customer?.name,
