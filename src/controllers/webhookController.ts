@@ -6,6 +6,7 @@ import Product from '../models/Product';
 import mongoose from 'mongoose';
 import { OrderEmail } from '../emails/OrderEmailResend';
 import type { IUser } from '../models/User';
+import type { IOrderItem } from '../models/Order';
 
 // Email
 
@@ -127,6 +128,7 @@ export class WebhookController {
                         orderId: order._id.toString(),
                         totalPrice: order.totalPrice,
                         shippingMethod: order.shippingAddress.direccion,
+                        items: order.items,
                     });
                 }
 
@@ -205,17 +207,6 @@ export class WebhookController {
                 return;
             }
 
-            type IOrderItem = {
-                productId: {
-                    _id: string;
-                    nombre: string;
-                    imagenes: string[];
-                };
-                quantity: number;
-                price: number;
-                variantId?: string;
-            };
-
             const order = await Order.findById(orderNumber)
                 .populate<{ user: IUser }>("user", "email nombre")
                 .populate<{ items: IOrderItem[] }>("items.productId", "nombre imagenes variants stock")
@@ -285,7 +276,7 @@ export class WebhookController {
                     orderId: order.id,
                     totalPrice: order.totalPrice,
                     shippingMethod: order.payment.method || "Izipay",
-                    items: order.items,
+                    items: order.items
                 });
 
             } else if (orderStatus === "UNPAID") {
