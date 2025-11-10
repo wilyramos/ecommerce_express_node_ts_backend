@@ -505,41 +505,34 @@ export class ProductController {
             const { query } = req.query;
             const searchText = query?.toString().trim() || "";
 
-            // Si no hay texto, mostrar productos destacados o recientes
+            // Si no hay texto de búsqueda, devolver lista vacía
             if (!searchText) {
-                const fallback = await Product.find({ isActive: true })
-                    .select("nombre precio slug imagenes esDestacado esNuevo")
-                    .slice("imagenes", 1)
-                    .sort({ esDestacado: -1, createdAt: -1 })
-                    .limit(8);
-                res.status(200).json(fallback);
+                res.status(200).json([]);
                 return;
             }
 
-            // Búsqueda simple y eficiente
+            // Dividir el texto en palabras individuales
+            const words = searchText.split(/\s+/).filter(Boolean);
+
+            // Construir condiciones: cada palabra debe aparecer en algún campo
+            const andConditions = words.map(word => ({
+                $or: [
+                    { nombre: { $regex: word, $options: "i" } },
+                    { descripcion: { $regex: word, $options: "i" } },
+                    { "variants.nombre": { $regex: word, $options: "i" } },
+                ],
+            }));
+
             const products = await Product.find({
                 isActive: true,
-                $or: [
-                    { nombre: { $regex: searchText, $options: "i" } },
-                    { descripcion: { $regex: searchText, $options: "i" } },
-                    { "variants.nombre": { $regex: searchText, $options: "i" } },
-                ],
+                $and: andConditions,
             })
                 .select("nombre precio slug imagenes esDestacado esNuevo")
-                .slice("imagenes", 1) // <- solo la primera imagen
-                .limit(6);
-
-            // Fallback si no hay coincidencias
-            if (!products.length) {
-                const fallback = await Product.find({ isActive: true, esDestacado: true })
-                    .select("nombre precio slug imagenes esDestacado esNuevo")
-                    .slice("imagenes", 1)
-                    .limit(8);
-                res.status(200).json(fallback);
-                return;
-            }
+                .slice("imagenes", 1)
+                .limit(20); // puedes ajustar el límite según tus necesidades
 
             res.status(200).json(products);
+            return;
         } catch (error) {
             console.error("Error searching products in index:", error);
             res.status(500).json({ message: "Error al buscar productos" });
@@ -1234,10 +1227,17 @@ export class ProductController {
             // Query base
             const searchQuery: any = { isActive: true };
 
-            // 🔎 Búsqueda por texto
+            // Búsqueda por texto con coincidencia de palabras individuales
             if (query && query.trim() !== "") {
-                const regex = new RegExp(query.trim(), "i");
-                searchQuery.$or = [{ nombre: regex }, { descripcion: regex }];
+                const words = query.trim().split(/\s+/).filter(Boolean);
+                const andConditions = words.map(word => ({
+                    $or: [
+                        { nombre: { $regex: word, $options: "i" } },
+                        { descripcion: { $regex: word, $options: "i" } },
+                        { "variants.nombre": { $regex: word, $options: "i" } },
+                    ],
+                }));
+                searchQuery.$and = andConditions;
             }
 
             // 📂 Filtro por categoría
@@ -1245,7 +1245,7 @@ export class ProductController {
                 searchQuery.categoria = category;
             }
 
-            // Buscar el brand por su slug
+            // Filtro por marca (brand)
             if (rest.brand) {
                 const brandDoc = await Brand.findOne({ slug: rest.brand });
                 if (brandDoc) {
@@ -1263,9 +1263,8 @@ export class ProductController {
                 }
             }
 
-            // Ej: ?Color=Rojo&Color=Verde&Talla=M
+            // Filtro por atributos dinámicos (ej: Color=Rojo, Talla=M)
             Object.keys(rest).forEach((key) => {
-
                 if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) {
                     return;
                 }
@@ -1276,7 +1275,7 @@ export class ProductController {
                 }
             });
 
-            // 📑 Orde
+            // Ordenamiento
             let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
             if (sort) {
                 switch (sort) {
@@ -1303,7 +1302,7 @@ export class ProductController {
                 .skip(skip)
                 .limit(limitNum)
                 .sort(sortQuery)
-                .populate('brand', 'nombre slug');
+                .populate("brand", "nombre slug");
 
             const totalPromise = Product.countDocuments(searchQuery);
 
@@ -1364,7 +1363,6 @@ export class ProductController {
         } catch (error) {
             console.error(error);
             res.status(500).json({ message: "Error fetching main page products" });
-            return;
         }
     }
 }
