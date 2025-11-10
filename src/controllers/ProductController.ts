@@ -670,14 +670,25 @@ export class ProductController {
                 return;
             }
 
-            if (precioComparativo && Number(precioComparativo) < Number(precio)) {
+            if (
+                precioComparativo !== undefined &&
+                precioComparativo !== null &&
+                Number(precioComparativo) <= 0
+            ) {
+                // Si llega 0 o negativo, no guardar
+                delete req.body.precioComparativo;
+            } else if (
+                precioComparativo &&
+                precio != null &&
+                Number(precioComparativo) < Number(precio)
+            ) {
                 res.status(400).json({ message: "El precio comparativo no puede ser menor que el precio" });
                 return;
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
-            // --- Validar y actualizar categoría ---
+            // --- Validar categoría ---
             if (categoria) {
                 const categoryExists = await Category.findById(categoria);
                 if (!categoryExists) {
@@ -700,10 +711,21 @@ export class ProductController {
                             .map((key) => `${v.atributos[key]}`)
                             .join(" / ");
 
+                    let precioComparativoFinal =
+                        v.precioComparativo != null ? Number(v.precioComparativo) : undefined;
+
+                    if (
+                        precioComparativoFinal !== undefined &&
+                        (precioComparativoFinal <= 0 ||
+                            (v.precio != null && precioComparativoFinal < Number(v.precio)))
+                    ) {
+                        precioComparativoFinal = undefined;
+                    }
+
                     return {
                         nombre: nombreGenerado,
                         precio: v.precio != null ? Number(v.precio) : undefined,
-                        precioComparativo: v.precioComparativo != null ? Number(v.precioComparativo) : undefined,
+                        precioComparativo: precioComparativoFinal,
                         stock: v.stock != null ? Number(v.stock) : 0,
                         sku: v.sku,
                         barcode: v.barcode,
@@ -712,6 +734,7 @@ export class ProductController {
                     };
                 });
 
+                // Detección de variantes duplicadas
                 const seen = new Set();
                 for (const v of preparedVariants) {
                     const key = JSON.stringify(v.atributos);
@@ -737,9 +760,17 @@ export class ProductController {
 
             if (descripcion) existingProduct.descripcion = descripcion;
             if (precio != null) existingProduct.precio = Number(precio);
-            if (precioComparativo !== undefined)
-                existingProduct.precioComparativo =
-                    precioComparativo != null ? Number(precioComparativo) : undefined;
+
+            if (
+                precioComparativo !== undefined &&
+                precioComparativo !== null &&
+                Number(precioComparativo) > 0
+            ) {
+                existingProduct.precioComparativo = Number(precioComparativo);
+            } else {
+                existingProduct.precioComparativo = undefined;
+            }
+
             if (costo != null) existingProduct.costo = Number(costo);
             if (imagenes) existingProduct.imagenes = imagenes;
             if (sku) existingProduct.sku = sku;
@@ -763,6 +794,7 @@ export class ProductController {
             return;
         }
     }
+
 
 
     static async deleteProduct(req: Request, res: Response) {
@@ -1224,10 +1256,10 @@ export class ProductController {
             const limitNum = parseInt(limit || "10", 10);
             const skip = (pageNum - 1) * limitNum;
 
-            // Query base
+            // Base query
             const searchQuery: any = { isActive: true };
 
-            // Búsqueda por texto con coincidencia de palabras individuales
+            // 🔍 Texto: busca en nombre, descripción y variantes
             if (query && query.trim() !== "") {
                 const words = query.trim().split(/\s+/).filter(Boolean);
                 const andConditions = words.map(word => ({
@@ -1235,17 +1267,18 @@ export class ProductController {
                         { nombre: { $regex: word, $options: "i" } },
                         { descripcion: { $regex: word, $options: "i" } },
                         { "variants.nombre": { $regex: word, $options: "i" } },
+                        { "variants.atributos": { $regex: word, $options: "i" } }
                     ],
                 }));
                 searchQuery.$and = andConditions;
             }
 
-            // 📂 Filtro por categoría
+            // 📂 Categoría
             if (category) {
                 searchQuery.categoria = category;
             }
 
-            // Filtro por marca (brand)
+            // 🏷️ Marca
             if (rest.brand) {
                 const brandDoc = await Brand.findOne({ slug: rest.brand });
                 if (brandDoc) {
@@ -1253,29 +1286,37 @@ export class ProductController {
                 }
             }
 
-            // 💲 Filtro por rango de precios "min-max"
+            // 💲 Rango de precios
             if (priceRange) {
                 const [minStr, maxStr] = priceRange.split("-");
                 const min = Number(minStr);
                 const max = Number(maxStr);
                 if (!isNaN(min) && !isNaN(max) && min >= 0 && max >= 0 && min <= max) {
-                    searchQuery.precio = { $gte: min, $lte: max };
+                    // Considerar precios de variantes también
+                    searchQuery.$or = [
+                        { precio: { $gte: min, $lte: max } },
+                        { "variants.precio": { $gte: min, $lte: max } },
+                    ];
                 }
             }
 
-            // Filtro por atributos dinámicos (ej: Color=Rojo, Talla=M)
+            // 🧩 Filtros dinámicos (atributos del producto y de las variantes)
             Object.keys(rest).forEach((key) => {
-                if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) {
-                    return;
-                }
-
+                if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) return;
                 const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
                 if (values.length > 0) {
-                    searchQuery[`atributos.${key}`] = { $in: values };
+                    // Buscar tanto en atributos del producto como en atributos de las variantes
+                    if (!searchQuery.$and) searchQuery.$and = [];
+                    searchQuery.$and.push({
+                        $or: [
+                            { [`atributos.${key}`]: { $in: values } },
+                            { [`variants.atributos.${key}`]: { $in: values } },
+                        ],
+                    });
                 }
             });
 
-            // Ordenamiento
+            // 🧭 Ordenamiento
             let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
             if (sort) {
                 switch (sort) {
@@ -1297,7 +1338,7 @@ export class ProductController {
                 }
             }
 
-            // 📦 Promesas en paralelo
+            // 📦 Promesas paralelas
             const productsPromise = Product.find(searchQuery)
                 .skip(skip)
                 .limit(limitNum)
@@ -1324,22 +1365,58 @@ export class ProductController {
                             { $project: { id: "$brand._id", nombre: "$brand.nombre", slug: "$brand.slug" } },
                         ],
                         atributos: [
-                            { $project: { atributos: { $objectToArray: "$atributos" } } },
-                            { $unwind: "$atributos" },
                             {
-                                $group: {
-                                    _id: "$atributos.k",
-                                    values: { $addToSet: "$atributos.v" },
+                                $project: {
+                                    atributos: { $objectToArray: "$atributos" },
+                                    variantsAtributos: {
+                                        $map: {
+                                            input: "$variants",
+                                            as: "variant",
+                                            in: { $objectToArray: "$$variant.atributos" },
+                                        },
+                                    },
                                 },
                             },
-                            { $project: { name: "$_id", values: 1, _id: 0 } },
+                            { $unwind: { path: "$atributos", preserveNullAndEmptyArrays: true } },
+                            { $unwind: { path: "$variantsAtributos", preserveNullAndEmptyArrays: true } },
+                            { $unwind: { path: "$variantsAtributos", preserveNullAndEmptyArrays: true } },
+                            {
+                                $project: {
+                                    key: { $ifNull: ["$atributos.k", "$variantsAtributos.k"] },
+                                    value: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] },
+                                },
+                            },
+                            // 🔥 Filtra los documentos que no tienen key (name nulo)
+                            { $match: { key: { $ne: null } } },
+                            {
+                                $group: {
+                                    _id: "$key",
+                                    values: { $addToSet: "$value" },
+                                },
+                            },
+                            {
+                                $project: {
+                                    name: "$_id",
+                                    values: {
+                                        // Elimina valores nulos dentro del array
+                                        $filter: {
+                                            input: "$values",
+                                            as: "v",
+                                            cond: { $ne: ["$$v", null] },
+                                        },
+                                    },
+                                    _id: 0,
+                                },
+                            },
                         ],
+
+
                         price: [
                             {
                                 $group: {
                                     _id: null,
-                                    min: { $min: "$precio" },
-                                    max: { $max: "$precio" },
+                                    min: { $min: { $ifNull: ["$precio", { $min: "$variants.precio" }] } },
+                                    max: { $max: { $ifNull: ["$precio", { $max: "$variants.precio" }] } },
                                 },
                             },
                         ],
