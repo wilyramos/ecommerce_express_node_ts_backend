@@ -505,19 +505,48 @@ export class ProductController {
             const { query } = req.query;
             const searchText = query?.toString().trim() || "";
 
-            const products = await Product.find({ nombre: { $regex: searchText, $options: "i" } })
-                .select("nombre precio slug imagenes")
-                .limit(8);
+            // Si no hay texto, mostrar productos destacados o recientes
+            if (!searchText) {
+                const fallback = await Product.find({ isActive: true })
+                    .select("nombre precio slug imagenes esDestacado esNuevo")
+                    .slice("imagenes", 1)
+                    .sort({ esDestacado: -1, createdAt: -1 })
+                    .limit(8);
+                res.status(200).json(fallback);
+                return;
+            }
 
-            // Responder directamente con el array
+            // Búsqueda simple y eficiente
+            const products = await Product.find({
+                isActive: true,
+                $or: [
+                    { nombre: { $regex: searchText, $options: "i" } },
+                    { descripcion: { $regex: searchText, $options: "i" } },
+                    { "variants.nombre": { $regex: searchText, $options: "i" } },
+                ],
+            })
+                .select("nombre precio slug imagenes esDestacado esNuevo")
+                .slice("imagenes", 1) // <- solo la primera imagen
+                .limit(6);
+
+            // Fallback si no hay coincidencias
+            if (!products.length) {
+                const fallback = await Product.find({ isActive: true, esDestacado: true })
+                    .select("nombre precio slug imagenes esDestacado esNuevo")
+                    .slice("imagenes", 1)
+                    .limit(8);
+                res.status(200).json(fallback);
+                return;
+            }
+
             res.status(200).json(products);
-
         } catch (error) {
-            console.error('Error searching products in index:', error);
-            res.status(500).json({ message: 'Error al buscar productos en el índice' });
+            console.error("Error searching products in index:", error);
+            res.status(500).json({ message: "Error al buscar productos" });
             return;
         }
     }
+
 
     static async mainSearchProducts(req: Request, res: Response) {
         try {
@@ -655,6 +684,16 @@ export class ProductController {
 
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
+            // --- Validar y actualizar categoría ---
+            if (categoria) {
+                const categoryExists = await Category.findById(categoria);
+                if (!categoryExists) {
+                    res.status(400).json({ message: "La categoría especificada no existe" });
+                    return;
+                }
+                existingProduct.categoria = categoria;
+            }
+
             // --- Procesar variantes ---
             if (Array.isArray(variants) && variants.length > 0) {
                 const preparedVariants = variants.map((v) => {
@@ -680,7 +719,6 @@ export class ProductController {
                     };
                 });
 
-                // Evitar duplicados
                 const seen = new Set();
                 for (const v of preparedVariants) {
                     const key = JSON.stringify(v.atributos);
@@ -694,7 +732,6 @@ export class ProductController {
                 existingProduct.variants = preparedVariants;
                 existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
             } else {
-                // No hay variantes → usar stock manual
                 existingProduct.variants = [];
                 if (stock != null) existingProduct.stock = Number(stock);
             }
