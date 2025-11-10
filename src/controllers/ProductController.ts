@@ -121,11 +121,10 @@ export class ProductController {
                 }
             }
 
-
             const totalStockFromVariants =
                 preparedVariants.length > 0
                     ? preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0)
-                    : Number(stock) || 0;
+                    : stock;
 
             const newProduct = {
                 nombre,
@@ -602,6 +601,7 @@ export class ProductController {
     }
 
     static async updateProduct(req: Request, res: Response) {
+        console.log("Updating product with data:", req.body);
         try {
             const {
                 nombre,
@@ -644,7 +644,7 @@ export class ProductController {
             }
 
             if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: "Especificaciones deben ser un array" });
+                res.status(400).json({ message: "Las especificaciones deben ser un array" });
                 return;
             }
 
@@ -656,9 +656,8 @@ export class ProductController {
             const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
 
             // --- Procesar variantes ---
-            let preparedVariants: IVariant[] | undefined;
-            if (variants && Array.isArray(variants)) {
-                preparedVariants = variants.map((v) => {
+            if (Array.isArray(variants) && variants.length > 0) {
+                const preparedVariants = variants.map((v) => {
                     if (!v.atributos || typeof v.atributos !== "object")
                         throw new Error("Cada variante debe tener atributos válidos");
 
@@ -692,16 +691,12 @@ export class ProductController {
                     seen.add(key);
                 }
 
-                // Actualizar variantes y stock total
                 existingProduct.variants = preparedVariants;
                 existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
-            } else if (variants && variants.length === 0) {
-                // Si se eliminan todas las variantes, usar stock manual
+            } else {
+                // No hay variantes → usar stock manual
                 existingProduct.variants = [];
-                existingProduct.stock = Number(stock) || 0;
-            } else if (stock != null) {
-                // Si no se envían variantes, actualizar stock manualmente
-                existingProduct.stock = Number(stock);
+                if (stock != null) existingProduct.stock = Number(stock);
             }
 
             // --- Actualizar otros campos ---
@@ -722,6 +717,7 @@ export class ProductController {
             if (brand) existingProduct.brand = brand;
             if (atributos) existingProduct.atributos = atributos;
             if (especificaciones) existingProduct.especificaciones = especificaciones;
+
             existingProduct.diasEnvio = dias;
             existingProduct.esDestacado = esDestacado ?? existingProduct.esDestacado;
             existingProduct.esNuevo = esNuevo ?? existingProduct.esNuevo;
@@ -737,7 +733,6 @@ export class ProductController {
             return;
         }
     }
-
 
 
     static async deleteProduct(req: Request, res: Response) {
