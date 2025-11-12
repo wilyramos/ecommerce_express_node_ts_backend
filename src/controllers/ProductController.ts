@@ -961,6 +961,21 @@ export class ProductController {
 
     }
 
+    static async getAllImagesFromCloudinary(req: Request, res: Response) {
+        try {
+            const resources = await cloudinary.api.resources({
+                type: 'upload',
+                prefix: 'products/',
+                max_results: 100
+            });
+            const imageUrls = resources.resources.map((resource: any) => resource.secure_url);
+            res.status(200).json({ images: imageUrls });
+        } catch (error) {
+            console.error("Error al obtener las imágenes:", error);
+            res.status(500).json({ message: 'Error al obtener las imágenes' });
+        }
+    }
+
     static async updateProductStatus(req: Request, res: Response) {
         const { id } = req.params;
         const { isActive } = req.body;

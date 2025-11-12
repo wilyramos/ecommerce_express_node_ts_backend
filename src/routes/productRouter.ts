@@ -201,7 +201,12 @@ router.get('/all/slug', ProductController.getAllProductsSlug);
 // get products for front page
 router.get('/frontpage/all', ProductController.getFrontPageProducts);
 
+// Get all imanges from cloudinary
+router.get('/imagesss/cloudinary/all', 
+    authenticate, isAdmin,
+    ProductController.getAllImagesFromCloudinary
+);
 
 
 
-export default router;
+export default router;  
