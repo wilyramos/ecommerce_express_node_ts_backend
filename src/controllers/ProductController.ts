@@ -14,7 +14,6 @@ import type { Types } from 'mongoose';
 export class ProductController {
 
     static async createProduct(req: Request, res: Response) {
-        console.log("Creating product with data:", req.body);
         try {
             const {
                 nombre,
