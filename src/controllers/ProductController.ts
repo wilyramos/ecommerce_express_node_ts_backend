@@ -1274,7 +1274,13 @@ export class ProductController {
 
             // 📂 Categoría
             if (category) {
-                searchQuery.categoria = category;
+                const categoryDoc = await Category.findOne({ slug: category });
+                if (categoryDoc) {
+                    searchQuery.categoria = categoryDoc._id;
+                } else {
+                    // si no existe, forzar a que no devuelva nada
+                    searchQuery.categoria = null;
+                }
             }
 
             // 🏷️ Marca
@@ -1363,6 +1369,21 @@ export class ProductController {
                             { $unwind: "$brand" },
                             { $project: { id: "$brand._id", nombre: "$brand.nombre", slug: "$brand.slug" } },
                         ],
+
+                        categories: [
+                            { $group: { _id: "$categoria" } },
+                            {
+                                $lookup: {
+                                    from: "categories",
+                                    localField: "_id",
+                                    foreignField: "_id",
+                                    as: "category",
+                                },
+                            },
+                            { $unwind: "$category" },
+                            { $project: { id: "$category._id", nombre: "$category.nombre", slug: "$category.slug" } },
+                        ],
+
                         atributos: [
                             {
                                 $project: {
@@ -1385,7 +1406,6 @@ export class ProductController {
                                     value: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] },
                                 },
                             },
-                            // 🔥 Filtra los documentos que no tienen key (name nulo)
                             { $match: { key: { $ne: null } } },
                             {
                                 $group: {
@@ -1397,7 +1417,6 @@ export class ProductController {
                                 $project: {
                                     name: "$_id",
                                     values: {
-                                        // Elimina valores nulos dentro del array
                                         $filter: {
                                             input: "$values",
                                             as: "v",
@@ -1408,7 +1427,6 @@ export class ProductController {
                                 },
                             },
                         ],
-
 
                         price: [
                             {
@@ -1423,11 +1441,14 @@ export class ProductController {
                 },
             ]);
 
+
             const [filters, products, totalProducts] = await Promise.all([
                 filtersPromise,
                 productsPromise,
                 totalPromise,
             ]);
+
+            console.log("los filtros:", filters);
 
             res.status(200).json({
                 products,
