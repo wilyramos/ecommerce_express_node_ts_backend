@@ -1419,10 +1419,15 @@ export class ProductController {
                             {
                                 $project: {
                                     key: { $toLower: { $ifNull: ["$atributos.k", "$variantsAtributos.k"] } },
-                                    value: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] },
+                                    value: { $toLower: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] } },
                                 },
                             },
-                            { $match: { key: { $ne: null } } },
+                            {
+                                $match: {
+                                    key: { $nin: [null, ""] },
+                                    value: { $nin: [null, ""] },
+                                }
+                            },
                             {
                                 $group: {
                                     _id: "$key",
