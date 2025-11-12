@@ -1256,6 +1256,7 @@ export class ProductController {
 
     static async getProductsMainPage(req: Request, res: Response) {
         try {
+            console.log("Fetching products with filters:", req.query);
             const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
                 query?: string;
                 page?: string;
@@ -1281,7 +1282,7 @@ export class ProductController {
                         { nombre: { $regex: word, $options: "i" } },
                         { descripcion: { $regex: word, $options: "i" } },
                         { "variants.nombre": { $regex: word, $options: "i" } },
-                        { "variants.atributos": { $regex: word, $options: "i" } }
+                        // { "variants.atributos": { $regex: word, $options: "i" } }
                     ],
                 }));
                 searchQuery.$and = andConditions;
@@ -1417,7 +1418,7 @@ export class ProductController {
                             { $unwind: { path: "$variantsAtributos", preserveNullAndEmptyArrays: true } },
                             {
                                 $project: {
-                                    key: { $ifNull: ["$atributos.k", "$variantsAtributos.k"] },
+                                    key: { $toLower: { $ifNull: ["$atributos.k", "$variantsAtributos.k"] } },
                                     value: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] },
                                 },
                             },
