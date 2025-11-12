@@ -48,6 +48,8 @@ export class OrderController {
             let calculatedSubtotal = 0;
             const orderItems: any[] = [];
 
+            console.log("Validating order items...", items);
+
             for (const item of items) {
                 const dbProduct = dbProducts.find(p => p._id.toString() === item.productId);
                 if (!dbProduct) continue;
