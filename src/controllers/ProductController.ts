@@ -1256,7 +1256,7 @@ export class ProductController {
 
     static async getProductsMainPage(req: Request, res: Response) {
         try {
-            console.log("Fetching products with filters:", req.query);
+            console.log("Fetching products with filters 2:", req.query);
             const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
                 query?: string;
                 page?: string;
@@ -1326,13 +1326,12 @@ export class ProductController {
                 if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) return;
                 const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
                 if (values.length > 0) {
-                    // Buscar tanto en atributos del producto como en atributos de las variantes
                     if (!searchQuery.$and) searchQuery.$and = [];
                     searchQuery.$and.push({
                         $or: [
                             { [`atributos.${key}`]: { $in: values } },
-                            { [`variants.atributos.${key}`]: { $in: values } },
-                        ],
+                            { variants: { $elemMatch: { [`atributos.${key}`]: { $eq: values[0] } } } }
+                        ]
                     });
                 }
             });
@@ -1410,7 +1409,12 @@ export class ProductController {
                                                 $reduce: {
                                                     input: "$variants",
                                                     initialValue: [],
-                                                    in: { $concatArrays: ["$$value", { $objectToArray: "$$this.atributos" }] }
+                                                    in: {
+                                                        $concatArrays: [
+                                                            "$$value",
+                                                            { $objectToArray: "$$this.atributos" }
+                                                        ]
+                                                    }
                                                 }
                                             }
                                         ]
@@ -1420,7 +1424,7 @@ export class ProductController {
                             { $unwind: { path: "$combinedAtributos", preserveNullAndEmptyArrays: true } },
                             {
                                 $project: {
-                                    key: { $toLower: "$combinedAtributos.k" },
+                                    key: "$combinedAtributos.k",
                                     value: "$combinedAtributos.v"
                                 }
                             },
@@ -1440,8 +1444,8 @@ export class ProductController {
                                     _id: 0
                                 }
                             }
-                        ]
-                        ,
+                        ],
+
 
                         price: [
                             {
