@@ -8,6 +8,7 @@ import cloudinary from '../config/cloudinary';
 import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
 import type { Types } from 'mongoose';
+import mongoose from 'mongoose';
 
 
 
@@ -172,7 +173,9 @@ export class ProductController {
                 isActive,
                 esNuevo,
                 esDestacado,
-                query
+                query,
+                brand,
+                category,
             } = req.query as Record<string, string>;
 
             const currentPage = Math.max(parseInt(page) || 1, 1);
@@ -189,6 +192,7 @@ export class ProductController {
                     { descripcion: { $regex: searchRegex } },
                     { sku: { $regex: searchRegex } },
                     { barcode: { $regex: searchRegex } },
+                    
                 ];
             }
 
@@ -207,6 +211,12 @@ export class ProductController {
             if (esDestacado === "true" || esDestacado === "false") {
                 filter.esDestacado = esDestacado === "true";
             }
+            if (brand) {
+                filter.brand = brand;
+            }
+
+            console.log('Category filter value:', category);
+if (category) filter.categoria = new mongoose.Types.ObjectId(category);
 
             // Ordenamiento
             const sort: Record<string, 1 | -1> = {};

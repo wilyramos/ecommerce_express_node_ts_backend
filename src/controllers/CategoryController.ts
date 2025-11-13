@@ -306,7 +306,6 @@ export class CategoryController {
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
 
-
             if (categories.length === 0) {
                 res.status(404).json({ message: 'No se encontraron subcategorias' });
                 return;
