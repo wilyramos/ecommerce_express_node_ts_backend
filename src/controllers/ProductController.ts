@@ -1282,7 +1282,7 @@ export class ProductController {
                         { nombre: { $regex: word, $options: "i" } },
                         { descripcion: { $regex: word, $options: "i" } },
                         { "variants.nombre": { $regex: word, $options: "i" } },
-                        // { "variants.atributos": { $regex: word, $options: "i" } }
+                        { "variants.atributos": { $regex: word, $options: "i" } }
                     ],
                 }));
                 searchQuery.$and = andConditions;
@@ -1403,51 +1403,45 @@ export class ProductController {
                         atributos: [
                             {
                                 $project: {
-                                    atributos: { $objectToArray: "$atributos" },
-                                    variantsAtributos: {
-                                        $map: {
-                                            input: "$variants",
-                                            as: "variant",
-                                            in: { $objectToArray: "$$variant.atributos" },
-                                        },
-                                    },
-                                },
-                            },
-                            { $unwind: { path: "$atributos", preserveNullAndEmptyArrays: true } },
-                            { $unwind: { path: "$variantsAtributos", preserveNullAndEmptyArrays: true } },
-                            { $unwind: { path: "$variantsAtributos", preserveNullAndEmptyArrays: true } },
-                            {
-                                $project: {
-                                    key: { $toLower: { $ifNull: ["$atributos.k", "$variantsAtributos.k"] } },
-                                    value: { $toLower: { $ifNull: ["$atributos.v", "$variantsAtributos.v"] } },
-                                },
-                            },
-                            {
-                                $match: {
-                                    key: { $nin: [null, ""] },
-                                    value: { $nin: [null, ""] },
+                                    combinedAtributos: {
+                                        $concatArrays: [
+                                            { $objectToArray: "$atributos" },
+                                            {
+                                                $reduce: {
+                                                    input: "$variants",
+                                                    initialValue: [],
+                                                    in: { $concatArrays: ["$$value", { $objectToArray: "$$this.atributos" }] }
+                                                }
+                                            }
+                                        ]
+                                    }
                                 }
                             },
+                            { $unwind: { path: "$combinedAtributos", preserveNullAndEmptyArrays: true } },
+                            {
+                                $project: {
+                                    key: { $toLower: "$combinedAtributos.k" },
+                                    value: "$combinedAtributos.v"
+                                }
+                            },
+                            { $match: { key: { $exists: true, $ne: "" } } },
                             {
                                 $group: {
                                     _id: "$key",
-                                    values: { $addToSet: "$value" },
-                                },
+                                    values: { $addToSet: "$value" }
+                                }
                             },
                             {
                                 $project: {
                                     name: "$_id",
                                     values: {
-                                        $filter: {
-                                            input: "$values",
-                                            as: "v",
-                                            cond: { $ne: ["$$v", null] },
-                                        },
+                                        $filter: { input: "$values", as: "v", cond: { $ne: ["$$v", null] } }
                                     },
-                                    _id: 0,
-                                },
-                            },
-                        ],
+                                    _id: 0
+                                }
+                            }
+                        ]
+                        ,
 
                         price: [
                             {

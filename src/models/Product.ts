@@ -63,7 +63,7 @@ const variantSchema = new Schema<IVariant>(
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
         imagenes: [{ type: String }],
-        atributos: { type: Map, of: String, default: {} },
+        atributos: { type: Object, default: {} }, // TODO: REVISAR QUE FUNCIONA BIEN
     },
     { _id: true } // Necesitamos ID para poder hacer referencia en órdenes
 );
