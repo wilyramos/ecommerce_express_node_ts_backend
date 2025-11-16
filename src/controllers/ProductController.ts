@@ -1347,7 +1347,10 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
             });
 
             // 🧭 Ordenamiento
-            let sortQuery: Record<string, 1 | -1> = { createdAt: -1 };
+            let sortQuery: Record<string, 1 | -1> = { 
+                stock: -1,
+                createdAt: -1
+            };
             if (sort) {
                 switch (sort) {
                     case "price-asc":

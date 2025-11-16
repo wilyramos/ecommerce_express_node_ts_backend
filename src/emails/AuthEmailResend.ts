@@ -22,7 +22,7 @@ export class AuthEmailResend {
             });
 
             const response = await resend.emails.send({
-                from: 'GoPhone Cañete <contacto@gophone.pe>',
+                from: 'GoPhone <contacto@gophone.pe>',
                 to: email,
                 subject: 'Bienvenido a GoPhone',
                 html: emailContent
@@ -90,7 +90,7 @@ export class AuthEmailResend {
             });
 
             const response = await resend.emails.send({
-                from: 'GoPhone Cañete <contacto@gophone.pe>',
+                from: 'GoPhone <contacto@gophone.pe>',
                 to: email,
                 subject: 'Contraseña actualizada',
                 html: emailContent
