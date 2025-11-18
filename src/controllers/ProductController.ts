@@ -192,7 +192,7 @@ export class ProductController {
                     { descripcion: { $regex: searchRegex } },
                     { sku: { $regex: searchRegex } },
                     { barcode: { $regex: searchRegex } },
-                    
+
                 ];
             }
 
@@ -216,7 +216,7 @@ export class ProductController {
             }
 
             console.log('Category filter value:', category);
-if (category) filter.categoria = new mongoose.Types.ObjectId(category);
+            if (category) filter.categoria = new mongoose.Types.ObjectId(category);
 
             // Ordenamiento
             const sort: Record<string, 1 | -1> = {};
@@ -326,14 +326,15 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
                 category,
                 priceRange,
                 sort,
-                query
+                // Eliminamos 'query' de la desestructuración principal para no considerarlo,
+                // pero mantenemos los demás parámetros dinámicos en 'req.query'
             } = req.query as {
                 page?: string;
                 limit?: string;
                 category?: string;
-                priceRange?: string | string[];
+                priceRange?: string;
                 sort?: string;
-                query?: string;
+                query?: string; // Lo mantenemos opcional en el tipo pero no lo usamos
                 [key: string]: string | string[] | undefined;
             };
 
@@ -341,102 +342,108 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
 
-            const filter: Record<string, any> = {};
+            // Base de filtros. Usaremos 'filter' como 'searchQuery'
+            const filter: Record<string, any> = { isActive: true };
 
             // --- Categoría (por slug)
             if (category) {
                 const categoryDoc = await Category.findOne({ slug: category });
                 if (categoryDoc) {
                     filter.categoria = categoryDoc._id;
+                } else {
+                    // Si no existe la categoría, forzamos a que no devuelva nada
+                    filter.categoria = null;
                 }
             }
 
-            // --- Rango de precios
-            const priceStr = Array.isArray(priceRange) ? priceRange[0] : priceRange;
+            // --- Marca (similar a getProductsMainPage, aunque no estaba en la versión anterior de ByFilter)
+            const brandSlug = req.query.brand as string;
+            if (brandSlug) {
+                const brandDoc = await Brand.findOne({ slug: brandSlug });
+                if (brandDoc) {
+                    filter.brand = brandDoc._id;
+                }
+            }
+
+            // --- Rango de precios: Considerar precio base O precio de variante
+            const priceStr = priceRange;
             if (priceStr) {
                 const [minStr, maxStr] = priceStr.split('-');
                 const min = Number(minStr);
                 const max = Number(maxStr);
-                if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
+                if (!isNaN(min) && !isNaN(max) && min >= 0 && max >= 0 && min <= max) {
+                    // Aplicar $or para precio del producto base O precio de la variante
+                    filter.$or = [
+                        { precio: { $gte: min, $lte: max } },
+                        { "variants.precio": { $gte: min, $lte: max } },
+                    ];
+                } else {
                     res.status(400).json({ message: 'Invalid price range' });
                     return;
                 }
-                filter.precio = { $gte: min, $lte: max };
             }
 
             // --- Atributos dinámicos: atributos[Tamaño]=250ml, atributos[Material]=Aluminio, etc.
+            // Los filtros de atributos dinámicos deben combinarse con $and para que se apliquen simultáneamente.
+            const dynamicAttributeFilters: any[] = [];
+
             for (const key in req.query) {
+                // Aseguramos que solo procesamos los parámetros que comienzan con "atributos[" y terminan con "]"
                 if (key.startsWith("atributos[") && key.endsWith("]")) {
                     const attrKey = key.slice(10, -1);
                     const value = req.query[key];
 
-                    if (typeof value === "string") {
-                        const valuesArray = value.split(",");
-                        filter[`atributos.${attrKey}`] = {
-                            $in: valuesArray.map((v) => new RegExp(v, "i")),
-                        };
-                    } else if (Array.isArray(value)) {
-                        filter[`atributos.${attrKey}`] = {
-                            $in: value.map((v) => new RegExp(String(v), "i")),
-                        };
+                    if (attrKey.length > 0) {
+                        let valuesArray: any[] = [];
+
+                        if (typeof value === "string") {
+                            valuesArray = value.split(",").map(v => v.trim()).filter(Boolean);
+                        } else if (Array.isArray(value)) {
+                            valuesArray = value.map(v => String(v).trim()).filter(Boolean);
+                        }
+
+                        if (valuesArray.length > 0) {
+                            // Creamos una condición $or para este atributo: (producto padre) OR (alguna variante)
+                            dynamicAttributeFilters.push({
+                                $or: [
+                                    { [`atributos.${attrKey}`]: { $in: valuesArray } },
+                                    { variants: { $elemMatch: { [`atributos.${attrKey}`]: { $in: valuesArray } } } }
+                                ]
+                            });
+                        }
                     }
                 }
             }
 
-
-
-
-            // --- Color como $or
-            const orConditions: any[] = [];
-
-
-
-            if (orConditions.length > 0) {
-                filter.$or = orConditions;
+            // Aplicamos todos los filtros de atributos dinámicos juntos con un $and
+            if (dynamicAttributeFilters.length > 0) {
+                if (!filter.$and) filter.$and = [];
+                filter.$and.push(...dynamicAttributeFilters);
             }
 
-            // --- Texto de búsqueda general
-            if (query) {
-                const regex = new RegExp(query, 'i');
-                filter.$or = [
-                    ...(filter.$or || []),
-                    { nombre: regex },
-                    { descripcion: regex },
-                    { [`atributos.Marca`]: regex },
-                    {
-                        variantes: {
-                            $elemMatch: {
-                                opciones: {
-                                    $elemMatch: {
-                                        valores: regex
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ];
-            }
-
-            // --- Solo productos activos
-            filter.isActive = true;
+            // NOTA: Se elimina la sección de 'orConditions' y 'Texto de búsqueda general' (query)
+            // ya que el requisito es ya no buscar productos por query.
 
             // --- Ordenamiento
-            let sortOptions: Record<string, 1 | -1> = {};
-            switch (sort) {
-                case 'price-asc':
-                    sortOptions = { precio: 1 };
-                    break;
-                case 'price-desc':
-                    sortOptions = { precio: -1 };
-                    break;
-                case 'name-asc':
-                    sortOptions = { nombre: 1 };
-                    break;
-                case 'name-desc':
-                    sortOptions = { nombre: -1 };
-                    break;
-                default:
-                    sortOptions = { stock: -1, createdAt: -1 };
+            let sortOptions: Record<string, 1 | -1> = { stock: -1, createdAt: -1 };
+            if (sort) {
+                switch (sort) {
+                    case 'price-asc':
+                        sortOptions = { precio: 1 };
+                        break;
+                    case 'price-desc':
+                        sortOptions = { precio: -1 };
+                        break;
+                    case 'name-asc':
+                        sortOptions = { nombre: 1 };
+                        break;
+                    case 'name-desc':
+                        sortOptions = { nombre: -1 };
+                        break;
+                    case 'recientes':
+                        sortOptions = { createdAt: -1 };
+                        break;
+                }
             }
 
             // --- Consulta a la base de datos
@@ -446,7 +453,6 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
                     .limit(limitNum)
                     .sort(sortOptions)
                     .populate('brand', 'nombre slug'),
-                // .populate('categoria', 'nombre slug'),
                 Product.countDocuments(filter)
             ]);
 
@@ -459,7 +465,7 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
             return;
 
         } catch (error) {
-            // console.error('Error fetching products by filter:', error);
+            console.error('Error fetching products by filter:', error);
             res.status(500).json({ message: 'Error fetching products by filter' });
             return;
         }
@@ -1266,7 +1272,6 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
 
     static async getProductsMainPage(req: Request, res: Response) {
         try {
-            console.log("Fetching products with filters 2:", req.query);
             const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
                 query?: string;
                 page?: string;
@@ -1347,7 +1352,7 @@ if (category) filter.categoria = new mongoose.Types.ObjectId(category);
             });
 
             // 🧭 Ordenamiento
-            let sortQuery: Record<string, 1 | -1> = { 
+            let sortQuery: Record<string, 1 | -1> = {
                 stock: -1,
                 createdAt: -1
             };
