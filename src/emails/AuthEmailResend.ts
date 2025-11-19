@@ -58,7 +58,7 @@ export class AuthEmailResend {
             });
 
             const response = await resend.emails.send({
-                from: 'GoPhone Cañete <contacto@gophone.pe>',
+                from: 'GoPhone <contacto@gophone.pe>',
                 to: email,
                 subject: 'Restablecimiento de contraseña',
                 html: emailContent
