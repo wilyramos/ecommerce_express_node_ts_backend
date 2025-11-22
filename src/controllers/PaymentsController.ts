@@ -249,6 +249,58 @@ export class PaymentsController {
         }
     }
 
+    // Agrega esto dentro de la clase PaymentsController
+
+    static async processPaymentYape(req: Request, res: Response) {
+        try {
+            // token: Generado en el frontend con el SDK de MP
+            // transaction_amount: Monto total
+            // payer: { email }
+            // description: Descripción del pedido
+            const { token, transaction_amount, payer, description, orderId } = req.body;
+
+            if (!token || !transaction_amount || !payer?.email) {
+                res.status(400).json({ message: 'Faltan datos requeridos (token, amount, email)' });
+                return;
+            }
+
+            const paymentData = {
+                transaction_amount: Number(transaction_amount),
+                token: token,
+                description: description || 'Compra en tienda',
+                installments: 1, // Yape siempre es 1 cuota
+                payment_method_id: 'yape', // Obligatorio para Yape
+                payer: {
+                    email: payer.email
+                },
+                metadata: {
+                    order_id: orderId
+                }
+            };
+
+            console.log("🚀 Procesando pago Yape:", paymentData);
+
+            // Crear el pago usando el objeto 'payment' que ya importas de tus utils
+            const response = await payment.create({ body: paymentData });
+
+            console.log("✅ Pago Yape respuesta:", response);
+
+            // Retornamos la respuesta completa o solo lo necesario
+            // status: 'approved' | 'rejected'
+            res.status(200).json({
+                status: response.status,
+                status_detail: response.status_detail,
+                id: response.id
+            });
+
+        } catch (error: any) {
+            console.error('❌ Error procesando pago Yape:', error);
+            res.status(500).json({
+                message: 'Error al procesar el pago con Yape',
+                error: error.message || error
+            });
+        }
+    }
     // IZIPAY
 
     static async createPaymentIzipay(req: Request, res: Response) {

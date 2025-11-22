@@ -27,12 +27,21 @@ router.post('/process-payment',
     PaymentsController.processPayment
 );
 
+// Yape with mercadopago
+router.post('/mercadopago/yape',
+    authenticate,
+    body('orderId').notEmpty().withMessage('Order ID is required'),
+    PaymentsController.processPaymentYape
+);
+
 // api checkout mercadopago
 
 router.post('/izipay/create-payment',
     // authenticate,
     PaymentsController.createPaymentIzipay
 );
+
+
 
 // Culqi
 
