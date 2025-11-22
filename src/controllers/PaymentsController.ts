@@ -253,10 +253,6 @@ export class PaymentsController {
 
     static async processPaymentYape(req: Request, res: Response) {
         try {
-            // token: Generado en el frontend con el SDK de MP
-            // transaction_amount: Monto total
-            // payer: { email }
-            // description: Descripción del pedido
             const { token, transaction_amount, payer, description, orderId } = req.body;
 
             if (!token || !transaction_amount || !payer?.email) {
@@ -267,26 +263,25 @@ export class PaymentsController {
             const paymentData = {
                 transaction_amount: Number(transaction_amount),
                 token: token,
-                description: description || 'Compra en tienda',
-                installments: 1, // Yape siempre es 1 cuota
-                payment_method_id: 'yape', // Obligatorio para Yape
+                description: description || `Pago de orden ${orderId}`,
+                installments: 1,
+                payment_method_id: 'yape',
                 payer: {
                     email: payer.email
                 },
+                external_reference: orderId, // ← NECESARIO PARA QUE EL WEBHOOK SEPA A QUÉ ORDEN PERTENECE
+                notification_url: process.env.MP_NOTIFICATION_URL, // ← NECESARIO PARA QUE EL WEBHOOK SE EJECUTE
                 metadata: {
-                    order_id: orderId
+                    order_id: orderId // opcional, no se usa
                 }
             };
 
             console.log("🚀 Procesando pago Yape:", paymentData);
 
-            // Crear el pago usando el objeto 'payment' que ya importas de tus utils
             const response = await payment.create({ body: paymentData });
 
             console.log("✅ Pago Yape respuesta:", response);
 
-            // Retornamos la respuesta completa o solo lo necesario
-            // status: 'approved' | 'rejected'
             res.status(200).json({
                 status: response.status,
                 status_detail: response.status_detail,
@@ -301,6 +296,7 @@ export class PaymentsController {
             });
         }
     }
+
     // IZIPAY
 
     static async createPaymentIzipay(req: Request, res: Response) {
