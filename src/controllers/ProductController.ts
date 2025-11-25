@@ -1160,8 +1160,6 @@ export class ProductController {
                 .populate('brand', 'nombre slug')
             // .populate('categoria', 'nombre slug');
 
-            // console.log("Destacados products:", products);
-
             const totalProducts = await Product.countDocuments({ esDestacado: true });
             if (products.length === 0) {
                 res.status(404).json({ message: 'No se encontraron productos destacados' });
