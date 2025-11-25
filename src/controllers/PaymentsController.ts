@@ -303,7 +303,7 @@ export class PaymentsController {
         try {
             const { amount, currency = "PEN", orderId, customer } = req.body;
 
-            console.log("📦 Request body Izipay:", req.body);
+            // console.log("📦 Request body Izipay:", req.body);
             const amountCents = amount * 100;
             // 1️⃣ Validaciones mínimas
             if (!amount || !orderId) {

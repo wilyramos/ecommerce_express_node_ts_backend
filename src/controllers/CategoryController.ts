@@ -64,7 +64,7 @@ export class CategoryController {
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find().select('_id nombre slug descripcion parent attributes variants')
+            const categories = await Category.find().select('_id nombre slug descripcion parent attributes variants image')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
             // console.log('Categories:', categories);
