@@ -9,7 +9,7 @@ import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
 import type { Types } from 'mongoose';
 import mongoose from 'mongoose';
-
+import sharp from 'sharp';
 
 
 export class ProductController {
@@ -928,54 +928,76 @@ export class ProductController {
         });
     };
 
+
     static async uploadImageCloudinary(req: Request, res: Response) {
 
-        const form = formidable({ multiples: true }); // Allow multiple files
+        const form = formidable({ multiples: true });
+
         form.parse(req, async (error, fields, files) => {
             if (error) {
                 console.error("Error al procesar los archivos:", error);
-                res.status(400).json({ message: 'Error al procesar los archivos' });
+                res.status(400).json({ message: "Error al procesar los archivos" });
                 return;
             }
 
-            // Verifica si se reciben las imágenes
             if (!files.images) {
-                res.status(400).json({ message: 'No se han recibido imágenes' });
+                res.status(400).json({ message: "No se han recibido imágenes" });
                 return;
             }
 
             const images = Array.isArray(files.images) ? files.images : [files.images];
 
             if (images.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
                 return;
             }
 
             try {
                 const imageUrls = [];
-                const uploadPromises = images.map((image) => {
-                    return cloudinary.uploader.upload(image.filepath, {
-                        public_id: uuid(),
-                        folder: 'products',
+
+                const uploadPromises = images.map(async (image) => {
+
+                    // Convertir a WEBP usando SHARP
+                    const webpBuffer = await sharp(image.filepath)
+                        .webp({ quality: 85 }) //
+                        .toBuffer();
+
+                    // Subir buffer WebP a Cloudinary
+                    return new Promise((resolve, reject) => {
+                        const stream = cloudinary.uploader.upload_stream(
+                            {
+                                public_id: uuid(),
+                                folder: "products",
+                                format: "webp"
+                            },
+                            (err, result) => {
+                                if (err) reject(err);
+                                else resolve(result);
+                            }
+                        );
+
+                        stream.end(webpBuffer); // Enviar buffer convertido
                     });
                 });
 
-                const results = await Promise.all(uploadPromises);
+                const results: any = await Promise.all(uploadPromises);
 
                 results.forEach(result => {
                     imageUrls.push(result.secure_url);
                 });
 
                 res.status(200).json({ images: imageUrls });
+                return;
 
             } catch (error) {
                 console.error("Error al subir las imágenes:", error);
-                res.status(500).json({ message: 'Error al subir las imágenes' });
+
+                res.status(500).json({ message: "Error al subir las imágenes" });
                 return;
             }
         });
-
     }
+
 
     static async getAllImagesFromCloudinary(req: Request, res: Response) {
         try {
