@@ -4,40 +4,41 @@ import { ProductController } from '../controllers/ProductController';
 import { handleInputErrors } from '../middleware/validation';
 import { authenticate, isAdmin, isAdminOrVendedor } from '../middleware/auth';
 
-
 const router = Router();
 
-// Create Product
-router.post('/',
-    authenticate, isAdmin,
+router.post(
+    '/',
+    authenticate,
+    isAdmin,
+
     body('nombre')
         .notEmpty()
         .withMessage('Name is required'),
 
     body('descripcion')
-        .isString()
         .optional()
+        .isString()
         .withMessage('Description must be a string'),
 
     body('precio')
         .optional()
         .isNumeric()
         .withMessage('El precio debe ser un número')
-        .custom((value) => value >= 0)
+        .custom(v => v >= 0)
         .withMessage('El precio debe ser cero o mayor'),
 
     body('precioComparativo')
         .optional()
         .isNumeric()
         .withMessage('El precio comparativo debe ser un número')
-        .custom((value) => value >= 0)
+        .custom(v => v >= 0)
         .withMessage('El precio comparativo debe ser cero o mayor'),
 
     body('costo')
         .optional()
         .isNumeric()
         .withMessage('El costo debe ser un número')
-        .custom((value) => value >= 0)
+        .custom(v => v >= 0)
         .withMessage('El costo debe ser cero o mayor'),
 
     body('imagenes')
@@ -48,18 +49,23 @@ router.post('/',
     body('categoria')
         .notEmpty()
         .withMessage('Category is required'),
-        
+
     body('stock')
         .optional()
         .isNumeric()
         .withMessage('Stock must be a number')
-        .custom(value => value >= 0)
+        .custom(v => v >= 0)
         .withMessage('Stock must be zero or greater'),
-                
+
     body('sku')
         .optional()
         .isString()
         .withMessage('SKU must be a string'),
+
+    body('barcode')
+        .optional()
+        .isString()
+        .withMessage('Barcode must be a string'),
 
     body('atributos')
         .optional()
@@ -70,9 +76,36 @@ router.post('/',
         .optional()
         .isArray()
         .withMessage('Las especificaciones deben ser un arreglo'),
+
+    body('variants')
+        .optional()
+        .isArray()
+        .withMessage('Las variantes deben ser un arreglo'),
+
+    body('variants.*.precio')
+        .optional()
+        .isNumeric()
+        .withMessage('El precio de la variante debe ser numérico'),
+
+    body('variants.*.precioComparativo')
+        .optional()
+        .isNumeric()
+        .withMessage('El precio comparativo de la variante debe ser numérico'),
+
+    body('variants.*.stock')
+        .optional()
+        .isNumeric()
+        .withMessage('El stock de la variante debe ser numérico'),
+
+    body('variants.*.atributos')
+        .optional()
+        .isObject()
+        .withMessage('Los atributos de la variante deben ser un objeto'),
+
     handleInputErrors,
-    ProductController.createProduct,
+    ProductController.createProduct
 );
+
 
 router.get('/', 
     authenticate,

@@ -8,25 +8,29 @@ import cloudinary from '../config/cloudinary';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, parent, attributes, image, isActive } = req.body;
+            let { nombre, descripcion, parent, attributes, image, isActive } = req.body;
+
+            console.log("Attributes received:", attributes);
+
+            if (parent === "null" || parent === "" || parent === undefined) {
+                parent = null;
+            }
             const slug = slugify(nombre, { lower: true, strict: true });
 
-            const ExistingCategory = await Category.findOne({ slug });
-            if (ExistingCategory) {
+            const existing = await Category.findOne({ slug });
+            if (existing) {
                 res.status(400).json({ message: "La categoria ya existe" });
                 return;
             }
 
-            // Verificar que el parent exista si se proporciona
-            if (parent) {
-                const existingParent = await Category.findById(parent);
-                if (!existingParent) {
+            if (parent !== null) {
+                const parentExists = await Category.findById(parent);
+                if (!parentExists) {
                     res.status(400).json({ message: "La categoria padre no existe" });
                     return;
                 }
             }
 
-            // Validar que los atributos sean válidos
 
             if (attributes) {
                 if (!Array.isArray(attributes)) {
@@ -35,29 +39,46 @@ export class CategoryController {
                 }
 
                 for (const attr of attributes) {
-                    if (!attr.name || !Array.isArray(attr.values) || attr.values.length === 0) {
-                        res.status(400).json({ message: "Cada atributo debe tener un nombre y al menos un valor" });
+                    if (
+                        !attr.name ||
+                        !Array.isArray(attr.values) ||
+                        attr.values.length === 0
+                    ) {
+                        res.status(400).json({
+                            message: "Cada atributo debe tener un nombre y al menos un valor"
+                        });
+                        return;
+                    }
+
+                    if (attr.isVariant !== undefined && typeof attr.isVariant !== "boolean") {
+                        res.status(400).json({
+                            message: "El campo isVariant debe ser boolean"
+                        });
                         return;
                     }
                 }
             }
-
 
             const newCategory = new Category({
                 nombre,
                 descripcion,
                 slug,
                 parent: parent || null,
-                image: image,
-                isActive: isActive,
-                attributes,
+                image,
+                isActive,
+                attributes: attributes?.map(a => ({
+                    name: a.name.trim(),
+                    values: a.values.map(v => v.trim()),
+                    isVariant: a.isVariant ?? false
+                }))
             });
 
             await newCategory.save();
             res.status(201).json({ message: "Category created successfully" });
 
         } catch (error) {
-            res.status(500).json({ message: 'Error al crear la categoria' });
+            console.error(error);
+            res.status(500).json({ message: "Error al crear la categoria" });
             return;
         }
     }
@@ -114,36 +135,43 @@ export class CategoryController {
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { nombre, descripcion, parent, attributes, variants, image, isActive } = req.body;
+            let { nombre, descripcion, parent, attributes, image, isActive } = req.body;
 
-            const slug = slugify(nombre, { lower: true, strict: true });
+            console.log("Attributes received:", attributes.isVariant);
 
-            // Verificar si la categoría existe
-            const existingCategory = await Category.findById(id);
-            if (!existingCategory) {
+            if (parent === "null" || parent === "" || parent === undefined) {
+                parent = null;
+            }
+
+            const existing = await Category.findById(id);
+            if (!existing) {
                 res.status(404).json({ message: "Categoría no encontrada" });
                 return;
             }
-            // Verificar si el slug ya existe
+
+            const slug = slugify(nombre, { lower: true, strict: true });
+
             const existingSlug = await Category.findOne({ slug });
             if (existingSlug && existingSlug._id.toString() !== id) {
-                res.status(400).json({ message: 'El slug ya existe' });
+                res.status(400).json({ message: "El slug ya existe" });
                 return;
             }
-            // Verificar que el parent exista si se proporciona
-            if (parent) {
+
+            if (parent !== null) {
                 if (parent === id) {
-                    res.status(400).json({ message: 'No se puede establecer la categoria como su propia categoria padre' });
+                    res.status(400).json({
+                        message: "No se puede establecer una categoría como su propio padre"
+                    });
                     return;
                 }
-                const existingParent = await Category.findById(parent);
-                if (!existingParent) {
-                    res.status(400).json({ message: "La categoria padre no existe" });
+
+                const parentExists = await Category.findById(parent);
+                if (!parentExists) {
+                    res.status(400).json({ message: "La categoría padre no existe" });
                     return;
                 }
             }
 
-            // Validar que los atributos sean válidos
             if (attributes) {
                 if (!Array.isArray(attributes)) {
                     res.status(400).json({ message: "Los atributos deben ser un array" });
@@ -151,51 +179,58 @@ export class CategoryController {
                 }
 
                 for (const attr of attributes) {
-                    if (!attr.name || !Array.isArray(attr.values) || attr.values.length === 0) {
-                        res.status(400).json({ message: "Cada atributo debe tener un nombre y al menos un valor" });
+                    if (
+                        !attr.name ||
+                        !Array.isArray(attr.values) ||
+                        attr.values.length === 0
+                    ) {
+                        res.status(400).json({
+                            message: "Cada atributo debe tener un nombre y al menos un valor"
+                        });
+                        return;
+                    }
+
+                    if (attr.isVariant !== undefined && typeof attr.isVariant !== "boolean") {
+                        res.status(400).json({
+                            message: "El campo isVariant debe ser boolean"
+                        });
                         return;
                     }
                 }
             }
 
-            // Validar que las variantes sean válidas
-            if (variants) {
-                if (!Array.isArray(variants)) {
-                    res.status(400).json({ message: "Las variantes deben ser un array" });
-                    return;
-                }
+            const updated = await Category.findByIdAndUpdate(
+                id,
+                {
+                    nombre,
+                    descripcion,
+                    slug,
+                    parent,
+                    attributes: attributes
+                        ? attributes.map(a => ({
+                            name: a.name.trim(),
+                            values: a.values.map(v => v.trim()),
+                            isVariant: a.isVariant ?? false
+                        }))
+                        : existing.attributes,
+                    image: image ?? existing.image,
+                    isActive: isActive !== undefined ? isActive : existing.isActive
+                },
+                { new: true }
+            );
 
-                for (const variant of variants) {
-                    if (!variant.name || !Array.isArray(variant.values) || variant.values.length === 0) {
-                        res.status(400).json({ message: "Cada variante debe tener un nombre y al menos un valor" });
-                        return;
-                    }
-                }
-            }
-
-            // Actualizar la categoria
-            const updatedCategory = await Category.findByIdAndUpdate(id, {
-                nombre,
-                descripcion,
-                slug,
-                parent: parent ? parent : null, // Si no se proporciona parent, se establece como null
-                attributes,
-                variants,
-                image: image || existingCategory.image,
-                isActive: isActive !== undefined ? isActive : existingCategory.isActive,
-            }, { new: true });
-
-            if (!updatedCategory) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
+            if (!updated) {
+                res.status(404).json({ message: "Categoría no encontrada" });
                 return;
             }
 
-            res.status(200).json({ message: 'Categoria actualizada con exito' });
+            res.status(200).json({ message: "Categoría actualizada con éxito" });
         } catch (error) {
-            res.status(500).json({ message: 'Error al actualizar la categoria' });
+            res.status(500).json({ message: "Error al actualizar la categoría" });
             return;
         }
     }
+
 
     static async deleteCategory(req: Request, res: Response) {
         try {

@@ -38,64 +38,60 @@ export class ProductController {
                 isFrontPage
             } = req.body;
 
-            // Validar categoría
             const [selectedCategory, hasChildren] = await Promise.all([
                 Category.findById(categoria),
-                Category.exists({ parent: categoria }),
+                Category.exists({ parent: categoria })
             ]);
 
             if (!selectedCategory) {
-                res.status(400).json({ message: "La categoría no existe" });
+                res.status(400).json({ message: 'La categoría no existe' });
                 return;
             }
+
             if (hasChildren) {
                 res.status(400).json({
-                    message: "No se puede crear un producto en una categoría que tiene subcategorías",
+                    message: 'No se puede crear un producto en una categoría que tiene subcategorías'
                 });
                 return;
             }
 
-            // Validaciones generales
             if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
 
-            if (atributos && typeof atributos !== "object") {
-                res.status(400).json({ message: "Atributos deben ser un objeto" });
+            if (atributos && typeof atributos !== 'object') {
+                res.status(400).json({ message: 'Atributos deben ser un objeto' });
                 return;
             }
 
             if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: "Especificaciones deben ser un array" });
+                res.status(400).json({ message: 'Especificaciones deben ser un array' });
                 return;
             }
 
             if (precioComparativo && Number(precioComparativo) < Number(precio)) {
-                res.status(400).json({ message: "El precio comparativo no puede ser menor al precio" });
+                res.status(400).json({ message: 'El precio comparativo no puede ser menor al precio' });
                 return;
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : 1;
             const slug = await generateUniqueSlug(nombre);
 
-            /**  Procesar variantes */
-            /**  Procesar variantes */
             let preparedVariants: IVariant[] = [];
 
             if (variants && Array.isArray(variants)) {
-                preparedVariants = variants.map((v) => {
-                    if (!v.atributos || typeof v.atributos !== "object") {
-                        throw new Error("Cada variante debe tener atributos válidos");
+                preparedVariants = variants.map(v => {
+                    if (!v.atributos || typeof v.atributos !== 'object') {
+                        throw new Error('Cada variante debe tener atributos válidos');
                     }
 
-                    // Crear nombre automáticamente si no existe
                     const nombreGenerado = v.nombre
                         ? v.nombre
                         : Object.keys(v.atributos)
-                            .sort() // ordenar keys para consistencia
-                            .map((key) => `${v.atributos[key]}`) // solo valores
-                            .join(" / "); // unir con " / " como separación típica
+                            .sort()
+                            .map(key => `${v.atributos[key]}`)
+                            .join(' / ');
 
                     return {
                         nombre: nombreGenerado,
@@ -105,16 +101,15 @@ export class ProductController {
                         sku: v.sku,
                         barcode: v.barcode,
                         imagenes: v.imagenes ?? [],
-                        atributos: v.atributos,
+                        atributos: v.atributos
                     };
                 });
 
-                // Evitar variantes duplicadas por atributos
                 const seen = new Set();
                 for (const v of preparedVariants) {
                     const key = JSON.stringify(v.atributos);
                     if (seen.has(key)) {
-                        res.status(400).json({ message: "Variantes duplicadas detectadas" });
+                        res.status(400).json({ message: 'Variantes duplicadas detectadas' });
                         return;
                     }
                     seen.add(key);
@@ -152,12 +147,10 @@ export class ProductController {
             const product = new Product(newProduct);
             await product.save();
 
-            res.status(201).json({ message: "Producto creado correctamente" });
-
+            res.status(201).json({ message: 'Producto creado correctamente' });
         } catch (error: any) {
-            console.error("Error creating product:", error);
-            res.status(500).json({ message: error.message || "Error creating product" });
-            return;
+            console.error('Error creating product:', error);
+            res.status(500).json({ message: error.message || 'Error creating product' });
         }
     }
 
@@ -638,7 +631,6 @@ export class ProductController {
     }
 
     static async updateProduct(req: Request, res: Response) {
-        console.log("Updating product with data:", req.body);
         try {
             const {
                 nombre,
@@ -650,81 +642,63 @@ export class ProductController {
                 categoria,
                 stock,
                 sku,
+                barcode,
                 esDestacado,
                 esNuevo,
                 isActive,
                 atributos,
-                barcode,
                 especificaciones,
                 brand,
                 diasEnvio,
                 variants,
-                isFrontPage,
+                isFrontPage
             } = req.body;
 
             const productId = req.params.id;
             const existingProduct = await Product.findById(productId);
+
             if (!existingProduct) {
-                res.status(404).json({ message: "Producto no encontrado" });
+                res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
 
-            // --- Validaciones generales ---
             if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
+                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
                 return;
             }
 
-            if (atributos && typeof atributos !== "object") {
-                res.status(400).json({ message: "Los atributos deben ser un objeto" });
+            if (atributos && typeof atributos !== 'object') {
+                res.status(400).json({ message: 'Los atributos deben ser un objeto' });
                 return;
             }
 
             if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: "Las especificaciones deben ser un array" });
+                res.status(400).json({ message: 'Las especificaciones deben ser un array' });
                 return;
             }
 
-            if (
-                precioComparativo !== undefined &&
-                precioComparativo !== null &&
-                Number(precioComparativo) <= 0
-            ) {
-                // Si llega 0 o negativo, no guardar
-                delete req.body.precioComparativo;
-            } else if (
-                precioComparativo &&
-                precio != null &&
-                Number(precioComparativo) < Number(precio)
-            ) {
-                res.status(400).json({ message: "El precio comparativo no puede ser menor que el precio" });
-                return;
-            }
-
-            const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
-
-            // --- Validar categoría ---
             if (categoria) {
                 const categoryExists = await Category.findById(categoria);
                 if (!categoryExists) {
-                    res.status(400).json({ message: "La categoría especificada no existe" });
+                    res.status(400).json({ message: 'La categoría especificada no existe' });
                     return;
                 }
                 existingProduct.categoria = categoria;
             }
 
-            // --- Procesar variantes ---
+            const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
+
             if (Array.isArray(variants) && variants.length > 0) {
-                const preparedVariants = variants.map((v) => {
-                    if (!v.atributos || typeof v.atributos !== "object")
-                        throw new Error("Cada variante debe tener atributos válidos");
+                const preparedVariants = variants.map(v => {
+                    if (!v.atributos || typeof v.atributos !== 'object')
+                        throw new Error('Cada variante debe tener atributos válidos');
 
                     const nombreGenerado =
                         v.nombre ||
                         Object.keys(v.atributos)
                             .sort()
-                            .map((key) => `${v.atributos[key]}`)
-                            .join(" / ");
+                            .map(key => `${v.atributos[key]}`)
+                            .join(' / ');
 
                     let precioComparativoFinal =
                         v.precioComparativo != null ? Number(v.precioComparativo) : undefined;
@@ -732,7 +706,8 @@ export class ProductController {
                     if (
                         precioComparativoFinal !== undefined &&
                         (precioComparativoFinal <= 0 ||
-                            (v.precio != null && precioComparativoFinal < Number(v.precio)))
+                            (v.precio != null &&
+                                precioComparativoFinal < Number(v.precio)))
                     ) {
                         precioComparativoFinal = undefined;
                     }
@@ -745,16 +720,15 @@ export class ProductController {
                         sku: v.sku,
                         barcode: v.barcode,
                         imagenes: v.imagenes ?? [],
-                        atributos: v.atributos,
+                        atributos: v.atributos
                     };
                 });
 
-                // Detección de variantes duplicadas
                 const seen = new Set();
                 for (const v of preparedVariants) {
                     const key = JSON.stringify(v.atributos);
                     if (seen.has(key)) {
-                        res.status(400).json({ message: "Variantes duplicadas detectadas" });
+                        res.status(400).json({ message: 'Variantes duplicadas detectadas' });
                         return;
                     }
                     seen.add(key);
@@ -767,7 +741,6 @@ export class ProductController {
                 if (stock != null) existingProduct.stock = Number(stock);
             }
 
-            // --- Actualizar otros campos ---
             if (nombre && nombre !== existingProduct.nombre) {
                 existingProduct.slug = await generateUniqueSlug(nombre);
                 existingProduct.nombre = nombre;
@@ -779,7 +752,8 @@ export class ProductController {
             if (
                 precioComparativo !== undefined &&
                 precioComparativo !== null &&
-                Number(precioComparativo) > 0
+                Number(precioComparativo) > 0 &&
+                (precio == null || Number(precioComparativo) >= Number(precio))
             ) {
                 existingProduct.precioComparativo = Number(precioComparativo);
             } else {
@@ -801,12 +775,11 @@ export class ProductController {
             existingProduct.isFrontPage = isFrontPage ?? existingProduct.isFrontPage;
 
             await existingProduct.save();
-            res.status(200).json({ message: "Producto actualizado correctamente" });
-            return;
-        } catch (error) {
-            console.error("Error updating product:", error);
-            res.status(500).json({ message: "Error actualizando producto", error: error.message });
-            return;
+
+            res.status(200).json({ message: 'Producto actualizado correctamente' });
+        } catch (error: any) {
+            console.error('Error updating product:', error);
+            res.status(500).json({ message: 'Error actualizando producto', error: error.message });
         }
     }
 

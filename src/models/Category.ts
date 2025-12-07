@@ -4,6 +4,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 export interface ICategoryAttribute {
     name: string;        // Ej: "Color", "Talla", "Material"
     values: string[];    // Ej: ["Rojo", "Verde"] o ["S", "M", "L"]
+    isVariant?: boolean; // This indicates if the attribute is used for product variants
 }
 
 export interface ICategory extends Document {
@@ -23,6 +24,7 @@ const categoryAttributeSchema = new Schema<ICategoryAttribute>(
     {
         name: { type: String, required: true, trim: true },
         values: [{ type: String, required: true, trim: true }],
+        isVariant: { type: Boolean, default: false },
     },
     { _id: false }
 );

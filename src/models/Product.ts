@@ -8,8 +8,8 @@ interface ISpecification {
 }
 
 export interface IVariant {
-    _id?: Types.ObjectId; // <- esto permite usar variant._id
-    nombre?: string; // Ej: "Rojo / 128GB"
+    _id?: Types.ObjectId;
+    nombre?: string;
     precio?: number;
     precioComparativo?: number;
     costo?: number;
@@ -17,7 +17,7 @@ export interface IVariant {
     sku?: string;
     barcode?: string;
     imagenes?: string[];
-    atributos: Record<string, string>; // { color: "Rojo", almacenamiento: "128GB" }
+    atributos: Record<string, string>;
 }
 
 export interface IProduct extends Document {
@@ -40,7 +40,7 @@ export interface IProduct extends Document {
     especificaciones?: ISpecification[];
     diasEnvio?: number;
     fechaDisponibilidad?: Date;
-    variants?: IVariant[]; // Variants
+    variants?: IVariant[];
     isFrontPage?: boolean;
 }
 
@@ -48,7 +48,7 @@ export interface IProduct extends Document {
 const specificationSchema = new Schema<ISpecification>(
     {
         key: { type: String, required: true, trim: true },
-        value: { type: String, required: true, trim: true },
+        value: { type: String, required: true, trim: true }
     },
     { _id: false }
 );
@@ -59,25 +59,32 @@ const variantSchema = new Schema<IVariant>(
         nombre: { type: String },
         precio: { type: Number, min: 0 },
         precioComparativo: { type: Number, min: 0 },
+        costo: { type: Number, min: 0 },
         stock: { type: Number, min: 0, default: 0 },
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
-        imagenes: [{ type: String }],
-        atributos: { type: Object, default: {} }, // TODO: REVISAR QUE FUNCIONA BIEN
+        imagenes: { type: [String], default: [] },
+
+        // Corrección: usar Map para validación + estabilidad
+        atributos: {
+            type: Map,
+            of: String,
+            default: {}
+        }
     },
-    { _id: true } // Necesitamos ID para poder hacer referencia en órdenes
+    { _id: true }
 );
 
-// --- Schema principal del producto ---
+// --- Schema principal ---
 const productSchema = new Schema<IProduct>(
     {
         nombre: { type: String, required: true, trim: true },
-        slug: { type: String, trim: true, unique: true },
+        slug: { type: String, trim: true, unique: true, required: true },
         descripcion: { type: String },
         precio: { type: Number, min: 0, default: 0 },
         precioComparativo: { type: Number, min: 0 },
         costo: { type: Number, min: 0, default: 0 },
-        imagenes: [{ type: String }],
+        imagenes: { type: [String], default: [] },
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
         brand: { type: Types.ObjectId, ref: 'Brand' },
         stock: { type: Number, min: 0, default: 0 },
@@ -86,17 +93,30 @@ const productSchema = new Schema<IProduct>(
         isActive: { type: Boolean, default: true },
         esDestacado: { type: Boolean, default: false },
         esNuevo: { type: Boolean, default: false },
-        atributos: { type: Map, of: String, default: {} },
-        especificaciones: [specificationSchema],
+
+        atributos: {
+            type: Map,
+            of: String,
+            default: {}
+        },
+
+        especificaciones: { type: [specificationSchema], default: [] },
+
         diasEnvio: { type: Number, min: 0, default: 1 },
         fechaDisponibilidad: { type: Date },
-        variants: [variantSchema], // Variants
-        isFrontPage: { type: Boolean, default: false },
+
+        variants: { type: [variantSchema], default: [] },
+
+        isFrontPage: { type: Boolean, default: false }
     },
     { timestamps: true }
 );
 
+// Índices útiles
 productSchema.index({ 'variants.sku': 1 });
-productSchema.index({ 'variants.atributos': 1 });
+productSchema.index({ slug: 1 });
+
+// Eliminado: el índice inútil por atributos dinámicos
+// productSchema.index({ 'variants.atributos': 1 });
 
 export default mongoose.model<IProduct>('Product', productSchema);
