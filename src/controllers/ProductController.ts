@@ -486,6 +486,7 @@ export class ProductController {
                 .skip((pageNum - 1) * limitNum)
                 .limit(limitNum)
                 .populate('categoria', 'nombre slug')
+                .populate('brand', 'nombre slug')
                 ;
 
             const totalProducts = await Product.countDocuments(filter);

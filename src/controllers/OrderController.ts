@@ -74,11 +74,18 @@ export class OrderController {
                     imagen = variant.imagenes?.[0] || dbProduct.imagenes?.[0];
 
                     // Conversión segura de atributos
-                    if (variant.atributos instanceof Map) {
-                        variantAttributes = Object.fromEntries(variant.atributos.entries());
-                    } else if (variant.atributos && typeof variant.atributos === 'object') {
-                        variantAttributes = { ...variant.atributos };
-                    } else {
+
+                    try {
+                        if (variant.atributos) {
+                            console.log("Variant attributes (raw):", variant.atributos);
+                            // Convertimos a objeto plano JS puro, eliminando metadatos de Mongoose
+                            const cleanAttributes = JSON.parse(JSON.stringify(variant.atributos));
+                            console.log("Variant attributes:", cleanAttributes);
+                            variantAttributes = cleanAttributes;
+                        } else {
+                            variantAttributes = {};
+                        }
+                    } catch (e) {
                         variantAttributes = {};
                     }
 
