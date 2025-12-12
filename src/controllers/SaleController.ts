@@ -1,3 +1,5 @@
+//File: backend/src/controllers/SaleController.
+
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Sale } from '../models/Sale';
@@ -11,7 +13,6 @@ import { generateSalePDF } from '../utils/generateTicket';
 export class SaleController {
 
     static async createSale(req: Request, res: Response) {
-
         const session = await mongoose.startSession();
         session.startTransaction();
 
@@ -31,50 +32,61 @@ export class SaleController {
                 receiptNumber,
             } = req.body;
 
-
-            const validatedItems = [];
+            const validatedItems: any[] = [];
 
             for (const item of items) {
                 const product = await Product.findById(item.product).session(session);
-                if (!product) throw new Error(`Producto no encontrado: ${item.product}`);
+                if (!product) {
+                    res.status(400).json({ message: `Producto no encontrado: ${item.product}` });
+                    return;
+                }
 
-                let price = product.precio || 0;
-                let cost = product.costo || 0;
+                let unitPrice = product.precio || 0;
+                let unitCost = product.costo || 0;
 
+                // ======== MANEJO DE VARIANTE (idéntico al webhook) ========
                 if (item.variantId) {
-                    // Buscamos la variante por su _id
                     const variant = product.variants?.find(v => v._id.toString() === item.variantId);
-                    if (!variant) throw new Error(`Variante no encontrada para el producto: ${product.nombre}`);
-                    if (variant.stock < item.quantity) throw new Error(`Stock insuficiente para la variante: ${product.nombre}`);
+                    if (!variant) {
+                        res.status(400).json({ message: `Variante no encontrada para el producto: ${product.nombre}` });
+                        return;
+                    }
+                    if (variant.stock < item.quantity) {
+                        res.status(400).json({ message: `Stock insuficiente para la variante de: ${product.nombre}` });
+                        return;
+                    }
 
-                    // Decrementamos stock de la variante
+                    // Descontar stock
                     variant.stock -= item.quantity;
 
-                    // Ajustamos precio y costo si la variante los tiene
-                    price = variant.precio ?? price;
-                    cost = variant.costo ?? cost;
+                    // Si la variante tiene precio/costo propio, usarlos
+                    unitPrice = variant.precio ?? unitPrice;
+                    unitCost = variant.costo ?? unitCost;
 
-                    // Actualizamos stock total del producto
+                    // Recalcular stock total del producto
                     product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
-                } else {
-                    // Sin variante, solo decrementamos stock del producto
-                    if ((product.stock || 0) < item.quantity) throw new Error(`Stock insuficiente para: ${product.nombre}`);
+                }
+                else {
+                    // ======== Producto sin variante ========
+                    if (product.stock < item.quantity) {
+                        res.status(400).json({ message: `Stock insuficiente para el producto: ${product.nombre}` });
+                        return;
+                    }
                     product.stock -= item.quantity;
                 }
 
+                await product.save({ session });
+
                 validatedItems.push({
                     product: product._id,
-                    variant: item.variantId || undefined, // guardamos la referencia de la variante
+                    variantId: item.variantId || undefined,
                     quantity: item.quantity,
-                    price,
-                    cost,
+                    price: unitPrice,
+                    cost: unitCost,
                 });
-
-                await product.save({ session });
             }
 
-
-            const totalPrice = validatedItems.reduce((sum, item) => sum + item.price * item.quantity, 0) - totalDiscountAmount;
+            const totalPrice = validatedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) - totalDiscountAmount;
 
             const sale = new Sale({
                 customer: customerId || undefined,
@@ -99,14 +111,18 @@ export class SaleController {
                 message: 'Venta creada correctamente',
                 saleId: sale._id
             });
+            return;
         } catch (error) {
+            console.error("Error al crear la venta:", error);
             await session.abortTransaction();
             res.status(500).json({ message: `Error al crear la venta: ${error.message}` });
             return;
         } finally {
             session.endSession();
+            return;
         }
     }
+
 
     static async getSale(req: Request, res: Response) {
         try {

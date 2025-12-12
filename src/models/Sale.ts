@@ -4,6 +4,7 @@ import { IProduct } from './Product';
 import { PaymentStatus } from './Order';
 import { Counter } from './Counter';
 
+
 // 
 
 // Estado de la venta
@@ -27,6 +28,8 @@ export enum PaymentMethod {
 // Producto vendido
 interface ISaleItem {
     product: Types.ObjectId | IProduct;
+    variantId?: Types.ObjectId;
+
     quantity: number;
     price: number; // Precio unitario
     cost: number; // Costo unitario en el momento de la venta
@@ -77,6 +80,7 @@ export interface ISale extends Document {
 
 const saleItemSchema = new Schema<ISaleItem>({
     product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: Schema.Types.ObjectId },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
     cost: { type: Number, min: 0, default: 0 },
