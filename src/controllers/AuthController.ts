@@ -7,7 +7,6 @@ import { generateToken } from '../utils/token';
 import { AuthEmailResend } from '../emails/AuthEmailResend';
 import { googleClient } from '../config/googleClient';
 
-
 export class AuthController {
 
     static async register(req: Request, res: Response) {
