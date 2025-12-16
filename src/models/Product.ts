@@ -75,6 +75,8 @@ const variantSchema = new Schema<IVariant>(
     { _id: true }
 );
 
+// Añadir SearchIndex for searchs
+
 // --- Schema principal ---
 const productSchema = new Schema<IProduct>(
     {

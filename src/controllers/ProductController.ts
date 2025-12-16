@@ -921,8 +921,8 @@ export class ProductController {
 
             const images = Array.isArray(files.images) ? files.images : [files.images];
 
-            if (images.length > 5) {
-                res.status(400).json({ message: "No se pueden subir más de 5 imágenes" });
+            if (images.length > 6) {
+                res.status(400).json({ message: "No se pueden subir más de 6 imágenes" });
                 return;
             }
 
@@ -1291,7 +1291,6 @@ export class ProductController {
                         { nombre: { $regex: word, $options: "i" } },
                         { descripcion: { $regex: word, $options: "i" } },
                         { "variants.nombre": { $regex: word, $options: "i" } },
-                        { "variants.atributos": { $regex: word, $options: "i" } }
                     ],
                 }));
                 searchQuery.$and = andConditions;
@@ -1479,11 +1478,28 @@ export class ProductController {
                 totalPromise,
             ]);
 
-            console.log("los filtros:", filters);
+            let finalProducts = products;
+            let finalTotal = totalProducts;
+            let isFallback = false;
+
+            if (products.length === 0) {
+                isFallback = true;
+
+                // 🎯 Productos alternativos (ejemplo: activos + stock)
+                finalProducts = await Product.find({
+                    isActive: true,
+                    stock: { $gt: 0 }
+                })
+                    .limit(4)
+                    .sort({ createdAt: -1 })
+                    .populate("brand", "nombre slug");
+
+                finalTotal = finalProducts.length;
+            }
 
             res.status(200).json({
-                products,
-                totalPages: Math.ceil(totalProducts / limitNum),
+                products: finalProducts,
+                totalPages: isFallback ? 1 : Math.ceil(finalTotal / limitNum),
                 currentPage: pageNum,
                 totalProducts,
                 filters,
