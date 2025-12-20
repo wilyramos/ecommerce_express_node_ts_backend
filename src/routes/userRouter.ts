@@ -12,6 +12,14 @@ router.get(
     UserController.getAllUsers
 );
 
+// listar getAllClients
+router.get(
+    '/clients',
+    authenticate,
+    isAdminOrVendedor,
+    UserController.getAllClients
+);
+
 // Actualizar rol (solo admin)
 router.put(
     '/:id/role',
