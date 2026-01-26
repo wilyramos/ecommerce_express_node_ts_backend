@@ -3,85 +3,61 @@ import { body, param } from 'express-validator';
 import { OrderController } from '../controllers/OrderController';
 import { handleInputErrors } from '../middleware/validation';
 import { authenticate, isAdmin } from '../middleware/auth';
-
+import { OrderStatus } from '../models/Order';
 
 const router = Router();
 
-// Create Order
+/** * RUTAS PARA CLIENTES AUTENTICADOS 
+ */
+
+// Crear Orden
 router.post('/',
     authenticate,
     OrderController.createOrder
 );
 
-// Get Order by ID
-router.get('/:id',
-    authenticate,
-    param('id').notEmpty().withMessage('El ID de la orden es obligatorio'),
-    handleInputErrors,
-    OrderController.getOrderById
-);
-
-// Get Orders by User
+// Obtener mis órdenes (Historial del cliente)
+// Nota: Se coloca antes de /:id para evitar que "user" sea tomado como un ID
 router.get('/user/me',
     authenticate,
     OrderController.getOrdersByUser
 );
 
-// Get Orders from admin
+// Obtener detalle de una orden por ID (Admin o Dueño de la orden)
+router.get('/:id',
+    authenticate,
+    param('id').isMongoId().withMessage('ID no válido'),
+    handleInputErrors,
+    OrderController.getOrderById
+);
+
+
+/** * RUTAS DE ADMINISTRACIÓN (SOLO ADMIN) 
+ */
+
+// Obtener todas las órdenes con filtros y paginación
 router.get('/',
     authenticate,
     isAdmin,
     OrderController.getOrders
 );
 
-// Update Order Status
-router.put('/:id',
+// Actualizar Estado de la Orden
+// Usamos PATCH para actualizar solo el campo status e historial
+router.patch('/:id/status',
     authenticate,
     isAdmin,
-    body('status').notEmpty().withMessage('El estado es obligatorio'),
+    param('id').isMongoId().withMessage('ID no válido'),
+    body('status')
+        .notEmpty().withMessage('El estado es obligatorio')
+        .isIn(Object.values(OrderStatus)).withMessage('Estado de orden no permitido'),
     handleInputErrors,
-    // AuthController.updateOrderStatus
-);
-
-// Delete Order
-router.delete('/:id',
-    authenticate,
-    isAdmin,
-    param('id').notEmpty().withMessage('El ID de la orden es obligatorio'),
-    handleInputErrors,
-    // AuthController.deleteOrder
-);
-
-// Get Orders by Status
-router.get('/status/:status',
-    authenticate,
-    isAdmin,
-    param('status').notEmpty().withMessage('El estado es obligatorio'),
-    handleInputErrors,
-    // AuthController.getOrdersByStatus
-);
-
-// Get Orders by Date Range
-router.get('/date-range',
-    authenticate,
-    isAdmin,
-    body('startDate').notEmpty().withMessage('La fecha de inicio es obligatoria'),
-    body('endDate').notEmpty().withMessage('La fecha de fin es obligatoria'),
-    handleInputErrors,
-    // AuthController.getOrdersByDateRange
-);
-
-// Get Orders by Payment Status
-router.get('/payment-status/:status',
-    authenticate,
-    isAdmin,
-    param('status').notEmpty().withMessage('El estado de pago es obligatorio'),
-    handleInputErrors,
-    // AuthController.getOrdersByPaymentStatus
+    OrderController.updateOrderStatus
 );
 
 
-// REPORTS
+/** * REPORTES Y ANALÍTICA (SOLO ADMIN) 
+ */
 
 router.get('/reports/sales-summary',
     authenticate,
@@ -89,28 +65,24 @@ router.get('/reports/sales-summary',
     OrderController.getSummaryOrders
 );
 
-// get orders over time
 router.get('/reports/sales-over-time',
     authenticate,
     isAdmin,
     OrderController.getOrdersOverTime
 );
 
-// obtener el numero de ordenes por estado
 router.get('/reports/orders-by-status',
     authenticate,
     isAdmin,
     OrderController.getReportOrdersByStatus
 );
 
-// get orders by payment method
 router.get('/reports/orders-by-payment-method',
     authenticate,
     isAdmin,
     OrderController.getReportOrdersByMethodPayment
 );
 
-// get orders by city location
 router.get('/reports/orders-by-city',
     authenticate,
     isAdmin,

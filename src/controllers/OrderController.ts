@@ -3,8 +3,16 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO } from 'date-fns';
+import { OrderService } from '../services/OrderService';
 
-
+const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+    [OrderStatus.AWAITING_PAYMENT]: [OrderStatus.PROCESSING, OrderStatus.CANCELED],
+    [OrderStatus.PROCESSING]: [OrderStatus.SHIPPED, OrderStatus.CANCELED, OrderStatus.PAID_BUT_OUT_OF_STOCK],
+    [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+    [OrderStatus.DELIVERED]: [],
+    [OrderStatus.CANCELED]: [],
+    [OrderStatus.PAID_BUT_OUT_OF_STOCK]: [OrderStatus.PROCESSING, OrderStatus.CANCELED]
+};
 
 export class OrderController {
 
@@ -600,6 +608,88 @@ export class OrderController {
             console.error("Error en getReportOrdersByCity:", error);
             res.status(500).json({ message: "Error al obtener reporte de órdenes por ciudad" });
             return;
+        }
+    }
+
+    // En OrderController.ts
+
+    static async updateOrderStatus(req: Request, res: Response) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const { id } = req.params;
+            const { status: newStatus } = req.body as { status: OrderStatus };
+
+            // 1. Buscar la orden
+            const order = await Order.findById(id).session(session);
+            if (!order) {
+                await session.abortTransaction();
+                res.status(404).json({ message: 'Orden no encontrada' });
+                return;
+            }
+
+            const currentStatus = order.status;
+
+            // 2. Validar transición lógica
+            if (!ALLOWED_TRANSITIONS[currentStatus].includes(newStatus)) {
+                await session.abortTransaction();
+                res.status(400).json({
+                    message: `Transición no permitida: de ${currentStatus} a ${newStatus}`
+                });
+                return;
+            }
+
+            // 3. Lógica de Negocio: Manejo de Stock mediante OrderService
+
+            // CASO A: Se cancela una orden que YA tenía stock descontado
+            const statusesWithDeductedStock = [OrderStatus.PROCESSING, OrderStatus.SHIPPED];
+            if (newStatus === OrderStatus.CANCELED && statusesWithDeductedStock.includes(currentStatus)) {
+                console.log(`[Stock] Restaurando inventario para orden: ${order.orderNumber}`);
+                await OrderService.adjustStock(order.items, 'restore', session);
+            }
+
+            // CASO B: Aprobación manual (De pendiente a procesamiento)
+            // Esto ocurre si el admin confirma un pago manualmente fuera de los webhooks
+            if (currentStatus === OrderStatus.AWAITING_PAYMENT && newStatus === OrderStatus.PROCESSING) {
+                console.log(`[Stock] Descontando inventario (Aprobación Manual): ${order.orderNumber}`);
+                await OrderService.adjustStock(order.items, 'deduct', session);
+            }
+
+            // CASO C: De Sin Stock a Procesamiento (El admin repuso inventario y quiere procesar la orden pagada)
+            if (currentStatus === OrderStatus.PAID_BUT_OUT_OF_STOCK && newStatus === OrderStatus.PROCESSING) {
+                console.log(`[Stock] Intentando descontar stock tras reposición: ${order.orderNumber}`);
+                await OrderService.adjustStock(order.items, 'deduct', session);
+            }
+
+            // 4. Actualizar la orden
+            order.status = newStatus;
+            order.statusHistory.push({
+                status: newStatus,
+                changedAt: new Date()
+            });
+
+            await order.save({ session });
+
+            // 5. Confirmar cambios
+            await session.commitTransaction();
+
+            res.status(200).json({
+                message: 'Estado actualizado y stock sincronizado correctamente',
+                order
+            });
+
+        } catch (error: any) {
+            // Si algo falla, revertimos todos los cambios (incluyendo los del service)
+            await session.abortTransaction();
+            console.error('Error al actualizar estado de la orden:', error);
+
+            res.status(500).json({
+                message: 'Error interno al procesar el cambio de estado',
+                error: error.message
+            });
+        } finally {
+            session.endSession();
         }
     }
 }
