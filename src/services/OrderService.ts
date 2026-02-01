@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import Order, { IOrder, OrderStatus } from '../models/Order';
+import Order, { OrderStatus } from '../models/Order';
 import Product from '../models/Product';
 
 export class OrderService {

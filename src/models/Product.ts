@@ -108,15 +108,13 @@ const productSchema = new Schema<IProduct>(
         fechaDisponibilidad: { type: Date },
 
         variants: { type: [variantSchema], default: [] },
-
-        isFrontPage: { type: Boolean, default: false }
     },
     { timestamps: true }
 );
 
 // Índices útiles
 productSchema.index({ 'variants.sku': 1 });
-productSchema.index({ slug: 1 });
+// productSchema.index({ slug: 1 });
 
 // Eliminado: el índice inútil por atributos dinámicos
 // productSchema.index({ 'variants.atributos': 1 });

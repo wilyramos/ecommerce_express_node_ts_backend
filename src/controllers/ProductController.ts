@@ -13,7 +13,6 @@ import sharp from 'sharp';
 
 
 export class ProductController {
-
     static async createProduct(req: Request, res: Response) {
         try {
             const {
@@ -520,28 +519,75 @@ export class ProductController {
                 return;
             }
 
-            // Dividir el texto en palabras individuales
-            const words = searchText.split(/\s+/).filter(Boolean);
+            const pipeline: any[] = [
+                // 1. Etapa de Búsqueda (Atlas Search)
+                // Usamos el mismo índice 'ecommerce_search_products' que creamos para la página principal
+                {
+                    $search: {
+                        index: "ecommerce_search_products",
+                        compound: {
+                            should: [
+                                {
+                                    text: {
+                                        query: searchText,
+                                        path: "nombre",
+                                        score: { boost: { value: 3 } }, // Prioridad 1: Coincidencia en Nombre
+                                        fuzzy: { maxEdits: 1 } // Permite pequeños errores (ej: "ipone" -> "iphone")
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: searchText,
+                                        path: "variants.nombre",
+                                        score: { boost: { value: 2 } }, // Prioridad 2: Coincidencia en Variante
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: searchText,
+                                        path: "descripcion",
+                                        score: { boost: { value: 1 } }, // Prioridad 3: Descripción
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                }
+                            ],
+                            minimumShouldMatch: 1 // Al menos una coincidencia es necesaria
+                        }
+                    }
+                },
+                // 2. Match (Filtros duros)
+                // Filtramos por activos. Nota: Es más eficiente hacer esto después del search
+                // a menos que isActive esté indexado como "token" en Atlas Search.
+                {
+                    $match: {
+                        isActive: true
+                    }
+                },
+                // 3. Limit (Solo necesitamos 5 para el dropdown)
+                {
+                    $limit: 5
+                },
+                // 4. Project (Equivalente a .select() y .slice())
+                {
+                    $project: {
+                        _id: 1,
+                        nombre: 1,
+                        precio: 1,
+                        slug: 1,
+                        esDestacado: 1,
+                        esNuevo: 1,
+                        // MongoDB Aggregation usa $slice para recortar arrays
+                        imagenes: { $slice: ["$imagenes", 1] }
+                    }
+                }
+            ];
 
-            // Construir condiciones: cada palabra debe aparecer en algún campo
-            const andConditions = words.map(word => ({
-                $or: [
-                    { nombre: { $regex: word, $options: "i" } },
-                    { descripcion: { $regex: word, $options: "i" } },
-                    { "variants.nombre": { $regex: word, $options: "i" } },
-                ],
-            }));
-
-            const products = await Product.find({
-                isActive: true,
-                $and: andConditions,
-            })
-                .select("nombre precio slug imagenes esDestacado esNuevo")
-                .slice("imagenes", 1)
-                .limit(20); // puedes ajustar el límite según tus necesidades
+            const products = await Product.aggregate(pipeline);
 
             res.status(200).json(products);
             return;
+
         } catch (error) {
             console.error("Error searching products in index:", error);
             res.status(500).json({ message: "Error al buscar productos" });
@@ -1264,6 +1310,8 @@ export class ProductController {
         }
     }
 
+
+
     static async getProductsMainPage(req: Request, res: Response) {
         try {
             const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
@@ -1280,118 +1328,178 @@ export class ProductController {
             const limitNum = parseInt(limit || "10", 10);
             const skip = (pageNum - 1) * limitNum;
 
-            // Base query
-            const searchQuery: any = { isActive: true };
+            // 1. Construir el Pipeline Base (Search + Match)
+            // Este pipeline se usará tanto para traer productos, como para contar y calcular filtros
+            const basePipeline: any[] = [];
 
-            // ... [TU LÓGICA DE BÚSQUEDA DE TEXTO, CATEGORÍA, MARCA, PRECIO VA AQUÍ SIN CAMBIOS] ...
-            // (Omitido por brevedad, asumo que mantienes tu código de construcción de searchQuery)
-
-            // 🔍 Texto
+            // A) ETAPA $SEARCH (Solo si hay query de texto)
+            // DEBE SER LA PRIMERA ETAPA SI EXISTE
             if (query && query.trim() !== "") {
-                const words = query.trim().split(/\s+/).filter(Boolean);
-                const andConditions = words.map(word => ({
-                    $or: [
-                        { nombre: { $regex: word, $options: "i" } },
-                        { descripcion: { $regex: word, $options: "i" } },
-                        { "variants.nombre": { $regex: word, $options: "i" } },
-                    ],
-                }));
-                searchQuery.$and = andConditions;
+                basePipeline.push({
+                    $search: {
+                        index: "ecommerce_search_products", // El nombre que pusimos en Compass
+                        compound: {
+                            should: [
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "nombre",
+                                        score: { boost: { value: 3 } }, // Prioridad al nombre
+                                        fuzzy: { maxEdits: 1 } // Permite pequeños errores tipográficos
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "variants.nombre",
+                                        score: { boost: { value: 2 } },
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "descripcion",
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                }
+                            ],
+                            minimumShouldMatch: 1
+                        }
+                    }
+                });
             }
 
-            // 📂 Categoría y Marca (Tu lógica existente...)
+            // B) ETAPA $MATCH (Filtros duros)
+            const matchStage: any = { isActive: true };
+
+            // Categoría
             if (category) {
                 const categoryDoc = await Category.findOne({ slug: category });
-                searchQuery.categoria = categoryDoc ? categoryDoc._id : null;
-            }
-            if (rest.brand) {
-                const brandDoc = await Brand.findOne({ slug: rest.brand });
-                if (brandDoc) searchQuery.brand = brandDoc._id;
+                matchStage.categoria = categoryDoc ? categoryDoc._id : null;
             }
 
-            // 💲 Rango de precios (Tu lógica existente...)
+            // Marca (Brand)
+            if (rest.brand) { // Asumo que el frontend manda ?brand=slug
+                const brandDoc = await Brand.findOne({ slug: rest.brand });
+                if (brandDoc) matchStage.brand = brandDoc._id;
+            }
+
+            // Rango de Precios
             if (priceRange) {
                 const [minStr, maxStr] = priceRange.split("-");
                 const min = Number(minStr);
                 const max = Number(maxStr);
                 if (!isNaN(min) && !isNaN(max)) {
-                    searchQuery.$or = [
+                    matchStage.$or = [
                         { precio: { $gte: min, $lte: max } },
-                        { "variants.precio": { $gte: min, $lte: max } },
+                        { "variants.precio": { $gte: min, $lte: max } }
                     ];
                 }
             }
 
-            // 🧩 Filtros dinámicos (Clave para detectar variante seleccionada)
-            // Guardamos los filtros activos para usarlos luego en el reordenamiento
+            // Filtros Dinámicos (Atributos)
             const activeFilters: Record<string, string[]> = {};
+            const attributeFilters: any[] = [];
 
             Object.keys(rest).forEach((key) => {
                 if (["brand", "category", "priceRange", "sort", "page", "limit", "query"].includes(key)) return;
+
                 const values = Array.isArray(rest[key]) ? rest[key] : [rest[key]];
-
                 if (values.length > 0) {
-                    activeFilters[key] = values; // Guardamos ej: { Color: ['Rojo'], Talla: ['M'] }
-
-                    if (!searchQuery.$and) searchQuery.$and = [];
-                    searchQuery.$and.push({
+                    activeFilters[key] = values;
+                    attributeFilters.push({
                         $or: [
                             { [`atributos.${key}`]: { $in: values } },
-                            { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } } // Corregido a $in para robustez
+                            { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } }
                         ]
                     });
                 }
             });
 
-            // 🧭 Ordenamiento
-            let sortQuery: Record<string, 1 | -1> = { stock: -1, createdAt: -1 };
-            // ... [TU LÓGICA DE SORT VA AQUÍ] ...
+            if (attributeFilters.length > 0) {
+                matchStage.$and = attributeFilters;
+            }
 
-            // 📦 CONSULTA DE PRODUCTOS
-            // Usamos .lean() para obtener objetos JS planos (Mejor rendimiento y manipulables)
-            // Usamos .lean() para obtener objetos JS planos
-            const productsPromise = Product.find(searchQuery)
-                .skip(skip)
-                .limit(limitNum)
-                .sort(sortQuery)
-                .populate("brand", "nombre slug")
-                .lean();
+            // Añadir Match al pipeline
+            basePipeline.push({ $match: matchStage });
 
-            const totalPromise = Product.countDocuments(searchQuery);
+            // 2. Definir Ordenamiento (Sort)
+            // Si hay búsqueda por texto y NO hay sort explícito, usamos relevancia (score)
+            let sortStage: any = {};
 
-            // AQUÍ ESTÁ LA CORRECCIÓN: El aggregate completo restaurado
-            const filtersPromise = Product.aggregate([
-                { $match: searchQuery },
+            if (sort) {
+                // Tu lógica de sort personalizada
+                if (sort === "price_asc") sortStage = { precio: 1 };
+                else if (sort === "price_desc") sortStage = { precio: -1 };
+                else if (sort === "newest") sortStage = { createdAt: -1 };
+                else sortStage = { stock: -1, createdAt: -1 }; // Default
+            } else if (query && query.trim() !== "") {
+                // Si es búsqueda por texto y no hay sort, ordenamos por score de relevancia
+                sortStage = { unused: { $meta: "searchScore" } };
+                // Nota: Mongoose 6+ / Atlas Search a veces requiere projection explícito del score,
+                // pero lo manejaremos en el project.
+            } else {
+                sortStage = { stock: -1, createdAt: -1 };
+            }
+
+            // 3. Ejecutar Aggregations en Paralelo
+            // Usamos Promise.all para eficiencia, similar a tu código original
+
+            // A. Obtener Productos (Paginados y Populados)
+            const productsPipeline = [
+                ...basePipeline,
+                // Si hay sort explícito, lo aplicamos. Si es por score, Atlas lo hace automático pero podemos forzar.
+                ...(Object.keys(sortStage).length > 0 && !sortStage.unused ? [{ $sort: sortStage }] : []),
+                { $skip: skip },
+                { $limit: limitNum },
+                // Lookup para poblar Categoria (si lo necesitas) y Brand
+                {
+                    $lookup: {
+                        from: "brands",
+                        localField: "brand",
+                        foreignField: "_id",
+                        as: "brand"
+                    }
+                },
+                // Unwind para que brand sea un objeto, no un array (preservar null si no hay brand)
+                { $unwind: { path: "$brand", preserveNullAndEmptyArrays: true } },
+                // Project para limpiar campos y asegurar estructura
+                {
+                    $project: {
+                        nombre: 1, slug: 1, descripcion: 1, precio: 1, precioComparativo: 1, costo: 1,
+                        imagenes: 1, categoria: 1, brand: { _id: 1, nombre: 1, slug: 1 }, // Solo campos necesarios de brand
+                        stock: 1, sku: 1, barcode: 1, isActive: 1, esDestacado: 1, esNuevo: 1,
+                        atributos: 1, especificaciones: 1, diasEnvio: 1, fechaDisponibilidad: 1, variants: 1,
+                        createdAt: 1, updatedAt: 1
+                    }
+                }
+            ];
+
+            // B. Obtener Conteo Total (Para paginación)
+            const countPipeline = [
+                ...basePipeline,
+                { $count: "total" }
+            ];
+
+            // C. Obtener Filtros (Facets)
+            // Este es tu código de agregación original, adaptado para correr después del $search/$match
+            const filtersPipeline = [
+                ...basePipeline,
                 {
                     $facet: {
                         brands: [
                             { $group: { _id: "$brand" } },
-                            {
-                                $lookup: {
-                                    from: "brands",
-                                    localField: "_id",
-                                    foreignField: "_id",
-                                    as: "brand",
-                                },
-                            },
+                            { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "brand" } },
                             { $unwind: "$brand" },
                             { $project: { id: "$brand._id", nombre: "$brand.nombre", slug: "$brand.slug" } },
                         ],
-
                         categories: [
                             { $group: { _id: "$categoria" } },
-                            {
-                                $lookup: {
-                                    from: "categories",
-                                    localField: "_id",
-                                    foreignField: "_id",
-                                    as: "category",
-                                },
-                            },
+                            { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "category" } },
                             { $unwind: "$category" },
                             { $project: { id: "$category._id", nombre: "$category.nombre", slug: "$category.slug" } },
                         ],
-
                         atributos: [
                             {
                                 $project: {
@@ -1402,12 +1510,7 @@ export class ProductController {
                                                 $reduce: {
                                                     input: "$variants",
                                                     initialValue: [],
-                                                    in: {
-                                                        $concatArrays: [
-                                                            "$$value",
-                                                            { $objectToArray: "$$this.atributos" }
-                                                        ]
-                                                    }
+                                                    in: { $concatArrays: ["$$value", { $objectToArray: "$$this.atributos" }] }
                                                 }
                                             }
                                         ]
@@ -1431,14 +1534,11 @@ export class ProductController {
                             {
                                 $project: {
                                     name: "$_id",
-                                    values: {
-                                        $filter: { input: "$values", as: "v", cond: { $ne: ["$$v", null] } }
-                                    },
+                                    values: { $filter: { input: "$values", as: "v", cond: { $ne: ["$$v", null] } } },
                                     _id: 0
                                 }
                             }
                         ],
-
                         price: [
                             {
                                 $group: {
@@ -1448,52 +1548,46 @@ export class ProductController {
                                 },
                             },
                         ],
-                    },
-                },
+                    }
+                }
+            ];
+
+            // Ejecutar todo
+            const [productsResult, countResult, filtersResult] = await Promise.all([
+                Product.aggregate(productsPipeline),
+                Product.aggregate(countPipeline),
+                Product.aggregate(filtersPipeline)
             ]);
 
-            const [filters, rawProducts, totalProducts] = await Promise.all([
-                filtersPromise,
-                productsPromise,
-                totalPromise,
-            ]);
-
+            const rawProducts = productsResult;
+            const totalProducts = countResult.length > 0 ? countResult[0].total : 0;
+            const filters = filtersResult;
             // =================================================================================
-            // 🖼️ LÓGICA DE PROCESAMIENTO DE IMÁGENES (AQUÍ ESTÁ LA SOLUCIÓN)
+            // 🖼️ LÓGICA DE PROCESAMIENTO DE IMÁGENES (INTACTA)
             // =================================================================================
 
-            const processedProducts = rawProducts.map((product) => {
+            const processedProducts = rawProducts.map((product: any) => {
                 // Si no hay filtros activos o variantes, retornamos el producto tal cual
                 if (Object.keys(activeFilters).length === 0 || !product.variants || product.variants.length === 0) {
                     return product;
                 }
 
                 // Buscamos la variante que mejor coincida con los filtros aplicados
-                const matchedVariant = product.variants.find((variant) => {
-                    // Verificamos si la variante tiene algun atributo que coincida con los filtros
-                    // Ej: Si filtro Color=Rojo, buscamos variante con Color=Rojo
+                const matchedVariant = product.variants.find((variant: any) => {
                     return Object.keys(activeFilters).some((filterKey) => {
                         const variantAttrValue = variant.atributos ? variant.atributos[filterKey] : null;
                         return variantAttrValue && activeFilters[filterKey].includes(variantAttrValue);
                     });
                 });
 
-                // Si encontramos variante y tiene imágenes, las ponemos primero
                 if (matchedVariant && matchedVariant.imagenes && matchedVariant.imagenes.length > 0) {
-                    // Opción A: Solo poner las de la variante al principio (puede haber duplicados si la main tiene la misma)
-                    // const newImages = [...matchedVariant.imagenes, ...product.imagenes];
-
-                    // Opción B: Priorizar variante y eliminar duplicados (Recomendado)
                     const mainImages = product.imagenes || [];
                     const variantImages = matchedVariant.imagenes;
-
-                    // Filtramos las imágenes del main que ya estén en la variante para no repetirlas
-                    const uniqueMainImages = mainImages.filter(img => !variantImages.includes(img));
+                    const uniqueMainImages = mainImages.filter((img: string) => !variantImages.includes(img));
 
                     return {
                         ...product,
-                        imagenes: [...variantImages, ...uniqueMainImages], // Imágenes de variante PRIMERO
-                        // Opcional: indicar al frontend qué variante hizo match
+                        imagenes: [...variantImages, ...uniqueMainImages],
                         matchedVariantId: matchedVariant._id
                     };
                 }
@@ -1507,15 +1601,23 @@ export class ProductController {
             let finalTotal = totalProducts;
             let isFallback = false;
 
-            // Fallback si no hay productos
-            if (rawProducts.length === 0) {
+            // Fallback si no hay productos (Misma lógica tuya pero usando aggregate)
+            if (rawProducts.length === 0 && pageNum === 1) { // Solo fallback en primera página
                 isFallback = true;
-                finalProducts = await Product.find({ isActive: true, stock: { $gt: 0 } })
-                    .limit(4)
-                    .sort({ createdAt: -1 })
-                    .populate("brand", "nombre slug")
-                    .lean(); // Usar lean aquí también
-
+                finalProducts = await Product.aggregate([
+                    { $match: { isActive: true, stock: { $gt: 0 } } },
+                    { $sort: { createdAt: -1 } },
+                    { $limit: 4 },
+                    {
+                        $lookup: {
+                            from: "brands",
+                            localField: "brand",
+                            foreignField: "_id",
+                            as: "brand"
+                        }
+                    },
+                    { $unwind: { path: "$brand", preserveNullAndEmptyArrays: true } }
+                ]);
                 finalTotal = finalProducts.length;
             }
 
@@ -1523,8 +1625,8 @@ export class ProductController {
                 products: finalProducts,
                 totalPages: isFallback ? 1 : Math.ceil(finalTotal / limitNum),
                 currentPage: pageNum,
-                totalProducts,
-                filters,
+                totalProducts: finalTotal,
+                filters: filters,
             });
 
         } catch (error) {
