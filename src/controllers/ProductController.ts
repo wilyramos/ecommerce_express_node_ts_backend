@@ -7,9 +7,10 @@ import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
 import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
-import type { Types } from 'mongoose';
+import type { PipelineStage, Types } from 'mongoose';
 import mongoose from 'mongoose';
 import sharp from 'sharp';
+import { ca } from 'date-fns/locale';
 
 
 export class ProductController {
@@ -1635,4 +1636,40 @@ export class ProductController {
             return;
         }
     }
+
+    static async getOffers(req: Request, res: Response) {
+        console.log("Fetching offer products...");
+        try {
+            console.log("Query parameters:", req.query);
+            const { page = '1', limit = '10' } = req.query as {
+                page?: string;
+                limit?: string;
+            };
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+            const skip = (pageNum - 1) * limitNum;
+            const products = await Product.find({ precioComparativo: { $gt: 0 } })
+                .skip(skip)
+                .limit(limitNum)
+                .sort({ createdAt: -1 })
+                .populate('brand', 'nombre slug')
+            // .populate('categoria', 'nombre slug');
+            const totalProducts = await Product.countDocuments({ precioComparativo: { $gt: 0 } });
+            if (products.length === 0) {
+                res.status(404).json({ message: 'No se encontraron productos en oferta' });
+                return;
+            }
+            res.status(200).json({
+                products,
+                totalPages: Math.ceil(totalProducts / limitNum),
+                currentPage: pageNum,
+                totalProducts
+            });
+        } catch (error) {
+            console.error("Error fetching offer products:", error);
+            res.status(500).json({ message: 'Error fetching offer products' });
+            return;
+        }
+    }
+
 }
