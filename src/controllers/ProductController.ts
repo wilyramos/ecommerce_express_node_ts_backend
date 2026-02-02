@@ -1427,24 +1427,36 @@ export class ProductController {
 
             // 2. Definir Ordenamiento (Sort)
             // Si hay búsqueda por texto y NO hay sort explícito, usamos relevancia (score)
+
+           // 2. Definir Ordenamiento (Sort)
             let sortStage: any = {};
 
             if (sort) {
-                // Tu lógica de sort personalizada
-                if (sort === "price_asc") sortStage = { precio: 1 };
-                else if (sort === "price_desc") sortStage = { precio: -1 };
-                else if (sort === "newest") sortStage = { createdAt: -1 };
-                else sortStage = { stock: -1, createdAt: -1 }; // Default
+                switch (sort) {
+                    case "price-asc": // Frontend envía con guion
+                        sortStage = { precio: 1 };
+                        break;
+                    case "price-desc": // Frontend envía con guion
+                        sortStage = { precio: -1 };
+                        break;
+                    case "recientes": // Frontend envía "recientes"
+                        sortStage = { createdAt: -1 };
+                        break;
+                    case "name-asc":
+                        sortStage = { nombre: 1 };
+                        break;
+                    case "name-desc":
+                        sortStage = { nombre: -1 };
+                        break;
+                    default:
+                        // Si llega algo desconocido, orden por defecto
+                        sortStage = { stock: -1, createdAt: -1 };
+                }
             } else if (query && query.trim() !== "") {
-                // Si es búsqueda por texto y no hay sort, ordenamos por score de relevancia
                 sortStage = { unused: { $meta: "searchScore" } };
-                // Nota: Mongoose 6+ / Atlas Search a veces requiere projection explícito del score,
-                // pero lo manejaremos en el project.
             } else {
                 sortStage = { stock: -1, createdAt: -1 };
-            }
-
-            // 3. Ejecutar Aggregations en Paralelo
+            }            // 3. Ejecutar Aggregations en Paralelo
             // Usamos Promise.all para eficiencia, similar a tu código original
 
             // A. Obtener Productos (Paginados y Populados)
