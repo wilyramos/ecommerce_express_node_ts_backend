@@ -575,6 +575,8 @@ export class ProductController {
                         _id: 1,
                         nombre: 1,
                         precio: 1,
+                        precioComparativo: 1,
+                        breand: 1,
                         slug: 1,
                         esDestacado: 1,
                         esNuevo: 1,
@@ -1060,7 +1062,7 @@ export class ProductController {
 
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
-        const LIMIT_TOTAL = 4; // Límite total de productos a mostrar
+        const LIMIT_TOTAL = 6; // Límite total de productos a mostrar
 
         try {
             // 1. Encontrar el producto base
@@ -1312,7 +1314,6 @@ export class ProductController {
     }
 
 
-
     static async getProductsMainPage(req: Request, res: Response) {
         try {
             const { query, page, limit, category, priceRange, sort, ...rest } = req.query as {
@@ -1330,40 +1331,18 @@ export class ProductController {
             const skip = (pageNum - 1) * limitNum;
 
             // 1. Construir el Pipeline Base (Search + Match)
-            // Este pipeline se usará tanto para traer productos, como para contar y calcular filtros
             const basePipeline: any[] = [];
 
             // A) ETAPA $SEARCH (Solo si hay query de texto)
-            // DEBE SER LA PRIMERA ETAPA SI EXISTE
             if (query && query.trim() !== "") {
                 basePipeline.push({
                     $search: {
-                        index: "ecommerce_search_products", // El nombre que pusimos en Compass
+                        index: "ecommerce_search_products",
                         compound: {
                             should: [
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "nombre",
-                                        score: { boost: { value: 3 } }, // Prioridad al nombre
-                                        fuzzy: { maxEdits: 1 } // Permite pequeños errores tipográficos
-                                    }
-                                },
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "variants.nombre",
-                                        score: { boost: { value: 2 } },
-                                        fuzzy: { maxEdits: 1 }
-                                    }
-                                },
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "descripcion",
-                                        fuzzy: { maxEdits: 1 }
-                                    }
-                                }
+                                { text: { query: query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "descripcion", fuzzy: { maxEdits: 1 } } }
                             ],
                             minimumShouldMatch: 1
                         }
@@ -1374,19 +1353,16 @@ export class ProductController {
             // B) ETAPA $MATCH (Filtros duros)
             const matchStage: any = { isActive: true };
 
-            // Categoría
             if (category) {
                 const categoryDoc = await Category.findOne({ slug: category });
                 matchStage.categoria = categoryDoc ? categoryDoc._id : null;
             }
 
-            // Marca (Brand)
-            if (rest.brand) { // Asumo que el frontend manda ?brand=slug
+            if (rest.brand) {
                 const brandDoc = await Brand.findOne({ slug: rest.brand });
                 if (brandDoc) matchStage.brand = brandDoc._id;
             }
 
-            // Rango de Precios
             if (priceRange) {
                 const [minStr, maxStr] = priceRange.split("-");
                 const min = Number(minStr);
@@ -1422,51 +1398,34 @@ export class ProductController {
                 matchStage.$and = attributeFilters;
             }
 
-            // Añadir Match al pipeline
             basePipeline.push({ $match: matchStage });
 
             // 2. Definir Ordenamiento (Sort)
-            // Si hay búsqueda por texto y NO hay sort explícito, usamos relevancia (score)
-
-           // 2. Definir Ordenamiento (Sort)
             let sortStage: any = {};
 
             if (sort) {
                 switch (sort) {
-                    case "price-asc": // Frontend envía con guion
-                        sortStage = { precio: 1 };
-                        break;
-                    case "price-desc": // Frontend envía con guion
-                        sortStage = { precio: -1 };
-                        break;
-                    case "recientes": // Frontend envía "recientes"
-                        sortStage = { createdAt: -1 };
-                        break;
-                    case "name-asc":
-                        sortStage = { nombre: 1 };
-                        break;
-                    case "name-desc":
-                        sortStage = { nombre: -1 };
-                        break;
-                    default:
-                        // Si llega algo desconocido, orden por defecto
-                        sortStage = { stock: -1, createdAt: -1 };
+                    case "price-asc": sortStage = { precio: 1 }; break;
+                    case "price-desc": sortStage = { precio: -1 }; break;
+                    case "recientes": sortStage = { createdAt: -1 }; break;
+                    case "name-asc": sortStage = { nombre: 1 }; break;
+                    case "name-desc": sortStage = { nombre: -1 }; break;
+                    default: sortStage = { stock: -1, createdAt: -1 };
                 }
             } else if (query && query.trim() !== "") {
                 sortStage = { unused: { $meta: "searchScore" } };
             } else {
                 sortStage = { stock: -1, createdAt: -1 };
-            }            // 3. Ejecutar Aggregations en Paralelo
-            // Usamos Promise.all para eficiencia, similar a tu código original
+            }
 
-            // A. Obtener Productos (Paginados y Populados)
+            // 3. Ejecutar Aggregations en Paralelo
+
+            // A. Obtener Productos
             const productsPipeline = [
                 ...basePipeline,
-                // Si hay sort explícito, lo aplicamos. Si es por score, Atlas lo hace automático pero podemos forzar.
                 ...(Object.keys(sortStage).length > 0 && !sortStage.unused ? [{ $sort: sortStage }] : []),
                 { $skip: skip },
                 { $limit: limitNum },
-                // Lookup para poblar Categoria (si lo necesitas) y Brand
                 {
                     $lookup: {
                         from: "brands",
@@ -1475,13 +1434,11 @@ export class ProductController {
                         as: "brand"
                     }
                 },
-                // Unwind para que brand sea un objeto, no un array (preservar null si no hay brand)
                 { $unwind: { path: "$brand", preserveNullAndEmptyArrays: true } },
-                // Project para limpiar campos y asegurar estructura
                 {
                     $project: {
                         nombre: 1, slug: 1, descripcion: 1, precio: 1, precioComparativo: 1, costo: 1,
-                        imagenes: 1, categoria: 1, brand: { _id: 1, nombre: 1, slug: 1 }, // Solo campos necesarios de brand
+                        imagenes: 1, categoria: 1, brand: { _id: 1, nombre: 1, slug: 1 },
                         stock: 1, sku: 1, barcode: 1, isActive: 1, esDestacado: 1, esNuevo: 1,
                         atributos: 1, especificaciones: 1, diasEnvio: 1, fechaDisponibilidad: 1, variants: 1,
                         createdAt: 1, updatedAt: 1
@@ -1489,14 +1446,13 @@ export class ProductController {
                 }
             ];
 
-            // B. Obtener Conteo Total (Para paginación)
+            // B. Obtener Conteo Total
             const countPipeline = [
                 ...basePipeline,
                 { $count: "total" }
             ];
 
             // C. Obtener Filtros (Facets)
-            // Este es tu código de agregación original, adaptado para correr después del $search/$match
             const filtersPipeline = [
                 ...basePipeline,
                 {
@@ -1565,7 +1521,6 @@ export class ProductController {
                 }
             ];
 
-            // Ejecutar todo
             const [productsResult, countResult, filtersResult] = await Promise.all([
                 Product.aggregate(productsPipeline),
                 Product.aggregate(countPipeline),
@@ -1574,18 +1529,21 @@ export class ProductController {
 
             const rawProducts = productsResult;
             const totalProducts = countResult.length > 0 ? countResult[0].total : 0;
-            const filters = filtersResult;
+
+            // ✅ CORRECCIÓN AQUÍ: Extraemos el objeto del array.
+            // MongoDB $facet siempre retorna un array con 1 documento.
+            // Si filtersResult es [{ brands: [], ... }], filters será { brands: [], ... }
+            const filters = filtersResult.length > 0 ? filtersResult[0] : {};
+
             // =================================================================================
-            // 🖼️ LÓGICA DE PROCESAMIENTO DE IMÁGENES (INTACTA)
+            // 🖼️ LÓGICA DE PROCESAMIENTO DE IMÁGENES
             // =================================================================================
 
             const processedProducts = rawProducts.map((product: any) => {
-                // Si no hay filtros activos o variantes, retornamos el producto tal cual
                 if (Object.keys(activeFilters).length === 0 || !product.variants || product.variants.length === 0) {
                     return product;
                 }
 
-                // Buscamos la variante que mejor coincida con los filtros aplicados
                 const matchedVariant = product.variants.find((variant: any) => {
                     return Object.keys(activeFilters).some((filterKey) => {
                         const variantAttrValue = variant.atributos ? variant.atributos[filterKey] : null;
@@ -1611,11 +1569,9 @@ export class ProductController {
             // =================================================================================
 
             let finalProducts = processedProducts;
-            let finalTotal = totalProducts;
             let isFallback = false;
 
-            // Fallback si no hay productos (Misma lógica tuya pero usando aggregate)
-            if (rawProducts.length === 0 && pageNum === 1) { // Solo fallback en primera página
+            if (rawProducts.length === 0 && pageNum === 1) {
                 isFallback = true;
                 finalProducts = await Product.aggregate([
                     { $match: { isActive: true, stock: { $gt: 0 } } },
@@ -1631,14 +1587,14 @@ export class ProductController {
                     },
                     { $unwind: { path: "$brand", preserveNullAndEmptyArrays: true } }
                 ]);
-                finalTotal = finalProducts.length;
             }
 
             res.status(200).json({
                 products: finalProducts,
-                totalPages: isFallback ? 1 : Math.ceil(finalTotal / limitNum),
+                totalPages: isFallback ? 1 : Math.ceil(totalProducts / limitNum),
                 currentPage: pageNum,
-                totalProducts: finalTotal,
+                totalProducts: finalProducts.length, // Ojo: Si es fallback, muestra length de fallback, si prefieres mostrar 0 usa totalProducts
+                // ✅ Ahora enviamos 'filters' como objeto, coincidiendo con filterSchema.optional()
                 filters: filters,
             });
 
@@ -1648,6 +1604,8 @@ export class ProductController {
             return;
         }
     }
+
+
 
     static async getOffers(req: Request, res: Response) {
         console.log("Fetching offer products...");
