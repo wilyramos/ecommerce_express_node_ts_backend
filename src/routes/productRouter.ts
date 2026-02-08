@@ -146,9 +146,16 @@ router.get('/searchindex',
 // getProductsMainPage
 router.get('/mainpage', ProductController.getProductsMainPage);
 
+router.get('/catalog/resolve', ProductController.getCatalogBySlugs);
+
 router.get('/offers/all', 
 
     ProductController.getOffers
+);
+
+router.get('/newarrivals/all', 
+
+    ProductController.getNewArrivals
 );
 
 // get a list of products 

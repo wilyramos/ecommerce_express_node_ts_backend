@@ -1,6 +1,9 @@
+//File: backend/src/models/Product.ts
+
 import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
 import { ICategory } from './Category';
 import { IBrand } from './Brand';
+import { IProductLine } from './ProductLine';
 
 interface ISpecification {
     key: string;
@@ -30,6 +33,7 @@ export interface IProduct extends Document {
     imagenes?: string[];
     categoria: mongoose.Types.ObjectId | PopulatedDoc<ICategory>;
     brand?: mongoose.Types.ObjectId | PopulatedDoc<IBrand>;
+    line?: mongoose.Types.ObjectId | PopulatedDoc<IProductLine>;
     stock?: number;
     sku?: string;
     barcode?: string;
@@ -89,7 +93,11 @@ const productSchema = new Schema<IProduct>(
         imagenes: { type: [String], default: [] },
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
         brand: { type: Types.ObjectId, ref: 'Brand' },
-        stock: { type: Number, min: 0, default: 0 },
+        line: {
+            type: Schema.Types.ObjectId,
+            ref: 'ProductLine',
+            index: true // Importante para filtrar rápido por línea
+        }, stock: { type: Number, min: 0, default: 0 },
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
         isActive: { type: Boolean, default: true },
@@ -114,9 +122,7 @@ const productSchema = new Schema<IProduct>(
 
 // Índices útiles
 productSchema.index({ 'variants.sku': 1 });
+productSchema.index({ productLine: 1 });
 // productSchema.index({ slug: 1 });
-
-// Eliminado: el índice inútil por atributos dinámicos
-// productSchema.index({ 'variants.atributos': 1 });
 
 export default mongoose.model<IProduct>('Product', productSchema);

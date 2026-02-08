@@ -10,8 +10,7 @@ import Brand from '../models/Brand';
 import type { PipelineStage, Types } from 'mongoose';
 import mongoose from 'mongoose';
 import sharp from 'sharp';
-import { ca } from 'date-fns/locale';
-
+import Line from '../models/ProductLine';
 
 export class ProductController {
     static async createProduct(req: Request, res: Response) {
@@ -35,7 +34,8 @@ export class ProductController {
                 brand,
                 diasEnvio,
                 variants,
-                isFrontPage
+                isFrontPage,
+                line,
             } = req.body;
 
             const [selectedCategory, hasChildren] = await Promise.all([
@@ -141,7 +141,8 @@ export class ProductController {
                 brand,
                 diasEnvio: dias,
                 variants: preparedVariants,
-                isFrontPage
+                isFrontPage,
+                line
             };
 
             const product = new Product(newProduct);
@@ -232,7 +233,9 @@ export class ProductController {
                     .skip(skip)
                     .limit(pageSize)
                     .sort(sort)
-                    .populate("brand", "nombre slug"),
+                    .populate("brand", "nombre slug")
+                    // .populate("categoria", "nombre slug")
+                    .populate("line", "nombre slug"),
 
                 Product.countDocuments(filter),
             ]);
@@ -667,7 +670,8 @@ export class ProductController {
             const { slug } = req.params;
             const product = await Product.findOne({ slug })
                 .populate('categoria', 'nombre slug')
-                .populate('brand', 'nombre slug');
+                .populate('brand', 'nombre slug')
+                .populate('line', 'nombre slug');
 
 
             if (!product) {
@@ -701,7 +705,8 @@ export class ProductController {
                 brand,
                 diasEnvio,
                 variants,
-                isFrontPage
+                isFrontPage,
+                line
             } = req.body;
 
             const productId = req.params.id;
@@ -823,6 +828,7 @@ export class ProductController {
             existingProduct.esNuevo = esNuevo ?? existingProduct.esNuevo;
             existingProduct.isActive = isActive ?? existingProduct.isActive;
             existingProduct.isFrontPage = isFrontPage ?? existingProduct.isFrontPage;
+            existingProduct.line = line ?? existingProduct.line;
 
             await existingProduct.save();
 
@@ -1059,133 +1065,132 @@ export class ProductController {
         }
     }
 
-
     static async getProductsRelated(req: Request, res: Response) {
         const { slug } = req.params;
         const LIMIT_TOTAL = 6; // Límite total de productos a mostrar
 
         try {
             // 1. Encontrar el producto base
+            // Necesitamos saber su ID, Categoría, Marca y LÍNEA
             const product = await Product.findOne({ slug })
-                .populate('categoria', 'nombre slug')
-                .populate('brand', 'nombre slug');
+                .select('_id categoria brand line');
 
             if (!product) {
                 res.status(404).json({ message: 'Producto no encontrado' });
                 return;
             }
 
-            // Aseguramos el tipo para el ID actual y de las categorías/marcas
-            const currentProductId: Types.ObjectId = product._id as Types.ObjectId;
-            // Usamos el ID de la categoría para las búsquedas
-            const categoryId: Types.ObjectId = (product.categoria as any)._id as Types.ObjectId;
-            const brandId: Types.ObjectId | null = product.brand ? (product.brand as any)._id as Types.ObjectId : null;
+            const currentProductId = product._id as Types.ObjectId;
+            const categoryId = product.categoria as Types.ObjectId;
+            const brandId = product.brand as Types.ObjectId;
+            const lineId = product.line as Types.ObjectId; // ID de la línea actual
 
-            const selectedIds = new Set<Types.ObjectId>([currentProductId]);
+            const selectedIds = new Set<string>([currentProductId.toString()]);
             let recommendedProducts: IProduct[] = [];
 
-            // --- ESTRATEGIA 1: Productos de la misma categoría, aleatorios (Pool más grande) ---
+            // =================================================================
+            // 🥇 ESTRATEGIA 1: MISMA LÍNEA (La más relevante)
+            // =================================================================
+            // Si estoy viendo un iPhone 16, muéstrame otros iPhone 16 (colores, capacidades)
+
+            if (lineId) {
+                const sameLineProducts = await Product.find({
+                    line: lineId,
+                    _id: { $ne: currentProductId },
+                    isActive: true
+                })
+                    .limit(LIMIT_TOTAL)
+                    .populate('brand', 'nombre slug')
+                    .populate('line', 'nombre slug') // <--- Population de Línea
+                    .populate('categoria', 'nombre slug'); // Opcional, si quieres category object
+
+                sameLineProducts.forEach(p => {
+                    selectedIds.add(p._id.toString());
+                    recommendedProducts.push(p);
+                });
+            }
+
+            if (recommendedProducts.length >= LIMIT_TOTAL) {
+                res.status(200).json(recommendedProducts.slice(0, LIMIT_TOTAL));
+                return;
+            }
+
+            // =================================================================
+            // 🥈 ESTRATEGIA 2: MISMA CATEGORÍA (Aleatorio)
+            // =================================================================
+
+            const excludedIdsArray = Array.from(selectedIds).map(id => new mongoose.Types.ObjectId(id));
 
             const categoryMatch = {
                 categoria: categoryId,
-                _id: { $ne: currentProductId },
+                _id: { $nin: excludedIdsArray }, // Excluir los ya seleccionados (propio + línea)
                 isActive: true
             };
 
             const randomCategoryProducts = await Product.aggregate([
                 { $match: categoryMatch },
-                { $sample: { size: LIMIT_TOTAL * 2 } },
+                { $sample: { size: LIMIT_TOTAL } }, // Tomamos una muestra
+                // Lookup Marca
                 {
-                    $lookup: {
-                        from: 'brands',
-                        localField: 'brand',
-                        foreignField: '_id',
-                        as: 'brand'
-                    }
+                    $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' }
                 },
                 { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                { $project: { __v: 0 } } // 💡 Cambio: Eliminamos 'categoria: 0' para que se envíe el ID como string
-            ]) as (IProduct & { _id: Types.ObjectId })[];
+                // Lookup Línea (IMPORTANTE: preserveNullAndEmptyArrays true para productos sin línea)
+                {
+                    $lookup: { from: 'lines', localField: 'line', foreignField: '_id', as: 'line' }
+                },
+                { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
 
-            randomCategoryProducts.forEach(p => {
-                const pId = p._id as Types.ObjectId;
-                if (!selectedIds.has(pId)) {
-                    selectedIds.add(pId);
+                { $project: { __v: 0 } }
+            ]);
+
+            randomCategoryProducts.forEach((p: any) => {
+                if (!selectedIds.has(p._id.toString())) {
+                    selectedIds.add(p._id.toString());
                     recommendedProducts.push(p);
                 }
             });
 
             if (recommendedProducts.length >= LIMIT_TOTAL) {
-                recommendedProducts = recommendedProducts.slice(0, LIMIT_TOTAL);
-                res.status(200).json(recommendedProducts);
+                res.status(200).json(recommendedProducts.slice(0, LIMIT_TOTAL));
                 return;
             }
 
-            // --- ESTRATEGIA 2: Productos de la misma marca (Relleno de prioridad) ---
+            // =================================================================
+            // 🥉 ESTRATEGIA 3: MISMA MARCA (Relleno)
+            // =================================================================
 
             if (brandId) {
-                const excludedIdsArray = Array.from(selectedIds);
+                // Actualizamos excluidos
+                const currentExcludedIds = Array.from(selectedIds);
 
-                const brandMatch = {
+                const brandProducts = await Product.find({
                     brand: brandId,
-                    _id: { $nin: excludedIdsArray },
+                    _id: { $nin: currentExcludedIds },
                     isActive: true
-                };
-
-                const brandProducts = await Product.find(brandMatch)
+                })
                     .limit(LIMIT_TOTAL - recommendedProducts.length)
                     .sort({ 'esDestacado': -1, createdAt: -1 })
                     .populate('brand', 'nombre slug')
-                // 💡 Cambio: No usamos .select('-categoria') para que la categoría se envíe como ID (string)
-                // Si se popula la marca, la categoría por defecto se envía como ObjectId string
-                // a menos que se use .select() para excluirla explícitamente.
+                    .populate('line', 'nombre slug'); // <--- Population de Línea
 
                 brandProducts.forEach(p => {
-                    const pId = p._id as Types.ObjectId;
-                    if (!selectedIds.has(pId)) {
-                        selectedIds.add(pId);
-                        recommendedProducts.push(p);
-                    }
+                    selectedIds.add(p._id.toString());
+                    recommendedProducts.push(p);
                 });
             }
 
-            if (recommendedProducts.length >= LIMIT_TOTAL) {
-                recommendedProducts = recommendedProducts.slice(0, LIMIT_TOTAL);
-                res.status(200).json(recommendedProducts);
-                return;
-            }
+            // =================================================================
+            // 🏁 RESPUESTA FINAL
+            // =================================================================
 
-            // --- ESTRATEGIA 3: Productos de Relleno Aleatorio/Popular (Último recurso) ---
-
-            const excludedIdsFinalArray = Array.from(selectedIds);
-
-            const fillProducts = await Product.aggregate([
-                { $match: { _id: { $nin: excludedIdsFinalArray }, isActive: true } },
-                { $sample: { size: LIMIT_TOTAL - recommendedProducts.length } },
-                {
-                    $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' }
-                },
-                { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                { $project: { __v: 0 } } // 💡 Cambio: Eliminamos 'categoria: 0' para que se envíe el ID como string
-            ]) as (IProduct & { _id: Types.ObjectId })[];
-
-            fillProducts.forEach(p => {
-                recommendedProducts.push(p);
-            });
-
-
-            // 4. Devolver los resultados finales, limitados si se sobrepasan
             res.status(200).json(recommendedProducts.slice(0, LIMIT_TOTAL));
 
         } catch (error) {
-            console.error("Error al obtener productos recomendados:", error);
-            res.status(500).json({ message: 'Error al obtener productos recomendados' });
-            return;
+            console.error("Error al obtener productos relacionados:", error);
+            res.status(500).json({ message: 'Error al obtener productos relacionados' });
         }
     }
-
-
-
 
     static async getDestacadosProducts(req: Request, res: Response) {
         try {
@@ -1607,38 +1612,656 @@ export class ProductController {
 
 
 
+    // 🏷️ CONTROLADOR DE OFERTAS
+    // Reutiliza la potencia del motor de búsqueda y filtros, pero restringido a descuentos.
     static async getOffers(req: Request, res: Response) {
-        console.log("Fetching offer products...");
         try {
-            console.log("Query parameters:", req.query);
-            const { page = '1', limit = '10' } = req.query as {
-                page?: string;
-                limit?: string;
-            };
-            const pageNum = parseInt(page, 10);
-            const limitNum = parseInt(limit, 10);
+            const { slugs, page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
+
+            const pageNum = Math.max(1, parseInt(page || "1", 10));
+            const limitNum = Math.max(1, parseInt(limit || "24", 10));
             const skip = (pageNum - 1) * limitNum;
-            const products = await Product.find({ precioComparativo: { $gt: 0 } })
-                .skip(skip)
-                .limit(limitNum)
-                .sort({ createdAt: -1 })
-                .populate('brand', 'nombre slug')
-            // .populate('categoria', 'nombre slug');
-            const totalProducts = await Product.countDocuments({ precioComparativo: { $gt: 0 } });
-            if (products.length === 0) {
-                res.status(404).json({ message: 'No se encontraron productos en oferta' });
-                return;
+            const slugArray = slugs ? slugs.split(',').filter(Boolean) : [];
+
+            // 1. RESOLVER CONTEXTO (Permite filtrar ofertas por Marca/Categoría si se envían slugs)
+            const context = await ProductController.resolveContext(slugArray);
+
+            const pipeline: any[] = [];
+
+            // =================================================================
+            // 🧠 FASE 1: BÚSQUEDA (Si el usuario busca dentro de ofertas)
+            // =================================================================
+            if (query && query.trim() !== "") {
+                pipeline.push({
+                    $search: {
+                        index: "ecommerce_search_products",
+                        compound: {
+                            should: [
+                                { text: { query: query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "descripcion", fuzzy: { maxEdits: 1 } } }
+                            ],
+                            minimumShouldMatch: 1
+                        }
+                    }
+                });
             }
-            res.status(200).json({
-                products,
-                totalPages: Math.ceil(totalProducts / limitNum),
-                currentPage: pageNum,
-                totalProducts
+
+            // =================================================================
+            // 🧠 FASE 2: FILTRO MAESTRO DE OFERTAS
+            // =================================================================
+            const matchStage: any = {
+                isActive: true,
+                // 🔥 CONDICIÓN DE OFERTA: Debe tener precioComparativo y ser mayor al precio actual
+                precioComparativo: { $exists: true, $ne: null },
+                $expr: { $gt: ["$precioComparativo", "$precio"] }
+            };
+
+            // Aplicar filtros de contexto (Si el usuario filtra "Apple" dentro de la página de ofertas)
+            if (context.category) matchStage.categoria = context.category._id;
+            if (context.brand) matchStage.brand = context.brand._id;
+            if (context.line) matchStage.line = context.line._id;
+
+            // Filtro de Rango de Precio
+            if (priceRange) {
+                const [min, max] = priceRange.split('-').map(Number);
+                if (!isNaN(min) && !isNaN(max)) {
+                    // Nota: Aquí usamos $and para no sobrescribir el $or si lo hubiera
+                    matchStage.$and = matchStage.$and || [];
+                    matchStage.$and.push({
+                        $or: [
+                            { precio: { $gte: min, $lte: max } },
+                            { "variants.precio": { $gte: min, $lte: max } }
+                        ]
+                    });
+                }
+            }
+
+            // Filtros de Atributos Dinámicos
+            const attrConditions: any[] = [];
+            const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceRange', 'query'];
+
+            Object.keys(attributeFilters).forEach((key) => {
+                if (reservedKeys.includes(key)) return;
+                const rawVal = attributeFilters[key];
+                const values = Array.isArray(rawVal) ? rawVal : [rawVal];
+
+                if (values.length > 0) {
+                    attrConditions.push({
+                        $or: [
+                            { [`atributos.${key}`]: { $in: values } },
+                            { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } }
+                        ]
+                    });
+                }
             });
-        } catch (error) {
-            console.error("Error fetching offer products:", error);
-            res.status(500).json({ message: 'Error fetching offer products' });
-            return;
+
+            if (attrConditions.length > 0) {
+                matchStage.$and = matchStage.$and || [];
+                matchStage.$and.push(...attrConditions);
+            }
+
+            // Si el array $and quedó vacío, lo borramos para limpieza
+            if (matchStage.$and && matchStage.$and.length === 0) delete matchStage.$and;
+
+            pipeline.push({ $match: matchStage });
+
+            // =================================================================
+            // 🧠 FASE 3: ORDENAMIENTO
+            // =================================================================
+            let sortStage: any = {};
+
+            if (sort) {
+                switch (sort) {
+                    case 'price-asc': sortStage = { precio: 1 }; break;
+                    case 'price-desc': sortStage = { precio: -1 }; break;
+                    case 'name-asc': sortStage = { nombre: 1 }; break;
+                    case 'recientes': sortStage = { createdAt: -1 }; break;
+                    default: sortStage = { esDestacado: -1, stock: -1 }; // Prioridad a destacados en ofertas
+                }
+            } else if (query && query.trim() !== "") {
+                sortStage = { unused: { $meta: "searchScore" } };
+            } else {
+                // Default Ofertas: Destacados primero, luego los de mayor descuento (opcional)
+                sortStage = { esDestacado: -1, createdAt: -1 };
+            }
+
+            // =================================================================
+            // 🧠 FASE 4: FACETAS (Igual que Catalog)
+            // =================================================================
+            // Copiamos la lógica de facetas para que los filtros funcionen igual
+            pipeline.push({
+                $facet: {
+                    products: [
+                        ...(sortStage.unused ? [{ $sort: { score: { $meta: "searchScore" } } }] : [{ $sort: sortStage }]),
+                        { $skip: skip },
+                        { $limit: limitNum },
+                        // Lookups estándar
+                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
+                        { $lookup: { from: 'lines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
+                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+                        {
+                            $project: {
+                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
+                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
+                                brand: { nombre: 1, slug: 1 },
+                                line: { nombre: 1, slug: 1 },
+                                categoria: 1, esDestacado: 1,
+                                score: { $meta: "searchScore" }
+                            }
+                        }
+                    ],
+                    totalCount: [{ $count: 'count' }],
+
+                    // Facetas (Solo mostrarán marcas/categorías que tengan productos en OFERTA)
+                    brands: [
+                        { $group: { _id: "$brand" } },
+                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
+                        { $unwind: "$b" },
+                        { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    lines: [
+                        { $match: { line: { $exists: true, $ne: null } } },
+                        { $group: { _id: "$line" } },
+                        { $addFields: { lineIdObj: { $toObjectId: "$_id" } } },
+                        { $lookup: { from: "lines", localField: "lineIdObj", foreignField: "_id", as: "l" } },
+                        { $unwind: "$l" },
+                        { $project: { id: "$l._id", nombre: "$l.nombre", slug: "$l.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    categories: [
+                        { $group: { _id: "$categoria" } },
+                        { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "c" } },
+                        { $unwind: "$c" },
+                        { $project: { id: "$c._id", nombre: "$c.nombre", slug: "$c.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    atributos: [
+                        {
+                            $project: {
+                                allAttrs: {
+                                    $concatArrays: [
+                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
+                                        { $reduce: { input: { $ifNull: ["$variants", []] }, initialValue: [], in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] } } }
+                                    ]
+                                }
+                            }
+                        },
+                        { $unwind: "$allAttrs" },
+                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
+                        { $project: { name: "$_id", values: 1, _id: 0 } },
+                        { $sort: { name: 1 } }
+                    ],
+                    price: [
+                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
+                    ]
+                }
+            });
+
+            const result = await Product.aggregate(pipeline);
+            const data = result[0];
+            const totalProducts = data.totalCount[0]?.count || 0;
+
+            // En Ofertas, si no hay resultados, no solemos hacer fallback a "destacados generales"
+            // porque confundiría al usuario (mostraría productos sin descuento).
+            // Pero podemos devolver un array vacío limpio.
+
+            res.status(200).json({
+                products: data.products,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
+                    totalItems: totalProducts
+                },
+                filters: {
+                    brands: data.brands || [],
+                    lines: data.lines || [],
+                    categories: data.categories || [],
+                    atributos: data.atributos || [],
+                    price: data.price || []
+                },
+                context: {
+                    // En getOffers, el contexto suele ser el título de la sección, 
+                    // pero si se filtró por marca, lo devolvemos.
+                    categoryName: context.category ? (context.category as any).nombre : "Ofertas",
+                    brandName: context.brand ? (context.brand as any).nombre : null,
+                    lineName: context.line ? (context.line as any).nombre : null,
+                    searchQuery: query || null
+                },
+                isFallback: false // No fallback en ofertas para mantener la integridad de "descuento real"
+            });
+
+        } catch (error: any) {
+            console.error("Error en getOffers:", error);
+            res.status(500).json({ message: error.message || "Error fetching offers" });
+        }
+    }
+
+    // 🧠 HELPER: Resolución de Contexto Inteligente
+    private static async resolveContext(slugArray: string[]) {
+        if (!slugArray || slugArray.length === 0) {
+            return { category: null, brand: null, line: null };
+        }
+
+        // Buscamos en todas las colecciones para saber qué es cada slug
+        const [foundCats, foundBrands, foundLines] = await Promise.all([
+            Category.find({ slug: { $in: slugArray } }).select('_id slug nombre').lean(),
+            Brand.find({ slug: { $in: slugArray } }).select('_id slug nombre').lean(),
+            Line.find({ slug: { $in: slugArray } }).select('_id slug nombre').lean()
+        ]);
+
+        let category = null;
+        let brand = null;
+        let line = null;
+
+        slugArray.forEach((slug) => {
+            const c = foundCats.find(x => x.slug === slug);
+            const b = foundBrands.find(x => x.slug === slug);
+            const l = foundLines.find(x => x.slug === slug);
+
+            if (c) category = c;
+            else if (b) brand = b;
+            else if (l) line = l;
+        });
+
+        return { category, brand, line };
+    }
+
+    static async getCatalogBySlugs(req: Request, res: Response) {
+        try {
+            const { slugs, page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
+
+            const pageNum = Math.max(1, parseInt(page || "1", 10));
+            const limitNum = Math.max(1, parseInt(limit || "24", 10));
+            const skip = (pageNum - 1) * limitNum;
+            const slugArray = slugs ? slugs.split(',').filter(Boolean) : [];
+
+            // 1. RESOLVER CONTEXTO
+            const context = await ProductController.resolveContext(slugArray);
+
+            // =================================================================
+            // 🧠 FASE 1: CONSTRUCCIÓN DEL PIPELINE BASE
+            // =================================================================
+            const pipeline: any[] = [];
+
+            // A. ETAPA $SEARCH (Búsqueda Inteligente) - DEBE SER LA PRIMERA
+            // Esto permite encontrar "ipone" y devolver "iphone"
+            if (query && query.trim() !== "") {
+                pipeline.push({
+                    $search: {
+                        index: "ecommerce_search_products", // Asegúrate que este nombre coincida con tu Atlas
+                        compound: {
+                            should: [
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "nombre",
+                                        score: { boost: { value: 3 } },
+                                        fuzzy: { maxEdits: 1 } // Permite 1 error tipográfico
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "variants.nombre",
+                                        score: { boost: { value: 2 } },
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                },
+                                {
+                                    text: {
+                                        query: query,
+                                        path: "descripcion",
+                                        fuzzy: { maxEdits: 1 }
+                                    }
+                                }
+                            ],
+                            minimumShouldMatch: 1
+                        }
+                    }
+                });
+            }
+
+            // B. ETAPA $MATCH (Filtros Estrictos)
+            const matchStage: any = { isActive: true };
+
+            if (context.category) matchStage.categoria = context.category._id;
+            if (context.brand) matchStage.brand = context.brand._id;
+            if (context.line) matchStage.line = context.line._id;
+
+            // Nota: Si usas $search, NO debes usar regex para 'nombre' aquí,
+            // pero si NO hay query, filtramos normal.
+
+            // Rango de Precios
+            if (priceRange) {
+                const [min, max] = priceRange.split('-').map(Number);
+                if (!isNaN(min) && !isNaN(max)) {
+                    matchStage.$or = [
+                        { precio: { $gte: min, $lte: max } },
+                        { "variants.precio": { $gte: min, $lte: max } }
+                    ];
+                }
+            }
+
+            // Filtros de Atributos
+            const attrConditions: any[] = [];
+            const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceRange', 'query'];
+
+            Object.keys(attributeFilters).forEach((key) => {
+                if (reservedKeys.includes(key)) return;
+                const rawVal = attributeFilters[key];
+                const values = Array.isArray(rawVal) ? rawVal : [rawVal];
+
+                if (values.length > 0) {
+                    attrConditions.push({
+                        $or: [
+                            { [`atributos.${key}`]: { $in: values } },
+                            { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } }
+                        ]
+                    });
+                }
+            });
+
+            if (attrConditions.length > 0) {
+                matchStage.$and = attrConditions;
+            }
+
+            // Agregamos el Match al pipeline
+            pipeline.push({ $match: matchStage });
+
+            // =================================================================
+            // 🧠 FASE 2: DEFINICIÓN DE ORDENAMIENTO
+            // =================================================================
+
+            let sortStage: any = {};
+
+            if (sort) {
+                // Si el usuario elige un orden explícito, tiene prioridad
+                switch (sort) {
+                    case 'price-asc': sortStage = { precio: 1 }; break;
+                    case 'price-desc': sortStage = { precio: -1 }; break;
+                    case 'name-asc': sortStage = { nombre: 1 }; break;
+                    case 'recientes': sortStage = { createdAt: -1 }; break;
+                    case 'ventas': sortStage = { totalVentas: -1 }; break; // Si tienes este campo
+                    default: sortStage = { esDestacado: -1, stock: -1 };
+                }
+            } else if (query && query.trim() !== "") {
+                // Si hay búsqueda y NO hay sort explícito, ordenamos por RELEVANCIA
+                sortStage = { unused: { $meta: "searchScore" } };
+            } else {
+                // Default sin búsqueda
+                sortStage = { esDestacado: -1, createdAt: -1 };
+            }
+
+            // =================================================================
+            // 🧠 FASE 3: FACETAS (RESULTADOS + FILTROS)
+            // =================================================================
+
+            pipeline.push({
+                $facet: {
+                    // A. PRODUCTOS PAGINADOS
+                    products: [
+                        // Aplicamos sort (si es por relevancia, usa $meta)
+                        ...(sortStage.unused
+                            ? [{ $sort: { score: { $meta: "searchScore" } } }]
+                            : [{ $sort: sortStage }]
+                        ),
+                        { $skip: skip },
+                        { $limit: limitNum },
+
+                        // Lookups necesarios
+                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+
+                        // Lookup Line (Con corrección ObjectId)
+                        {
+                            $addFields: {
+                                lineObjectId: { $toObjectId: "$line" }
+                            }
+                        },
+                        {
+                            $lookup: {
+                                from: 'lines',
+                                localField: 'lineObjectId',
+                                foreignField: '_id',
+                                as: 'line'
+                            }
+                        },
+                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+
+                        // Proyección final
+                        {
+                            $project: {
+                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
+                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
+                                brand: { nombre: 1, slug: 1 },
+                                line: { nombre: 1, slug: 1 },
+                                categoria: 1,
+                                esDestacado: 1,
+                                score: { $meta: "searchScore" } // Opcional: ver score
+                            }
+                        }
+                    ],
+
+                    // B. CONTEO TOTAL
+                    totalCount: [
+                        // Si es búsqueda por texto, necesitamos contar diferente a veces, 
+                        // pero $count funciona bien después de $search + $match
+                        { $count: 'count' }
+                    ],
+
+                    // C. FILTROS DISPONIBLES (FACETAS DINÁMICAS)
+
+                    brands: [
+                        { $group: { _id: "$brand" } },
+                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
+                        { $unwind: "$b" },
+                        { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+
+                    lines: [
+                        { $match: { line: { $exists: true, $ne: null } } },
+                        { $group: { _id: "$line" } },
+                        { $addFields: { lineIdObj: { $toObjectId: "$_id" } } },
+                        { $lookup: { from: "lines", localField: "lineIdObj", foreignField: "_id", as: "l" } },
+                        { $unwind: "$l" },
+                        { $project: { id: "$l._id", nombre: "$l.nombre", slug: "$l.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+
+                    categories: [
+                        { $group: { _id: "$categoria" } },
+                        { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "c" } },
+                        { $unwind: "$c" },
+                        { $project: { id: "$c._id", nombre: "$c.nombre", slug: "$c.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+
+                    // Extracción de atributos dinámicos presentes en la búsqueda
+                    atributos: [
+                        {
+                            $project: {
+                                allAttrs: {
+                                    $concatArrays: [
+                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
+                                        { $reduce: { input: { $ifNull: ["$variants", []] }, initialValue: [], in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] } } }
+                                    ]
+                                }
+                            }
+                        },
+                        { $unwind: "$allAttrs" },
+                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
+                        { $project: { name: "$_id", values: 1, _id: 0 } },
+                        { $sort: { name: 1 } }
+                    ],
+
+                    price: [
+                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
+                    ]
+                }
+            });
+
+            // 4. EJECUCIÓN
+            const result = await Product.aggregate(pipeline);
+            const data = result[0];
+
+            // 5. RESPUESTA
+            const totalProducts = data.totalCount[0]?.count || 0;
+            let finalProducts = data.products;
+            let isFallback = false;
+
+            // Fallback: Si buscó algo y no encontró nada (ni con fuzzy)
+            if (totalProducts === 0 && pageNum === 1) {
+                isFallback = true;
+                // Devolver productos destacados como sugerencia
+                finalProducts = await Product.find({ isActive: true })
+                    .sort({ esDestacado: -1, createdAt: -1 })
+                    .limit(4)
+                    .populate('brand', 'nombre slug')
+                    .populate('line', 'nombre slug');
+            }
+
+            res.status(200).json({
+                products: finalProducts,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
+                    totalItems: isFallback ? 0 : totalProducts
+                },
+                filters: {
+                    brands: data.brands || [],
+                    lines: data.lines || [],
+                    categories: data.categories || [],
+                    atributos: data.atributos || [],
+                    price: data.price || []
+                },
+                context: {
+                    categoryName: context.category ? (context.category as any).nombre : null,
+                    brandName: context.brand ? (context.brand as any).nombre : null,
+                    lineName: context.line ? (context.line as any).nombre : null,
+                    searchQuery: query || null
+                },
+                isFallback
+            });
+
+        } catch (error: any) {
+            console.error("Error en ProductController:", error);
+            res.status(500).json({ message: error.message || "Error resolving catalog" });
+        }
+    }
+
+    // 🆕 CONTROLADOR DE NOVEDADES (New Arrivals)
+    static async getNewArrivals(req: Request, res: Response) {
+        try {
+            const { page, limit, sort, ...attributeFilters } = req.query as any;
+
+            const pageNum = Math.max(1, parseInt(page || "1", 10));
+            const limitNum = Math.max(1, parseInt(limit || "24", 10));
+            const skip = (pageNum - 1) * limitNum;
+
+            // 1. DEFINIR "NOVEDAD"
+            // Un producto es nuevo si tiene el flag 'esNuevo' activado
+            // O si fue creado en los últimos 45 días.
+            const daysAgo = new Date();
+            daysAgo.setDate(daysAgo.getDate() - 45);
+
+            const pipeline: any[] = [];
+
+            // 2. FILTRO MAESTRO (MATCH)
+            const matchStage: any = {
+                isActive: true,
+                $or: [
+                    { esNuevo: true },
+                    { createdAt: { $gte: daysAgo } }
+                ]
+            };
+
+            // Aplicar filtros dinámicos (si el usuario filtra por marca dentro de Novedades)
+            // (Reutiliza la lógica de attributeFilters de tus otros controladores aquí si deseas)
+            // ...
+
+            pipeline.push({ $match: matchStage });
+
+            // 3. ORDENAMIENTO (Siempre lo más nuevo primero por defecto)
+            let sortStage: any = { createdAt: -1 };
+
+            if (sort === 'price-asc') sortStage = { precio: 1 };
+            if (sort === 'price-desc') sortStage = { precio: -1 };
+            // Si el usuario pide 'relevancia', en novedades la relevancia ES la fecha
+
+            // 4. FACETAS (Reutilizamos la estructura estándar para compatibilidad con CatalogLayout)
+            pipeline.push({
+                $facet: {
+                    products: [
+                        { $sort: sortStage },
+                        { $skip: skip },
+                        { $limit: limitNum },
+                        // ... (Mismos Lookups que en getCatalogBySlugs: brands, lines, etc.)
+                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
+                        { $lookup: { from: 'lines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
+                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+                        {
+                            $project: {
+                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
+                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
+                                brand: { nombre: 1, slug: 1 },
+                                line: { nombre: 1, slug: 1 },
+                                categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1
+                            }
+                        }
+                    ],
+                    totalCount: [{ $count: 'count' }],
+                    // Facetas simplificadas para Novedades
+                    brands: [
+                        { $group: { _id: "$brand" } },
+                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
+                        { $unwind: "$b" },
+                        { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    // ... (Agrega lines, categories, price si lo necesitas)
+                    price: [
+                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
+                    ]
+                }
+            });
+
+            const result = await Product.aggregate(pipeline);
+            const data = result[0];
+            const totalProducts = data.totalCount[0]?.count || 0;
+
+            res.status(200).json({
+                products: data.products,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
+                    totalItems: totalProducts
+                },
+                filters: {
+                    brands: data.brands || [],
+                    lines: [], // Puedes completarlo si quieres filtros completos en novedades
+                    categories: [],
+                    atributos: [],
+                    price: data.price || []
+                },
+                context: {
+                    categoryName: "Lo Último",
+                    brandName: null,
+                    lineName: null,
+                    searchQuery: null
+                },
+                isFallback: false
+            });
+
+        } catch (error: any) {
+            console.error("Error en getNewArrivals:", error);
+            res.status(500).json({ message: error.message });
         }
     }
 

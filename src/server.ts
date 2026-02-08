@@ -16,6 +16,8 @@ import brandRouter from './routes/brandRouter'
 
 //Cors
 import cors from 'cors'
+import { globalErrorHandler } from './middleware/error.middleware'
+import lineRouter from './routes/line.router'
 
 // OPENAPI swagger //TODO: finish it
 
@@ -51,12 +53,14 @@ app.use('/api/cart', cartRouter)
 app.use('/api/orders', orderRouter)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/sales', saleRouter)
+app.use('/api/lines', lineRouter)
 app.use('/api/webhooks', 
     express.urlencoded({ extended: true }),
     webhookRouter
 ),
 app.use('/api/purchases', purchaseRouter)
 
-
+// Middleware global for error handling 
+app.use(globalErrorHandler);
 
 export default app
