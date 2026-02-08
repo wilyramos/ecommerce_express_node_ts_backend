@@ -652,7 +652,8 @@ export class ProductController {
             const product = await Product.findById(id)
                 .select('+costo')
                 .populate('categoria', 'nombre slug')
-                .populate('brand', 'nombre slug');
+                .populate('brand', 'nombre slug')
+                .populate('line', 'nombre slug');
 
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
