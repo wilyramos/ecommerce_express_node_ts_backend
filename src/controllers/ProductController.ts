@@ -7,7 +7,7 @@ import { v4 as uuid } from 'uuid';
 import cloudinary from '../config/cloudinary';
 import { generateUniqueSlug } from '../utils/slug';
 import Brand from '../models/Brand';
-import type { PipelineStage, Types } from 'mongoose';
+import { Types } from 'mongoose';
 import mongoose from 'mongoose';
 import sharp from 'sharp';
 import Line from '../models/ProductLine';
@@ -1839,7 +1839,12 @@ export class ProductController {
         }
     }
 
-    // HELPER: Resolución de Contexto Inteligente
+
+
+    // 🧠 HELPER: Resolución de Contexto Inteligente
+    // Este helper maneja automáticamente la jerarquía. Si la URL es /audio/audifonos,
+    // el bucle asignará primero 'audio' y luego sobrescribirá con 'audifonos',
+    // asegurando que siempre filtremos por la categoría más específica.
     private static async resolveContext(slugArray: string[]) {
         if (!slugArray || slugArray.length === 0) {
             return { category: null, brand: null, line: null };
@@ -1861,6 +1866,8 @@ export class ProductController {
             const b = foundBrands.find(x => x.slug === slug);
             const l = foundLines.find(x => x.slug === slug);
 
+            // La lógica "Last Win" (el último gana) es natural aquí:
+            // Si hay dos categorías en el slugArray, la última reemplaza a la anterior.
             if (c) category = c;
             else if (b) brand = b;
             else if (l) line = l;
@@ -1910,11 +1917,15 @@ export class ProductController {
             // 🔥 MODIFICACIÓN CLAVE: Lógica de Familia de Categorías
             // ---------------------------------------------------------
             if (context.category) {
-                // Obtenemos el ID de la categoría actual + los IDs de sus hijos
-                const familyIds = await getCategoryFamilyIds(context.category._id.toString());
+                const rootId = context.category._id.toString();
+                
+                // Obtenemos array de IDs (pueden venir mezclados string/objectid)
+                const rawFamilyIds = await getCategoryFamilyIds(rootId);
 
-                // Usamos $in para buscar productos en cualquiera de esas categorías
-                matchStage.categoria = { $in: familyIds };
+                // Para que el aggregate funcione, TODOS deben ser ObjectId
+                const familyObjectIds = rawFamilyIds.map((id: any) => new Types.ObjectId(id));
+
+                matchStage.categoria = { $in: familyObjectIds };
             }
 
             if (context.brand) matchStage.brand = context.brand._id;
@@ -2123,6 +2134,7 @@ export class ProductController {
             res.status(500).json({ message: error.message || "Error resolving catalog" });
         }
     }
+
 
     // CONTROLADOR DE NOVEDADES (New Arrivals)
     static async getNewArrivals(req: Request, res: Response) {
