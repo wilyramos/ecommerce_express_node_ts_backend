@@ -11,6 +11,7 @@ import type { PipelineStage, Types } from 'mongoose';
 import mongoose from 'mongoose';
 import sharp from 'sharp';
 import Line from '../models/ProductLine';
+import { getCategoryFamilyIds } from '../services/category.service';
 
 export class ProductController {
     static async createProduct(req: Request, res: Response) {
@@ -1536,13 +1537,12 @@ export class ProductController {
             const rawProducts = productsResult;
             const totalProducts = countResult.length > 0 ? countResult[0].total : 0;
 
-            // ✅ CORRECCIÓN AQUÍ: Extraemos el objeto del array.
             // MongoDB $facet siempre retorna un array con 1 documento.
             // Si filtersResult es [{ brands: [], ... }], filters será { brands: [], ... }
             const filters = filtersResult.length > 0 ? filtersResult[0] : {};
 
             // =================================================================================
-            // 🖼️ LÓGICA DE PROCESAMIENTO DE IMÁGENES
+            // Procesamiento de imagenes
             // =================================================================================
 
             const processedProducts = rawProducts.map((product: any) => {
@@ -1600,7 +1600,6 @@ export class ProductController {
                 totalPages: isFallback ? 1 : Math.ceil(totalProducts / limitNum),
                 currentPage: pageNum,
                 totalProducts: finalProducts.length, // Ojo: Si es fallback, muestra length de fallback, si prefieres mostrar 0 usa totalProducts
-                // ✅ Ahora enviamos 'filters' como objeto, coincidiendo con filterSchema.optional()
                 filters: filters,
             });
 
@@ -1613,7 +1612,6 @@ export class ProductController {
 
 
 
-    // 🏷️ CONTROLADOR DE OFERTAS
     // Reutiliza la potencia del motor de búsqueda y filtros, pero restringido a descuentos.
     static async getOffers(req: Request, res: Response) {
         try {
@@ -1841,7 +1839,7 @@ export class ProductController {
         }
     }
 
-    // 🧠 HELPER: Resolución de Contexto Inteligente
+    // HELPER: Resolución de Contexto Inteligente
     private static async resolveContext(slugArray: string[]) {
         if (!slugArray || slugArray.length === 0) {
             return { category: null, brand: null, line: null };
@@ -1884,41 +1882,20 @@ export class ProductController {
             const context = await ProductController.resolveContext(slugArray);
 
             // =================================================================
-            // 🧠 FASE 1: CONSTRUCCIÓN DEL PIPELINE BASE
+            // FASE 1: CONSTRUCCIÓN DEL PIPELINE BASE
             // =================================================================
             const pipeline: any[] = [];
 
-            // A. ETAPA $SEARCH (Búsqueda Inteligente) - DEBE SER LA PRIMERA
-            // Esto permite encontrar "ipone" y devolver "iphone"
+            // A. ETAPA $SEARCH (Búsqueda Inteligente)
             if (query && query.trim() !== "") {
                 pipeline.push({
                     $search: {
-                        index: "ecommerce_search_products", // Asegúrate que este nombre coincida con tu Atlas
+                        index: "ecommerce_search_products",
                         compound: {
                             should: [
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "nombre",
-                                        score: { boost: { value: 3 } },
-                                        fuzzy: { maxEdits: 1 } // Permite 1 error tipográfico
-                                    }
-                                },
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "variants.nombre",
-                                        score: { boost: { value: 2 } },
-                                        fuzzy: { maxEdits: 1 }
-                                    }
-                                },
-                                {
-                                    text: {
-                                        query: query,
-                                        path: "descripcion",
-                                        fuzzy: { maxEdits: 1 }
-                                    }
-                                }
+                                { text: { query: query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query: query, path: "descripcion", fuzzy: { maxEdits: 1 } } }
                             ],
                             minimumShouldMatch: 1
                         }
@@ -1929,12 +1906,19 @@ export class ProductController {
             // B. ETAPA $MATCH (Filtros Estrictos)
             const matchStage: any = { isActive: true };
 
-            if (context.category) matchStage.categoria = context.category._id;
+            // ---------------------------------------------------------
+            // 🔥 MODIFICACIÓN CLAVE: Lógica de Familia de Categorías
+            // ---------------------------------------------------------
+            if (context.category) {
+                // Obtenemos el ID de la categoría actual + los IDs de sus hijos
+                const familyIds = await getCategoryFamilyIds(context.category._id.toString());
+
+                // Usamos $in para buscar productos en cualquiera de esas categorías
+                matchStage.categoria = { $in: familyIds };
+            }
+
             if (context.brand) matchStage.brand = context.brand._id;
             if (context.line) matchStage.line = context.line._id;
-
-            // Nota: Si usas $search, NO debes usar regex para 'nombre' aquí,
-            // pero si NO hay query, filtramos normal.
 
             // Rango de Precios
             if (priceRange) {
@@ -1974,50 +1958,42 @@ export class ProductController {
             pipeline.push({ $match: matchStage });
 
             // =================================================================
-            // 🧠 FASE 2: DEFINICIÓN DE ORDENAMIENTO
+            // FASE 2: DEFINICIÓN DE ORDENAMIENTO
             // =================================================================
 
             let sortStage: any = {};
 
             if (sort) {
-                // Si el usuario elige un orden explícito, tiene prioridad
                 switch (sort) {
                     case 'price-asc': sortStage = { precio: 1 }; break;
                     case 'price-desc': sortStage = { precio: -1 }; break;
                     case 'name-asc': sortStage = { nombre: 1 }; break;
                     case 'recientes': sortStage = { createdAt: -1 }; break;
-                    case 'ventas': sortStage = { totalVentas: -1 }; break; // Si tienes este campo
+                    case 'ventas': sortStage = { totalVentas: -1 }; break;
                     default: sortStage = { esDestacado: -1, stock: -1 };
                 }
             } else if (query && query.trim() !== "") {
-                // Si hay búsqueda y NO hay sort explícito, ordenamos por RELEVANCIA
                 sortStage = { unused: { $meta: "searchScore" } };
             } else {
-                // Default sin búsqueda
                 sortStage = { esDestacado: -1, createdAt: -1 };
             }
 
             // =================================================================
-            // 🧠 FASE 3: FACETAS (RESULTADOS + FILTROS)
+            // FASE 3: FACETAS (RESULTADOS + FILTROS)
             // =================================================================
 
             pipeline.push({
                 $facet: {
                     // A. PRODUCTOS PAGINADOS
                     products: [
-                        // Aplicamos sort (si es por relevancia, usa $meta)
                         ...(sortStage.unused
                             ? [{ $sort: { score: { $meta: "searchScore" } } }]
                             : [{ $sort: sortStage }]
                         ),
                         { $skip: skip },
                         { $limit: limitNum },
-
-                        // Lookups necesarios
                         { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
                         { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-
-                        // Lookup Line (Con corrección ObjectId)
                         {
                             $addFields: {
                                 lineObjectId: { $toObjectId: "$line" }
@@ -2032,8 +2008,6 @@ export class ProductController {
                             }
                         },
                         { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
-
-                        // Proyección final
                         {
                             $project: {
                                 nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
@@ -2042,20 +2016,17 @@ export class ProductController {
                                 line: { nombre: 1, slug: 1 },
                                 categoria: 1,
                                 esDestacado: 1,
-                                score: { $meta: "searchScore" } // Opcional: ver score
+                                score: { $meta: "searchScore" }
                             }
                         }
                     ],
 
                     // B. CONTEO TOTAL
                     totalCount: [
-                        // Si es búsqueda por texto, necesitamos contar diferente a veces, 
-                        // pero $count funciona bien después de $search + $match
                         { $count: 'count' }
                     ],
 
-                    // C. FILTROS DISPONIBLES (FACETAS DINÁMICAS)
-
+                    // C. FILTROS DISPONIBLES
                     brands: [
                         { $group: { _id: "$brand" } },
                         { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
@@ -2082,7 +2053,6 @@ export class ProductController {
                         { $sort: { nombre: 1 } }
                     ],
 
-                    // Extracción de atributos dinámicos presentes en la búsqueda
                     atributos: [
                         {
                             $project: {
@@ -2115,10 +2085,9 @@ export class ProductController {
             let finalProducts = data.products;
             let isFallback = false;
 
-            // Fallback: Si buscó algo y no encontró nada (ni con fuzzy)
+            // Fallback
             if (totalProducts === 0 && pageNum === 1) {
                 isFallback = true;
-                // Devolver productos destacados como sugerencia
                 finalProducts = await Product.find({ isActive: true })
                     .sort({ esDestacado: -1, createdAt: -1 })
                     .limit(4)
@@ -2155,7 +2124,7 @@ export class ProductController {
         }
     }
 
-    // 🆕 CONTROLADOR DE NOVEDADES (New Arrivals)
+    // CONTROLADOR DE NOVEDADES (New Arrivals)
     static async getNewArrivals(req: Request, res: Response) {
         try {
             const { page, limit, sort, ...attributeFilters } = req.query as any;
