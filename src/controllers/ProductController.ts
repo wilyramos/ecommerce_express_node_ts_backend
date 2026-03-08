@@ -675,7 +675,6 @@ export class ProductController {
                 .populate('brand', 'nombre slug')
                 .populate('line', 'nombre slug');
 
-
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
@@ -710,6 +709,8 @@ export class ProductController {
                 isFrontPage,
                 line
             } = req.body;
+
+            console.log('Updating product with data:', req.body);
 
             const productId = req.params.id;
             const existingProduct = await Product.findById(productId);
@@ -1103,7 +1104,7 @@ export class ProductController {
                 })
                     .limit(LIMIT_TOTAL)
                     .populate('brand', 'nombre slug')
-                    .populate('line', 'nombre slug') // <--- Population de Línea
+                    .populate('line', 'nombre slug')
                     .populate('categoria', 'nombre slug'); // Opcional, si quieres category object
 
                 sameLineProducts.forEach(p => {
