@@ -1105,7 +1105,7 @@ export class ProductController {
                     .limit(LIMIT_TOTAL)
                     .populate('brand', 'nombre slug')
                     .populate('line', 'nombre slug')
-                    .populate('categoria', 'nombre slug'); // Opcional, si quieres category object
+                    .lean();
 
                 sameLineProducts.forEach(p => {
                     selectedIds.add(p._id.toString());
@@ -1175,18 +1175,14 @@ export class ProductController {
                     .limit(LIMIT_TOTAL - recommendedProducts.length)
                     .sort({ 'esDestacado': -1, createdAt: -1 })
                     .populate('brand', 'nombre slug')
-                    .populate('line', 'nombre slug'); // <--- Population de Línea
+                    .populate('line', 'nombre slug')
+                    .lean();
 
                 brandProducts.forEach(p => {
                     selectedIds.add(p._id.toString());
                     recommendedProducts.push(p);
                 });
             }
-
-            // =================================================================
-            // 🏁 RESPUESTA FINAL
-            // =================================================================
-
             res.status(200).json(recommendedProducts.slice(0, LIMIT_TOTAL));
 
         } catch (error) {
