@@ -56,8 +56,8 @@ export class ProductController {
                 return;
             }
 
-            if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+            if (imagenes && imagenes.length > 15) {
+                res.status(400).json({ message: 'No se pueden subir más de 15 imágenes' });
                 return;
             }
 
@@ -720,8 +720,8 @@ export class ProductController {
                 return;
             }
 
-            if (imagenes && imagenes.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+            if (imagenes && imagenes.length > 15) {
+                res.status(400).json({ message: 'No se pueden subir más de 15 imágenes' });
                 return;
             }
 
@@ -905,8 +905,8 @@ export class ProductController {
             // The key 'images' is used in the form data
             const images = Array.isArray(files.images) ? files.images : [files.images];
 
-            if (images.length > 5) {
-                res.status(400).json({ message: 'No se pueden subir más de 5 imágenes' });
+            if (images.length > 15) {
+                res.status(400).json({ message: 'No se pueden subir más de 15 imágenes' });
                 return;
             }
 
@@ -938,8 +938,8 @@ export class ProductController {
                     { new: true } // Devuelve el documento actualizado
                 );
 
-                // verificar si el producto ya tiene 5 imágenes
-                if (updatedProduct && updatedProduct.imagenes.length > 5) {
+                // verificar si el producto ya tiene 15 imágenes
+                if (updatedProduct && updatedProduct.imagenes.length > 15) {
                     // Eliminar la imagen más antigua
                     updatedProduct.imagenes.shift(); // Elimina la primera imagen (la más antigua)
                     await updatedProduct.save(); // Guarda los cambios
@@ -979,8 +979,8 @@ export class ProductController {
 
             const images = Array.isArray(files.images) ? files.images : [files.images];
 
-            if (images.length > 6) {
-                res.status(400).json({ message: "No se pueden subir más de 6 imágenes" });
+            if (images.length > 15) {
+                res.status(400).json({ message: "No se pueden subir más de 15 imágenes" });
                 return;
             }
 
