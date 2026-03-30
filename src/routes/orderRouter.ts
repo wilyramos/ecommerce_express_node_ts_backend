@@ -89,4 +89,20 @@ router.get('/reports/orders-by-city',
     OrderController.getReportOrdersByCity
 );
 
+router.get('/:id/pdf',
+    // authenticate, //TODO:
+    param('id').isMongoId().withMessage('ID no válido'),
+    handleInputErrors,
+    OrderController.generateOrderPDF
+);
+
+// Añade esta línea JUSTO DEBAJO de tu ruta de PDF anterior (rutas dinámicas)
+router.get('/:id/shipping-label',
+    // authenticate,
+    // isAdmin, // Solo el admin/almacén debería imprimir etiquetas de envío
+    param('id').isMongoId().withMessage('ID no válido'),
+    handleInputErrors,
+    OrderController.generateShippingLabelPDF
+);
+
 export default router;

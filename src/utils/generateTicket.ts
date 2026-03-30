@@ -1,101 +1,145 @@
 import { ISale } from "../models/Sale";
 
-// Datos de la empresa (pueden venir de BD o config)
 const COMPANY = {
     nombre: "GOPHONE",
     ruc: "1072516715",
-    direccion: "Jr. Bernardo Ohggins 120 - San Vicente de Cañete, Lima - Perú",
+    direccion: "Jr. Bernardo Ohggins 120",
+    city: "Cañete, Lima - Perú",
     telefono: "925054636",
 };
 
-// Colores modernos
-const COLORS = {
-    primary: "#333",
-    secondary: "#666",
-    accent: "#007bff",
+
+const formatCurrency = (value: number) => `S/ ${value.toFixed(2)}`;
+const formatDate = (date?: Date | string) => {
+    if (!date) return new Date().toLocaleString('es-PE');
+    return new Date(date).toLocaleString('es-PE');
 };
 
-// Helper
-const formatCurrency = (value: number) => `S/ ${value.toFixed(2)}`;
-
-// === GENERAR PDF ===
-export const generateSalePDF = (doc: PDFKit.PDFDocument, sale: ISale) => {
-    doc.fontSize(16).font("Helvetica-Bold").fillColor(COLORS.primary).text(COMPANY.nombre, { align: "center" });
-    doc.fontSize(10).font("Helvetica").fillColor(COLORS.secondary)
-       .text(`RUC: ${COMPANY.ruc}`, { align: "center" })
-       .text(COMPANY.direccion, { align: "center" })
-       .text(`Tel: ${COMPANY.telefono}`, { align: "center" })
-       .moveDown();
-
-    doc.fontSize(12).font("Helvetica-Bold").fillColor(COLORS.primary)
-       .text(`${sale.receiptType || "COMPROBANTE"} DE VENTA`, { align: "center" });
-    if (sale.receiptNumber) doc.fontSize(10).text(`N° ${sale.receiptNumber}`, { align: "center" });
-    
-    doc.moveDown(0.5).strokeColor(COLORS.accent).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown();
-
-    // --- Cliente ---
-    const c = sale.customerSnapshot;
-    if (c) {
-        doc.fontSize(10).fillColor(COLORS.primary).text("DATOS DEL CLIENTE", { underline: true });
-        doc.moveDown(0.2);
-        if (c.tipoDocumento && c.numeroDocumento) doc.text(`${c.tipoDocumento}: ${c.numeroDocumento}`);
-        if (c.nombre) doc.text(`Nombre/Razón Social: ${c.nombre}`);
-        if (c.direccion) doc.text(`Dirección: ${c.direccion}`);
-        if (c.telefono) doc.text(`Teléfono: ${c.telefono}`);
-        if (c.email) doc.text(`Email: ${c.email}`);
-        doc.moveDown();
+// Se añade el parámetro logoPath para inyectar la imagen
+export const generateSalePDF = (doc: PDFKit.PDFDocument, sale: ISale, logoPath?: string) => {
+    // --- CABECERA ---
+    if (logoPath) {
+        // Inserta el logo. Ajusta width y las coordenadas (x, y) según proporciones.
+        doc.image(logoPath, 50, 40, { width: 80 });
     }
 
-    // --- Detalle de productos ---
-    doc.fontSize(10).fillColor(COLORS.primary).text("DETALLE DE PRODUCTOS", { underline: true });
-    const tableTop = doc.y + 5;
-    const itemX = 50, descX = 120, priceX = 350, totalX = 450;
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#000000").text(COMPANY.nombre, 150, 50);
+    doc.font("Helvetica").fontSize(9)
+        .text(`RUC: ${COMPANY.ruc}`, 150, 65)
+        .text(COMPANY.direccion, 150, 80)
+        .text(COMPANY.city, 150, 95)
+        .text(`Tel: ${COMPANY.telefono}`, 150, 110);
 
-    doc.font("Helvetica-Bold").text("Cant.", itemX, tableTop)
-       .text("Descripción", descX, tableTop)
-       .text("P. Unit", priceX, tableTop, { align: "right", width: 80 })
-       .text("Importe", totalX, tableTop, { align: "right", width: 80 });
+    // Caja de Comprobante (Estilo punteado similar a la imagen)
+    doc.rect(360, 45, 185, 45).dash(2, { space: 2 }).strokeColor("#A0A0A0").stroke();
+    doc.undash(); // Restablecer trazo para el resto del documento
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000000")
+        .text("NOTA DE VENTA", 360, 55, { width: 185, align: "center" })
+        .text(`${sale.receiptNumber || "000000"}`, 360, 70, { width: 185, align: "center" });
 
-    doc.strokeColor(COLORS.secondary).moveTo(itemX, tableTop + 15).lineTo(550, tableTop + 15).stroke();
-    doc.font("Helvetica");
+    // --- DATOS DEL CLIENTE ---
+    const startY = 130;
+    const leftCol = 50;
+    const rightCol = 320;
+    const c = sale.customerSnapshot || {};
 
-    let y = tableTop + 25;
-    sale.items.forEach(item => {
+    const detailLine = (label: string, value: string, x: number, y: number) => {
+        doc.font("Helvetica-Bold").fontSize(9).text(`${label}: `, x, y, { continued: true })
+            .font("Helvetica").text(value || "-");
+    };
+
+    detailLine("Cliente", c.nombre || "Cliente General", leftCol, startY);
+    detailLine("Celular", c.telefono || "", leftCol, startY + 15);
+    detailLine("Dirección", c.direccion || "", leftCol, startY + 30);
+    detailLine("Tipo de envío", sale.deliveryMethod || "PICKUP", leftCol, startY + 45);
+
+    detailLine("Fecha de emisión", formatDate(sale.createdAt), rightCol, startY);
+    detailLine("Documento", `${c.tipoDocumento || 'DNI'}: ${c.numeroDocumento || ''}`, rightCol, startY + 15);
+
+    // Si employee está poblado en la consulta (populate), se extrae el nombre
+    const employeeName = typeof sale.employee === 'object' && sale.employee !== null && 'nombre' in sale.employee
+        ? (sale.employee as any).nombre
+        : "Vendedor Web";
+    detailLine("Vendedor", employeeName, rightCol, startY + 30);
+
+    // --- TABLA DE PRODUCTOS ---
+    let tableY = startY + 80;
+
+    // Fondo gris claro para la cabecera de la tabla
+    doc.rect(50, tableY, 495, 18).fill("#F3F4F6");
+    doc.fillColor("#000000");
+
+    const colProducto = 55;
+    const colCant = 320;
+    const colPUnit = 370;
+    const colDto = 430;
+    const colSubtotal = 480;
+
+    doc.font("Helvetica-Bold").fontSize(9);
+    doc.text("Producto", colProducto, tableY + 5);
+    doc.text("Cant.", colCant, tableY + 5, { width: 40, align: "right" });
+    doc.text("P. Unit.", colPUnit, tableY + 5, { width: 50, align: "right" });
+    doc.text("Dto%", colDto, tableY + 5, { width: 40, align: "right" });
+    doc.text("Subtotal", colSubtotal, tableY + 5, { width: 60, align: "right" });
+
+    let currentY = tableY + 25;
+    doc.font("Helvetica").fontSize(9);
+
+    sale.items.forEach((item) => {
         const importe = item.price * item.quantity;
-        const nombre = typeof item.product === "object" && "nombre" in item.product ? item.product.nombre : "Producto";
-        doc.text(item.quantity.toString(), itemX, y);
-        doc.text(nombre, descX, y, { width: 220 });
-        doc.text(formatCurrency(item.price), priceX, y, { align: "right", width: 80 });
-        doc.text(formatCurrency(importe), totalX, y, { align: "right", width: 80 });
-        y += 20;
-    });
-    doc.strokeColor(COLORS.secondary).moveTo(itemX, y - 5).lineTo(550, y - 5).stroke();
-    doc.moveDown();
+        const nombre = typeof item.product === "object" && item.product !== null && 'nombre' in item.product
+            ? (item.product as any).nombre
+            : "Producto";
 
-    // --- Totales ---
+        doc.text(nombre, colProducto, currentY, { width: 250 });
+        doc.text(item.quantity.toFixed(1), colCant, currentY, { width: 40, align: "right" });
+        doc.text(formatCurrency(item.price), colPUnit, currentY, { width: 50, align: "right" });
+        doc.text("0%", colDto, currentY, { width: 40, align: "right" }); // El Schema ISaleItem no tiene descuento individual
+        doc.text(formatCurrency(importe), colSubtotal, currentY, { width: 60, align: "right" });
+
+        // Calcular altura dinámica por si el nombre del producto usa múltiples líneas
+        const textHeight = doc.heightOfString(nombre, { width: 250 });
+        currentY += textHeight > 15 ? textHeight + 8 : 20;
+    });
+
+    // --- FOOTER (PAGOS Y RESUMEN) ---
+    currentY += 20;
+
     const subtotal = sale.totalPrice / 1.18;
     const igv = sale.totalPrice - subtotal;
-    const descuento = sale.totalDiscountAmount || 0;
-    const startY = doc.y + 10;
+    const totalDiscount = sale.totalDiscountAmount || 0;
 
-    doc.fontSize(10).fillColor(COLORS.secondary);
-    if (descuento > 0) {
-        doc.text(`Descuento:`, totalX - 100, startY, { continued: true }).text(formatCurrency(descuento), { align: "right" });
-    }
-    doc.text(`Sub Total:`, totalX - 100, startY + 15, { continued: true }).text(formatCurrency(subtotal), { align: "right" });
-    doc.text(`IGV (18%):`, totalX - 100, startY + 30, { continued: true }).text(formatCurrency(igv), { align: "right" });
-    doc.font("Helvetica-Bold").fontSize(12)
-       .text(`TOTAL:`, totalX - 100, startY + 45, { continued: true })
-       .text(formatCurrency(sale.totalPrice), { align: "right" });
-    
-    doc.font("Helvetica").moveDown(2);
-    
-    // --- Footer ---
-    doc.moveDown();
-    doc.strokeColor(COLORS.accent).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown();
-    doc.fontSize(9).fillColor(COLORS.secondary)
-       .text("Representación impresa de comprobante electrónico", { align: "center" })
-       .text("¡Gracias por su compra!", { align: "center" });
+    // Columna Izquierda: PAGOS
+    doc.font("Helvetica-Bold").text("PAGOS", leftCol, currentY);
+    doc.font("Helvetica");
+
+    doc.text(sale.paymentMethod, leftCol, currentY + 15);
+    doc.text(formatCurrency(sale.totalPrice), leftCol + 150, currentY + 15, { width: 60, align: "right" });
+
+    doc.font("Helvetica-Bold").text("Monto total", leftCol, currentY + 30);
+    doc.font("Helvetica").text(formatCurrency(sale.totalPrice), leftCol + 150, currentY + 30, { width: 60, align: "right" });
+
+    doc.font("Helvetica-Bold").text("Monto a cobrar", leftCol, currentY + 45);
+    doc.font("Helvetica").text(formatCurrency(0), leftCol + 150, currentY + 45, { width: 60, align: "right" });
+
+    // Columna Derecha: RESUMEN
+    const resumeColLabel = rightCol;
+    const resumeColValue = rightCol + 120;
+
+    doc.font("Helvetica-Bold").text("RESUMEN", resumeColLabel, currentY);
+
+    doc.font("Helvetica-Bold").text("Descuento total", resumeColLabel, currentY + 15);
+    doc.font("Helvetica").text(formatCurrency(totalDiscount), resumeColValue, currentY + 15, { width: 105, align: "right" });
+
+    doc.font("Helvetica-Bold").text("Subtotal", resumeColLabel, currentY + 30);
+    doc.font("Helvetica").text(formatCurrency(subtotal), resumeColValue, currentY + 30, { width: 105, align: "right" });
+
+    doc.font("Helvetica-Bold").text("Impuestos", resumeColLabel, currentY + 45);
+    doc.font("Helvetica").text(formatCurrency(igv), resumeColValue, currentY + 45, { width: 105, align: "right" });
+
+    doc.font("Helvetica-Bold").text("Monto total", resumeColLabel, currentY + 60);
+    doc.font("Helvetica").text(formatCurrency(sale.totalPrice), resumeColValue, currentY + 60, { width: 105, align: "right" });
+
+    // Mensaje Final
+    doc.font("Helvetica-Oblique").text("Gracias por confiar en GoPhone.", 50, currentY + 100, { align: "center", width: 495 });
 };

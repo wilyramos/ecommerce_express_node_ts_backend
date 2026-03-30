@@ -4,6 +4,9 @@ import mongoose from 'mongoose';
 import Product from '../models/Product';
 import { startOfDay, endOfDay, parseISO } from 'date-fns';
 import { OrderService } from '../services/OrderService';
+import { buildOrderReceipt } from '../templates/saleReceipt.template';
+import { PdfService } from '../services/pdf.service';
+import { buildShippingLabel } from '../templates/shippingLabel.template';
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
     [OrderStatus.AWAITING_PAYMENT]: [OrderStatus.PROCESSING, OrderStatus.CANCELED],
@@ -692,4 +695,78 @@ export class OrderController {
             session.endSession();
         }
     }
+    static async generateOrderPDF(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+
+            // 1. Buscamos la orden y populamos el usuario para tener su nombre y correo
+            const order = await Order.findById(id).populate('user', 'nombre apellidos email');
+
+            if (!order) {
+                res.status(404).json({ message: 'Orden no encontrada' });
+                return;
+            }
+
+            // (Opcional) Seguridad: Verificar que el usuario que lo solicita es dueño de la orden o es admin
+            // Si req.user existe, descomenta esto:
+            // if (req.user.rol !== 'administrador' && order.user._id.toString() !== req.user._id.toString()) {
+            //     res.status(403).json({ message: 'No autorizado' });
+            //     return;
+            // }
+
+            // 2. Ruta de tu logo (Opcional, ajusta la ruta según tu servidor)
+            // const logoPath = path.resolve(__dirname, '../../public/logo.png');
+            const path = require('path');
+            const logoPath = path.join(process.cwd(), 'public', 'logobw.jpg');
+
+            // 3. Usamos nuestro servicio genérico pasándole el template y los datos
+            const pdfBuffer = await PdfService.generateBuffer(
+                (doc, data) => buildOrderReceipt(doc, data, logoPath),
+                order
+            );
+
+            // 4. Devolver el archivo binario al cliente con los headers correctos
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Disposition", `inline; filename="Orden-${order.orderNumber}.pdf"`);
+            res.setHeader("Content-Length", pdfBuffer.length);
+
+            res.end(pdfBuffer);
+            return;
+
+        } catch (error) {
+            console.error("Error en generateOrderPDF:", error);
+            res.status(500).json({ message: "Error interno al generar el PDF de la orden" });
+            return;
+        }
+    }
+
+    static async generateShippingLabelPDF(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const order = await Order.findById(id).populate('user', 'nombre apellidos telefono email');
+
+            if (!order) {
+                res.status(404).json({ message: 'Orden no encontrada' });
+                return;
+            }
+
+            // Generamos el PDF indicando el tamaño exacto de etiqueta térmica 4x6 pulgadas
+            // (72 puntos por pulgada -> 4 * 72 = 288, 6 * 72 = 432)
+            const pdfBuffer = await PdfService.generateBuffer(
+                buildShippingLabel,
+                order,
+                { size: [288, 432], margin: 0 } // Quitamos el margen global para manejarlo en el template
+            );
+
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Disposition", `inline; filename="Etiqueta-${order.orderNumber}.pdf"`);
+            res.setHeader("Content-Length", pdfBuffer.length);
+
+            res.end(pdfBuffer);
+        } catch (error) {
+            console.error("Error al generar Etiqueta de Envío:", error);
+            res.status(500).json({ message: "Error interno al generar etiqueta" });
+        }
+    }
+
 }

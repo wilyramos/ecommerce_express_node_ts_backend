@@ -28,7 +28,7 @@ export class SaleController {
                 paymentStatus = 'APPROVED',
                 deliveryMethod = 'PICKUP',
                 storeLocation,
-                receiptType = 'TICKET',
+                receiptType = 'NOTA',
                 receiptNumber,
             } = req.body;
 
@@ -141,8 +141,6 @@ export class SaleController {
     static async getSales(req: Request, res: Response) {
         try {
             const { search, fechaInicio, fechaFin, page = '1', limit = '10' } = req.query;
-
-            console.log("Fechas:", fechaInicio, "a", fechaFin);
             const userId = req.user._id;
 
             const query: any = { employee: userId };
@@ -468,35 +466,44 @@ export class SaleController {
         }
     }
 
-    static async getSalePdf(req: Request, res: Response) {
+  static async getSalePdf(req: Request, res: Response) {
         const saleId = req.params.id;
 
         try {
-            const sale = await Sale.findById(saleId).populate("items.product");
+            const sale = await Sale.findById(saleId)
+                .populate("items.product")
+                .populate("employee"); // Asegúrate de popular al empleado si necesitas su nombre
 
             if (!sale) {
                 res.status(404).json({ message: "Venta no encontrada" });
                 return;
             }
 
+            // Aquí puedes configurar las opciones iniciales del documento si lo deseas
             const doc = new PDFDocument({ size: "A4", margin: 40 });
-            let buffers: Buffer[] = [];
 
-            doc.on("data", buffers.push.bind(buffers));
-            doc.on("end", () => {
-                const pdfData = Buffer.concat(buffers);
-                res.setHeader("Content-Type", "application/pdf");
-                res.setHeader(
-                    "Content-Disposition",
-                    `attachment; filename="${sale.receiptType}-${saleId}.pdf"`
-                );
-                res.send(pdfData);
-            });
+            // Manejo de la salida a través de Response stream (express) en lugar de buffers en memoria
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="${sale.receiptType}-${saleId}.pdf"`
+            );
 
-            // Genera el PDF según tipo
-            generateSalePDF(doc, sale);
+            // Vinculamos el flujo de salida del PDF directamente a la respuesta HTTP
+            doc.pipe(res);
 
+            // Define la ruta absoluta al logo.
+            // Asegúrate de que el archivo 'logo.png' exista en la ruta especificada.
+            // 'process.cwd()' apunta a la raíz de donde se ejecuta Node (típicamente la raíz de tu proyecto backend).
+            const path = require('path');
+            const logoPath = path.join(process.cwd(), 'public', 'logobw.jpg');
+
+            // Llama a la función generadora pasándole el doc, los datos de la venta y la ruta del logo
+            generateSalePDF(doc, sale, logoPath);
+
+            // Finaliza el documento, lo que cerrará el stream y enviará el PDF al cliente
             doc.end();
+
         } catch (error) {
             console.error("Error al generar PDF:", error);
             res.status(500).json({ message: "Error al generar PDF" });
