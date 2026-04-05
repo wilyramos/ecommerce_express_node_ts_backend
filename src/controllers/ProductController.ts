@@ -255,10 +255,10 @@ export class ProductController {
     }
 
     static async searchListProducts(req: Request, res: Response) {
-
         const { q } = req.query;
-
         const limit = 10;
+        console.log("Término de búsqueda recibido en searchListProducts:", q);
+
         if (!q || typeof q !== "string") {
             res.status(400).json({ message: 'Invalid query' });
             return;
@@ -272,12 +272,19 @@ export class ProductController {
                     { sku: { $regex: q, $options: "i" } },
                     { barcode: { $regex: q, $options: "i" } },
                 ]
-            }).limit(limit);
+            })
+                .populate("brand", "nombre slug")
+                .limit(limit)
+                .lean(); // Forzar objeto plano
+
+            // --- DEPURACIÓN ---
+            // Si ves un STRING en la consola en lugar de un OBJETO, 
+            // significa que el ID en la DB no existe en la colección Brand.
+            console.log("Muestra del primer producto:", products[0]?.brand);
 
             res.status(200).json(products);
         } catch (error) {
             res.status(500).json({ message: 'Error searching products' });
-            return;
         }
     }
 
@@ -1916,7 +1923,7 @@ export class ProductController {
             // ---------------------------------------------------------
             if (context.category) {
                 const rootId = context.category._id.toString();
-                
+
                 // Obtenemos array de IDs (pueden venir mezclados string/objectid)
                 const rawFamilyIds = await getCategoryFamilyIds(rootId);
 

@@ -3,17 +3,18 @@ import { IUser } from './User';
 import { IProduct } from './Product';
 import { PaymentStatus } from './Order';
 import { Counter } from './Counter';
+import { ICashShift } from '../modules/cash/cash.model';
 
-
-// 
-
-// Estado de la venta
+/**
+ * ENUMS DE ESTADO Y PAGO
+ */
 export enum SaleStatus {
-    PENDING = 'PENDING',           // Venta registrada pero aún no confirmada (ej: carrito / preventa)
-    COMPLETED = 'COMPLETED',       // Venta finalizada con éxito
-    PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED', // Algunos productos devueltos
-    REFUNDED = 'REFUNDED',         // Venta devuelta completamente
-    CANCELED = 'CANCELED',         // Venta anulada antes de completarse
+    QUOTE = 'QUOTE',
+    PENDING = 'PENDING',
+    COMPLETED = 'COMPLETED',
+    PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
+    REFUNDED = 'REFUNDED',
+    CANCELED = 'CANCELED',
 }
 
 export enum PaymentMethod {
@@ -24,18 +25,18 @@ export enum PaymentMethod {
     TRANSFER = 'TRANSFER',
 }
 
-
-// Producto vendido
+/**
+ * INTERFACES SECUNDARIAS
+ */
 interface ISaleItem {
     product: Types.ObjectId | IProduct;
     variantId?: Types.ObjectId;
-
     quantity: number;
-    price: number; // Precio unitario
-    cost: number; // Costo unitario en el momento de la venta
+    price: number;      // Precio unitario al momento de venta
+    discount: number;   // Descuento específico por este ítem
+    cost: number;       // Costo unitario (para reportes de utilidad)
 }
 
-// Cliente sin cuenta registrada
 interface ISaleCustomerSnapshot {
     nombre?: string;
     tipoDocumento?: 'DNI' | 'RUC' | 'CE';
@@ -45,45 +46,59 @@ interface ISaleCustomerSnapshot {
     direccion?: string;
 }
 
-// Historial de cambios de estado
 interface ISaleStatusHistory {
     status: SaleStatus;
     changedAt: Date;
 }
 
-// Venta completa
+/**
+ * INTERFACE PRINCIPAL DE VENTA
+ */
 export interface ISale extends Document {
-    customer?: Types.ObjectId | IUser; // Cliente registrado
-    customerSnapshot?: ISaleCustomerSnapshot; // Cliente sin cuenta
-    employee?: Types.ObjectId | IUser; // Vendedor que atendió
+    customer?: Types.ObjectId | IUser;
+    customerSnapshot?: ISaleCustomerSnapshot;
+    employee?: Types.ObjectId | IUser;
+    cashShiftId: Types.ObjectId | ICashShift;
 
     items: ISaleItem[];
-    totalPrice: number;
-    totalDiscountAmount?: number;
 
-    receiptType?: 'TICKET' | 'BOLETA' | 'FACTURA';
+    // Matemática de la Venta
+    subtotal: number;              // Suma de (price * qty) - item discounts
+    totalDiscountAmount: number;   // Descuento global adicional
+    totalSurchargeAmount: number;  // Recargos (ej: +5% comisión tarjeta)
+    totalPrice: number;            // Precio final neto a cobrar
+
+    receiptType: 'TICKET' | 'BOLETA' | 'FACTURA';
     receiptNumber?: string;
 
     status: SaleStatus;
     statusHistory: ISaleStatusHistory[];
 
-    paymentMethod: string;
+    paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
     paymentId?: string;
 
     storeLocation?: string;
-    deliveryMethod?: 'PICKUP' | 'DELIVERY';
+    deliveryMethod: 'PICKUP' | 'DELIVERY';
+
+    // q
+    isQuote: boolean;              // Flag rápido
+    quoteExpirationDate?: Date;    // Validez de la proforma
 
     createdAt: Date;
     updatedAt: Date;
 }
 
+/**
+ * SCHEMAS HIJOS
+ */
 const saleItemSchema = new Schema<ISaleItem>({
     product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     variantId: { type: Schema.Types.ObjectId },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
-    cost: { type: Number, min: 0, default: 0 },
+    discount: { type: Number, default: 0, min: 0 },
+    cost: { type: Number, default: 0, min: 0 },
 }, { _id: false });
 
 const customerSnapshotSchema = new Schema<ISaleCustomerSnapshot>({
@@ -95,80 +110,138 @@ const customerSnapshotSchema = new Schema<ISaleCustomerSnapshot>({
     direccion: String,
 }, { _id: false });
 
-const saleStatusHistorySchema = new Schema<ISaleStatusHistory>({
-    status: { type: String, enum: Object.values(SaleStatus), required: true },
-    changedAt: { type: Date, default: Date.now },
-}, { _id: false });
-
+/**
+ * SCHEMA PRINCIPAL
+ */
 const saleSchema = new Schema<ISale>({
-    // Cliente
     customer: { type: Schema.Types.ObjectId, ref: 'User' },
     customerSnapshot: { type: customerSnapshotSchema },
+    employee: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    cashShiftId: {
+        type: Schema.Types.ObjectId,
+        ref: 'CashShift',
+        required: [true, 'Venta requiere caja abierta']
+    },
 
-    // Empleado que hizo la venta
-    employee: { type: Schema.Types.ObjectId, ref: 'User' },
-
-    // Productos vendidos
     items: { type: [saleItemSchema], required: true },
 
-    // Totales
-    totalPrice: { type: Number, min: 0 },
-    totalDiscountAmount: { type: Number, default: 0, min: 0 },
+    // Totales y Cálculos
+    subtotal: { type: Number, required: true, default: 0 },
+    totalDiscountAmount: { type: Number, default: 0 },
+    totalSurchargeAmount: { type: Number, default: 0 },
+    totalPrice: { type: Number, required: true, default: 0 },
 
-    // Comprobante
-    receiptType: { type: String, enum: ['TICKET', 'BOLETA', 'FACTURA'], default: 'TICKET' },
-    receiptNumber: { type: String },
+    receiptType: {
+        type: String,
+        enum: ['TICKET', 'BOLETA', 'FACTURA'],
+        default: 'TICKET'
+    },
+    receiptNumber: { type: String, unique: true },
 
-    // Estado y seguimiento
-    status: { type: String, enum: Object.values(SaleStatus), default: SaleStatus.COMPLETED },
-    statusHistory: { type: [saleStatusHistorySchema], default: [] },
+    status: {
+        type: String,
+        enum: Object.values(SaleStatus),
+        default: SaleStatus.COMPLETED
+    },
+    statusHistory: [{
+        status: { type: String, enum: Object.values(SaleStatus) },
+        changedAt: { type: Date, default: Date.now }
+    }],
 
-    // Pago
-    paymentMethod: { type: String, enum: Object.values(PaymentMethod), default: PaymentMethod.CASH },
-
-    paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.APPROVED },
+    paymentMethod: {
+        type: String,
+        enum: Object.values(PaymentMethod),
+        default: PaymentMethod.CASH
+    },
+    paymentStatus: {
+        type: String,
+        enum: Object.values(PaymentStatus),
+        default: PaymentStatus.APPROVED
+    },
     paymentId: { type: String },
 
-    // Logística
     storeLocation: { type: String },
-    deliveryMethod: { type: String, enum: ['PICKUP', 'DELIVERY'], default: 'PICKUP' },
+    deliveryMethod: {
+        type: String,
+        enum: ['PICKUP', 'DELIVERY'],
+        default: 'PICKUP'
+    },
 }, {
     timestamps: true
 });
 
-
-// Calcular el total de la venta antes de guardar
+/**
+ * MIDDLEWARE: CÁLCULO DE TOTALES (PRE-SAVE)
+ */
 saleSchema.pre<ISale>('save', function (next) {
-    const itemsTotal = this.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    this.totalPrice = Math.max(0, itemsTotal - (this.totalDiscountAmount || 0));
+    // 1. Calcular subtotal basado en ítems (Precio * Cantidad - Descuento del ítem)
+    const itemsSubtotal = this.items.reduce((sum, item) => {
+        const itemTotal = (item.price * item.quantity) - (item.discount || 0);
+        return sum + itemTotal;
+    }, 0);
+
+    this.subtotal = Math.max(0, itemsSubtotal);
+
+    // 2. Calcular precio final
+    // Formula: (Subtotal Items) - Descuento Global + Recargos
+    const finalPrice = this.subtotal - (this.totalDiscountAmount || 0) + (this.totalSurchargeAmount || 0);
+
+    this.totalPrice = Math.max(0, finalPrice);
+
+    // 3. Registrar historia si es nueva
+    if (this.isNew) {
+        this.statusHistory.push({ status: this.status, changedAt: new Date() });
+    }
+
     next();
 });
 
-// Agregar el número de comprobante
-
+/**
+ * MIDDLEWARE: GENERACIÓN DE CORRELATIVO
+ */
+/**
+ * MIDDLEWARE: GENERACIÓN DE CORRELATIVO (Ventas y Proformas)
+ */
 saleSchema.pre<ISale>("save", async function (next) {
+    // Si ya tiene número o no es nuevo, saltar
     if (!this.isNew || this.receiptNumber) return next();
 
     try {
+        let counterName: string;
+        let prefix: string;
+
+        // 1. Determinar el nombre del contador y el prefijo
+        if (this.status === SaleStatus.QUOTE) {
+            counterName = 'PROFORMA';
+            prefix = 'P'; // P de Proforma
+        } else {
+            counterName = this.receiptType; // TICKET, BOLETA o FACTURA
+            prefix = this.receiptType[0];   // T, B o F
+        }
+
+        // 2. Incrementar el contador en la colección Counter
         const counter = await Counter.findOneAndUpdate(
-            { name: this.receiptType },
+            { name: counterName },
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        // Ejemplo: B001-00012345
-        this.receiptNumber = `${this.receiptType[0]}001-${counter.seq
-            .toString()
-            .padStart(8, "0")}`;
+
+        // 3. Formato: P001-00000001, B001-00000001, etc.
+        this.receiptNumber = `${prefix}001-${counter.seq.toString().padStart(8, "0")}`;
 
         next();
-    } catch (err) {
+    } catch (err: unknown) {
         next(err as any);
     }
 });
 
-// Índices útiles
+/**
+ * ÍNDICES
+ */
+saleSchema.index({ cashShiftId: 1 });
 saleSchema.index({ customer: 1 });
 saleSchema.index({ employee: 1 });
+saleSchema.index({ receiptNumber: 1 }, { unique: true });
 saleSchema.index({ createdAt: -1 });
 
 export const Sale = mongoose.model<ISale>('Sale', saleSchema);

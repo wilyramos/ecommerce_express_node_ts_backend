@@ -19,6 +19,13 @@ import cors from 'cors'
 import { globalErrorHandler } from './middleware/error.middleware'
 import lineRouter from './routes/line.router'
 
+
+// v2
+import productRouterV2 from './modules/product/product.routes'
+import saleRouterV2 from './modules/sale/sale.routes'
+import cashRouter from './modules/cash/cash.routes'
+import reportRouter from './modules/reports/report.routes'
+
 // OPENAPI swagger //TODO: finish it
 
 // Connect to MongoDB
@@ -43,6 +50,13 @@ app.get('/', (req, res) => {
     res.send('API is running...')
 })
 
+
+// Version 2.0: Refactor to use controllers and services for products and sales
+app.use('/api/products/v2', productRouterV2)
+app.use('/api/sales/v2', saleRouterV2)
+app.use('/api/cash/v2', cashRouter)
+app.use('/api/reports/v2', reportRouter)
+
 // Routers
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
@@ -59,6 +73,9 @@ app.use('/api/webhooks',
     webhookRouter
 ),
 app.use('/api/purchases', purchaseRouter)
+
+//
+
 
 // Middleware global for error handling 
 app.use(globalErrorHandler);

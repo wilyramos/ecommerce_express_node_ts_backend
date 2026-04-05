@@ -92,7 +92,11 @@ const productSchema = new Schema<IProduct>(
         costo: { type: Number, min: 0, default: 0 },
         imagenes: { type: [String], default: [] },
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
-        brand: { type: Types.ObjectId, ref: 'Brand' },
+        brand: { 
+            type: Types.ObjectId, 
+            ref: 'Brand',
+            
+        },
         line: {
             type: Schema.Types.ObjectId,
             ref: 'ProductLine',
