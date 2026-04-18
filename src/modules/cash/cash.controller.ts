@@ -21,13 +21,17 @@ export const getStatus: RequestHandler = async (req, res) => {
 export const open: RequestHandler = async (req, res) => {
     try {
         const { initialBalance, userId } = req.body as { initialBalance: number; userId: string };
+        console.log("Intentando abrir caja con:", { initialBalance, userId });
 
         if (!userId) {
+            console.warn("Falta userId en la solicitud de apertura de caja");
             res.status(400).json({ success: false, message: "User ID requerido" });
             return; // El return aquí es 'void', lo cual es correcto para RequestHandler
         }
 
+        console.log("Llamando a cashService.openShift...");
         const shift = await cashService.openShift(userId, initialBalance);
+        console.log("Caja abierta con éxito:", shift);
         res.status(201).json({ success: true, shift });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Error al abrir caja';

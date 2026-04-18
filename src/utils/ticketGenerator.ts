@@ -8,13 +8,11 @@ const COMPANY = {
     telefono: "925054636",
 };
 
-/**
- * Generador de Tickets (Ventas y Proformas)
- */
 export const generateSaleTicket = (sale: any): Promise<Buffer> => {
     return new Promise((resolve, reject) => {
         const isQuote = sale.status === 'QUOTE';
         
+        // Tamaño típico de ticket de 80mm (226pt)
         const doc = new PDFDocument({ 
             size: [226, 800], 
             margin: 0 
@@ -33,114 +31,130 @@ export const generateSaleTicket = (sale: any): Promise<Buffer> => {
             doc.moveTo(startX, y).lineTo(startX + contentWidth, y).lineWidth(0.5).strokeColor('#000000').stroke();
         };
 
-        // --- ENCABEZADO ---
-        doc.font('Helvetica-Bold').fontSize(16).text(COMPANY.nombre, startX, currentY, { align: 'center', width: contentWidth });
-        currentY += 18;
-        doc.font('Helvetica').fontSize(8).text(`RUC: ${COMPANY.ruc}`, { align: 'center', width: contentWidth });
-        currentY += 10;
-        doc.text(COMPANY.direccion, { align: 'center', width: contentWidth });
-        currentY += 10;
-        doc.text(COMPANY.city, { align: 'center', width: contentWidth });
-        currentY += 15;
+        const formatPrice = (amount: number) => `S/ ${amount.toFixed(2)}`;
 
-        // --- TÍTULO DINÁMICO ---
-        const title = isQuote ? 'PROFORMA DE VENTA' : 'TICKET DE VENTA';
-        doc.font('Helvetica-Bold').fontSize(11).rect(startX, currentY - 2, contentWidth, 15).fill('#f3f4f6');
-        doc.fillColor('#000000').text(title, startX, currentY, { align: 'center', width: contentWidth });
-        currentY += 18;
+        // --- ENCABEZADO ---
+        doc.font('Helvetica-Bold').fontSize(14).text(COMPANY.nombre, startX, currentY, { align: 'center', width: contentWidth });
+        currentY += 16;
+        doc.font('Helvetica').fontSize(8)
+           .text(`RUC: ${COMPANY.ruc}`, { align: 'center', width: contentWidth })
+           .text(COMPANY.direccion, { align: 'center', width: contentWidth })
+           .text(COMPANY.city, { align: 'center', width: contentWidth });
+        currentY += 35;
+
+        // --- TÍTULO ---
+        const title = isQuote ? 'PROFORMA DE VENTA' : 'NOTA DE VENTA';
+        doc.rect(startX, currentY - 2, contentWidth, 15).fill('#eeeeee');
+        doc.fillColor('#000000').font('Helvetica-Bold').fontSize(10).text(title, startX, currentY, { align: 'center', width: contentWidth });
+        currentY += 20;
         
         // --- INFO TRANSACCIÓN ---
         doc.font('Helvetica-Bold').fontSize(8);
-        
+        const labelCol = startX;
+        const valueCol = startX + 80;
+
+        const addInfoRow = (label: string, value: string, color = '#000000') => {
+            doc.font('Helvetica-Bold').fillColor('#000000').text(label, labelCol, currentY);
+            doc.font('Helvetica').fillColor(color).text(value, valueCol, currentY);
+            currentY += 11;
+        };
+
         if (isQuote) {
-            doc.text(`ID PROFORMA:`, startX, currentY);
-            doc.font('Helvetica').text(sale._id.toString().slice(-8).toUpperCase(), startX + 85, currentY);
+            addInfoRow('ID PROFORMA:', sale._id.toString().slice(-8).toUpperCase());
         } else {
-            doc.text(`N° COMPROBANTE:`, startX, currentY);
-            doc.font('Helvetica').text(sale.receiptNumber, startX + 85, currentY);
+            addInfoRow('N° COMPROBANTE:', sale.receiptNumber || '---');
         }
-        currentY += 12;
 
-        doc.font('Helvetica-Bold').text(`FECHA EMISIÓN:`, startX, currentY);
-        doc.font('Helvetica').text(new Date(sale.createdAt).toLocaleString('es-PE'), startX + 85, currentY);
-        currentY += 10;
+        addInfoRow('FECHA EMISIÓN:', new Date(sale.createdAt).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }));
 
-        // Fecha de Expiración (Solo para Proformas)
         if (isQuote && sale.quoteExpirationDate) {
-            doc.font('Helvetica-Bold').fillColor('#d97706').text(`VÁLIDO HASTA:`, startX, currentY);
-            doc.font('Helvetica').text(new Date(sale.quoteExpirationDate).toLocaleDateString('es-PE'), startX + 85, currentY);
-            doc.fillColor('#000000');
-            currentY += 12;
+            addInfoRow('VÁLIDO HASTA:', new Date(sale.quoteExpirationDate).toLocaleDateString('es-PE'), '#d97706');
         }
 
         if (sale.employee) {
-            doc.font('Helvetica-Bold').text(`ATENDIDO POR:`, startX, currentY);
-            doc.font('Helvetica').text(sale.employee.nombre.toUpperCase(), startX + 85, currentY);
-            currentY += 15;
+            // addInfoRow('ATENDIDO POR:', sale.employee.nombre.toUpperCase());
         }
+
+        currentY += 5;
 
         // --- TABLA DE ITEMS ---
         drawLine(currentY);
         currentY += 5;
-        doc.font('Helvetica-Bold').fontSize(7.5).text('CANT.', startX, currentY);
+        doc.font('Helvetica-Bold').fontSize(7).text('CANT.', startX, currentY);
         doc.text('DESCRIPCIÓN', startX + 30, currentY);
         doc.text('TOTAL', startX, currentY, { align: 'right', width: contentWidth });
         currentY += 10;
         drawLine(currentY);
-        currentY += 8;
+        currentY += 7;
 
         sale.items.forEach((item: any) => {
             const name = item.product?.nombre.toUpperCase() || 'PRODUCTO';
-            const totalItem = (item.price * item.quantity).toFixed(2);
+            const totalItem = item.price * item.quantity;
             
             doc.font('Helvetica-Bold').fontSize(8).text(`${item.quantity}`, startX, currentY);
             
             const nameX = startX + 30;
-            const nameWidth = 120;
+            const nameWidth = 110;
             const nameHeight = doc.heightOfString(name, { width: nameWidth });
             
             doc.text(name, nameX, currentY, { width: nameWidth });
-            doc.text(`S/ ${totalItem}`, startX, currentY, { align: 'right', width: contentWidth });
+            doc.text(formatPrice(totalItem), startX, currentY, { align: 'right', width: contentWidth });
             
             currentY += nameHeight + 2;
 
+            // Variantes
             if (item.variantId && item.product?.variants) {
                 const variant = item.product.variants.find((v: any) => v._id.toString() === item.variantId.toString());
                 if (variant) {
-                    doc.font('Helvetica-Oblique').fontSize(7).text(`VAR: ${variant.nombre.toUpperCase()}`, nameX, currentY);
+                    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#4b5563').text(`VAR: ${variant.nombre.toUpperCase()}`, nameX, currentY);
                     currentY += 9;
                 }
             }
+            doc.fillColor('#000000');
             currentY += 3;
         });
 
         currentY += 5;
         drawLine(currentY);
-        currentY += 10;
+        currentY += 8;
 
-        // --- TOTALES ---
-        doc.font('Helvetica-Bold').fontSize(10);
-        doc.text('TOTAL A PAGAR:', startX, currentY);
-        doc.text(`S/ ${sale.totalPrice.toFixed(2)}`, startX, currentY, { align: 'right', width: contentWidth });
-        currentY += 25;
+        // --- RESUMEN DE TOTALES ---
+        const total = sale.totalPrice;
+        const subtotal = total / 1.18;
+        const igv = total - subtotal;
 
-        // --- PIE DE PÁGINA (ADAPTADO) ---
-        doc.font('Helvetica-Bold').fontSize(8).text(isQuote ? 'ESTE DOCUMENTO ES UNA PROFORMA' : '¡GRACIAS POR SU COMPRA!', startX, currentY, { align: 'center', width: contentWidth });
+        const addTotalRow = (label: string, value: string, isMain = false) => {
+            doc.font(isMain ? 'Helvetica-Bold' : 'Helvetica').fontSize(isMain ? 10 : 8);
+            doc.text(label, startX + 60, currentY, { align: 'right', width: 70 });
+            doc.text(value, startX + 130, currentY, { align: 'right', width: 70 });
+            currentY += isMain ? 15 : 11;
+        };
+
+        addTotalRow('Subtotal:', formatPrice(subtotal));
+        addTotalRow('IGV (18%):', formatPrice(igv));
+        currentY += 2;
+        addTotalRow('TOTAL A PAGAR:', formatPrice(total), true);
+
+        currentY += 15;
+
+        // --- PIE DE PÁGINA ---
+        doc.font('Helvetica-Bold').fontSize(8).text(
+            isQuote ? 'ESTE DOCUMENTO ES UNA PROFORMA' : '¡GRACIAS POR SU COMPRA!', 
+            startX, currentY, { align: 'center', width: contentWidth }
+        );
         currentY += 12;
         
+        doc.font('Helvetica').fontSize(7).fillColor('#4b5563');
         if (isQuote) {
-            doc.font('Helvetica').fontSize(7);
-            doc.text('* Precios sujetos a cambios sin previo aviso.', startX, currentY, { align: 'center', width: contentWidth });
-            currentY += 10;
-            doc.text('* La disponibilidad de stock no está garantizada.', startX, currentY, { align: 'center', width: contentWidth });
+            doc.text('* Precios sujetos a cambios sin previo aviso.', { align: 'center', width: contentWidth });
+            doc.text('* Stock no garantizado hasta la compra.', { align: 'center', width: contentWidth });
         } else {
-            doc.font('Helvetica').fontSize(7).text('Este ticket no es válido para fines tributarios.', startX, currentY, { align: 'center', width: contentWidth });
-            currentY += 10;
-            doc.text('Conserve su ticket para cualquier cambio.', startX, currentY, { align: 'center', width: contentWidth });
+            doc.text('Este ticket no es válido para fines tributarios.', { align: 'center', width: contentWidth });
+            doc.text('Conserve su ticket para cambios o garantías.', { align: 'center', width: contentWidth });
         }
         
         currentY += 15;
-        doc.font('Helvetica-Bold').fontSize(8).text('www.gophone.pe', { align: 'center', width: contentWidth });
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000').text('www.gophone.pe', { align: 'center', width: contentWidth });
 
         doc.end();
     });

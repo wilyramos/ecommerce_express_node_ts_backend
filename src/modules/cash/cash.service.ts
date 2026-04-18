@@ -1,11 +1,22 @@
-import { Sale } from '../../models/Sale';
+/* File: backend/src/modules/cash/cash.service.ts 
+    @Author: whramos 
+    @Description: Logic for managing cash shifts, movements, and financial summaries.
+*/
+
+import { Sale, SaleStatus } from '../../models/Sale';
 import { CashShift, CashMovement } from './cash.model';
 
 export class CashService {
+  /**
+   * Retrieves the currently open shift, if any.
+   */
   async getActiveShift() {
     return await CashShift.findOne({ status: 'OPEN' }).populate('openedBy', 'nombre');
   }
 
+  /**
+   * Starts a new cash shift.
+   */
   async openShift(userId: string, initialBalance: number) {
     const existing = await this.getActiveShift();
     if (existing) throw new Error("A cash shift is already open.");
@@ -17,6 +28,9 @@ export class CashService {
     });
   }
 
+  /**
+   * Registers manual cash entries or withdrawals (Incomes/Expenses).
+   */
   async addMovement(shiftId: string, type: 'INCOME' | 'EXPENSE', amount: number, reason: string) {
     const shift = await CashShift.findById(shiftId);
     if (!shift || shift.status === 'CLOSED') throw new Error("Shift not found or already closed.");
@@ -26,19 +40,27 @@ export class CashService {
     if (type === 'INCOME') shift.totalIncomes += amount;
     else shift.totalExpenses += amount;
 
+    // Recalculate Expected Balance: Start + Sales + Incomes - Expenses
     shift.expectedBalance = shift.initialBalance + shift.totalSalesCash + shift.totalIncomes - shift.totalExpenses;
+
     return await shift.save();
   }
 
+  /**
+   * Internal hook to update cash balance when a sale is completed.
+   */
   async updateCashFromSale(amount: number) {
     const shift = await this.getActiveShift();
-    if (!shift) return; // Silent return if no cash control is active
+    if (!shift) return;
 
     shift.totalSalesCash += amount;
     shift.expectedBalance += amount;
     await shift.save();
   }
 
+  /**
+   * Finalizes the shift and registers the audit difference.
+   */
   async closeShift(shiftId: string, realBalance: number, userId: string, notes?: string) {
     const shift = await CashShift.findById(shiftId);
     if (!shift || shift.status === 'CLOSED') throw new Error("Shift is already closed.");
@@ -53,33 +75,46 @@ export class CashService {
     return await shift.save();
   }
 
+  /**
+   * COMPREHENSIVE SUMMARY FOR THE ARQUEO MODAL
+   * Fixed: Matches frontend Zod schema expectations.
+   */
   async getClosingSummary(shiftId: string) {
-    const shift = await CashShift.findById(shiftId);
+    // 1. Get Shift details with operator name
+    const shift = await CashShift.findById(shiftId).populate('openedBy', 'nombre');
     if (!shift) throw new Error("Turno de caja no encontrado.");
 
-    // Obtenemos todas las ventas vinculadas a este ID de turno
-    const sales = await Sale.find({ cashShiftId: shiftId });
+    // 2. Retrieve real sales (Exclude proformas/Quotes)
+    const sales = await Sale.find({
+      cashShiftId: shiftId,
+      status: { $ne: SaleStatus.QUOTE }
+    });
 
-    // Inicializamos el contador
-    const summary = {
+    // 3. Calculate financial totals
+    const calculatedTotal = sales.reduce((acc, sale) => acc + sale.totalPrice, 0);
+
+    // 4. Detailed payment method breakdown (Optional, but useful for Passthrough)
+    const breakdown = {
       CASH: 0,
       CARD: 0,
       YAPE: 0,
       PLIN: 0,
-      TRANSFER: 0,
-      total: 0,
-      count: sales.length
+      TRANSFER: 0
     };
 
-    // Sumamos los totales por cada método de pago
     sales.forEach(sale => {
-      const method = sale.paymentMethod as keyof typeof summary;
-      if (summary[method] !== undefined) {
-        summary[method] += sale.totalPrice;
+      const method = sale.paymentMethod as keyof typeof breakdown;
+      if (breakdown[method] !== undefined) {
+        breakdown[method] += sale.totalPrice;
       }
-      summary.total += sale.totalPrice;
     });
 
-    return summary;
+    // 5. Return precise structure for 'cashSummarySchema'
+    return {
+      shift,             // Required by Zod
+      calculatedTotal,   // Required by Zod
+      salesCount: sales.length, // Required by Zod
+      breakdown          // Extra info (allowed by .passthrough())
+    };
   }
 }

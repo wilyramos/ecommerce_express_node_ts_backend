@@ -38,14 +38,10 @@ const generateHr = (doc: PDFKit.PDFDocument, y: number) => {
 
 export const buildOrderReceipt = (doc: PDFKit.PDFDocument, order: IOrder, logoPath?: string) => {
     let currentY = 50;
-
-    // ==========================================
-    // 1. CABECERA
-    // ==========================================
     if (logoPath) {
         // En tu controller deberás pasar el path absoluto al logo, o remover esta condición si no lo usas.
         try {
-             doc.image(logoPath, 50, currentY, { width: 90 });
+             doc.image(logoPath, 60, currentY, { width: 100 });
         } catch (e) {
             console.warn("No se pudo cargar el logo en el PDF");
         }
@@ -207,9 +203,6 @@ export const buildOrderReceipt = (doc: PDFKit.PDFDocument, order: IOrder, logoPa
        .text("TOTAL:", summaryX, currentY + 50, { width: 90, align: "right" })
        .text(formatCurrency(order.totalPrice, order.currency), summaryValueX, currentY + 50, { width: 90, align: "right" });
 
-    // ==========================================
-    // 5. FOOTER
-    // ==========================================
     const footerY = doc.page.height - 80;
     doc.font("Helvetica-Oblique").fontSize(9).fillColor(COLORS.muted)
        .text("Este documento es un comprobante de orden de compra y no representa un documento válido para efectos tributarios.", 
