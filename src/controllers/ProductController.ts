@@ -681,7 +681,8 @@ export class ProductController {
             const product = await Product.findOne({ slug })
                 .populate('categoria', 'nombre slug')
                 .populate('brand', 'nombre slug')
-                .populate('line', 'nombre slug');
+                .populate('line', 'nombre slug')
+                .populate('complementarios', 'nombre precio imagenes slug');
 
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
@@ -715,10 +716,11 @@ export class ProductController {
                 diasEnvio,
                 variants,
                 isFrontPage,
-                line
+                line,
+                complementarios
             } = req.body;
 
-            console.log('Updating product with data:', req.body);
+            console.log('complentario llego:', req.body.complementarios);
 
             const productId = req.params.id;
             const existingProduct = await Product.findById(productId);
@@ -840,6 +842,7 @@ export class ProductController {
             existingProduct.isActive = isActive ?? existingProduct.isActive;
             existingProduct.isFrontPage = isFrontPage ?? existingProduct.isFrontPage;
             existingProduct.line = line ?? existingProduct.line;
+            existingProduct.complementarios = complementarios ?? existingProduct.complementarios;
 
             await existingProduct.save();
 

@@ -46,6 +46,7 @@ export interface IProduct extends Document {
     fechaDisponibilidad?: Date;
     variants?: IVariant[];
     isFrontPage?: boolean;
+    complementarios?: (mongoose.Types.ObjectId | PopulatedDoc<IProduct>)[]; // Array de referencias a otros productos
 }
 
 // --- Sub-schema de especificación ---
@@ -120,6 +121,12 @@ const productSchema = new Schema<IProduct>(
         fechaDisponibilidad: { type: Date },
 
         variants: { type: [variantSchema], default: [] },
+        complementarios: [
+            {
+                type: Schema.Types.ObjectId,
+                ref: 'Product'
+            }
+        ],
     },
     { timestamps: true }
 );
@@ -127,6 +134,7 @@ const productSchema = new Schema<IProduct>(
 // Índices útiles
 productSchema.index({ 'variants.sku': 1 });
 productSchema.index({ productLine: 1 });
+productSchema.index({ complementarios: 1 });
 // productSchema.index({ slug: 1 });
 
 export default mongoose.model<IProduct>('Product', productSchema);

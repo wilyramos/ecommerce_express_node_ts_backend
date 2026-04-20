@@ -114,4 +114,40 @@ export class ProductService {
     async deleteProduct(id: string) {
         return await Product.findByIdAndDelete(id);
     }
+
+    async getProductsByIds(ids: string[]) {
+
+
+        const products = await Product.find({ _id: { $in: ids } })
+            .populate('categoria', 'nombre')
+            .populate('brand', 'nombre')
+            .lean();
+        
+        console.log("Productos encontrados por IDs: ", products);
+
+        return products;
+    }
+
+    async searchProducts(query: string) {
+        const filter: FilterQuery<any> = {};
+
+        if (query) {
+            filter.$or = [
+                { nombre: { $regex: query, $options: 'i' } },
+                { sku: { $regex: query, $options: 'i' } },
+                { barcode: { $regex: query, $options: 'i' } },
+                { slug: { $regex: query, $options: 'i' } },
+                { 'variants.sku': { $regex: query, $options: 'i' } },
+                { 'variants.barcode': { $regex: query, $options: 'i' } }
+            ];
+        }
+
+        console.log("Filtro de búsqueda:", filter);
+
+        return await Product.find(filter)
+            .populate('categoria', 'nombre')
+            .populate('brand', 'nombre')
+            .lean();
+
+    }
 }

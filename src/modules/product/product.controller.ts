@@ -109,3 +109,31 @@ export const deleteProduct: RequestHandler = async (req, res) => {
         res.status(400).json({ success: false, message: error.message });
     }
 };
+
+export const getBatchByIds: RequestHandler = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.some((id: any) => typeof id !== 'string')) {
+            res.status(400).json({ success: false, message: 'IDs deben ser un array de strings' });
+            return;
+        }
+
+        const products = await productService.getProductsByIds(ids);
+        res.status(200).json({ success: true, products });
+    } catch (error: any) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+export const searchProducts: RequestHandler = async (req, res) => {
+    try {
+        const { q } = req.query;
+        const products = await productService.searchProducts(q as string);
+        console.log("Controller Search Query:", q, "Results:", products);
+        res.status(200).json({ success: true, products });
+    } catch (error: any) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+}
+   
+            
