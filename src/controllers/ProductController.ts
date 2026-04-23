@@ -16,17 +16,7 @@ import { getCategoryFamilyIds } from '../services/category.service';
 export class ProductController {
     static async createProduct(req: Request, res: Response) {
         try {
-            const {
-                nombre,
-                descripcion,
-                precio,
-                precioComparativo,
-                costo,
-                imagenes,
-                categoria,
-                stock,
-                sku,
-                barcode,
+            const { nombre, descripcion, precio, precioComparativo, costo, imagenes, categoria, stock, sku, barcode,
                 esDestacado,
                 esNuevo,
                 isActive,
@@ -37,6 +27,12 @@ export class ProductController {
                 variants,
                 isFrontPage,
                 line,
+                tags,
+                weight,
+                dimensions,
+                metaTitle,
+                metaDescription,
+                complementarios,
             } = req.body;
 
             const [selectedCategory, hasChildren] = await Promise.all([
@@ -49,8 +45,7 @@ export class ProductController {
                 return;
             }
 
-            if (hasChildren) {
-                res.status(400).json({
+            if (hasChildren) { res.status(400).json({
                     message: 'No se puede crear un producto en una categoría que tiene subcategorías'
                 });
                 return;
@@ -73,6 +68,38 @@ export class ProductController {
 
             if (precioComparativo && Number(precioComparativo) < Number(precio)) {
                 res.status(400).json({ message: 'El precio comparativo no puede ser menor al precio' });
+                return;
+            }
+
+            if (tags && !Array.isArray(tags)) {
+                res.status(400).json({ message: 'Tags deben ser un array' });
+                return;
+            }
+
+            if (weight && Number(weight) < 0) {
+                res.status(400).json({ message: 'El peso no puede ser negativo' });
+                return;
+            }
+
+            if (dimensions) {
+                const { length, width, height } = dimensions;
+                if (
+                    (length && length < 0) ||
+                    (width && width < 0) ||
+                    (height && height < 0)
+                ) {
+                    res.status(400).json({ message: 'Las dimensiones no pueden ser negativas' });
+                    return;
+                }
+            }
+
+            if (metaTitle && metaTitle.length > 60) {
+                res.status(400).json({ message: 'El metaTitle no puede superar los 60 caracteres' });
+                return;
+            }
+
+            if (metaDescription && metaDescription.length > 160) {
+                res.status(400).json({ message: 'La metaDescription no puede superar los 160 caracteres' });
                 return;
             }
 
@@ -143,7 +170,13 @@ export class ProductController {
                 diasEnvio: dias,
                 variants: preparedVariants,
                 isFrontPage,
-                line
+                line,
+                tags: tags ?? [],
+                weight: weight ? Number(weight) : undefined,
+                dimensions: dimensions ?? undefined,
+                metaTitle: metaTitle ?? undefined,
+                metaDescription: metaDescription ?? undefined,
+                complementarios: complementarios ?? [],
             };
 
             const product = new Product(newProduct);

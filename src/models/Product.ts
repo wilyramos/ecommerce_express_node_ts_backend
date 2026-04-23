@@ -47,6 +47,18 @@ export interface IProduct extends Document {
     variants?: IVariant[];
     isFrontPage?: boolean;
     complementarios?: (mongoose.Types.ObjectId | PopulatedDoc<IProduct>)[]; // Array de referencias a otros productos
+    tags?: string[];
+    weight?: number;
+    dimensions?: {
+        length: number;
+        width: number;
+        height: number;
+    };
+    metaTitle?: string;
+    metaDescription?: string;
+    rating: number;
+    numReviews: number;
+    deletedAt?: Date;
 }
 
 // --- Sub-schema de especificación ---
@@ -70,7 +82,6 @@ const variantSchema = new Schema<IVariant>(
         barcode: { type: String, trim: true },
         imagenes: { type: [String], default: [] },
 
-        // Corrección: usar Map para validación + estabilidad
         atributos: {
             type: Map,
             of: String,
@@ -93,10 +104,9 @@ const productSchema = new Schema<IProduct>(
         costo: { type: Number, min: 0, default: 0 },
         imagenes: { type: [String], default: [] },
         categoria: { type: Types.ObjectId, ref: 'Category', required: true },
-        brand: { 
-            type: Types.ObjectId, 
+        brand: {
+            type: Types.ObjectId,
             ref: 'Brand',
-            
         },
         line: {
             type: Schema.Types.ObjectId,
@@ -127,14 +137,28 @@ const productSchema = new Schema<IProduct>(
                 ref: 'Product'
             }
         ],
+        tags: { type: [String], default: [], index: true },
+        weight: { type: Number, min: 0 },
+        dimensions: {
+            length: { type: Number, min: 0 },
+            width: { type: Number, min: 0 },
+            height: { type: Number, min: 0 }
+        },
+        metaTitle: { type: String, trim: true, maxlength: 60 },
+        metaDescription: { type: String, trim: true, maxlength: 160 },
+        rating: { type: Number, min: 0, max: 5, default: 0 },
+        numReviews: { type: Number, default: 0, min: 0 },
+        deletedAt: { type: Date, default: null }
     },
+
     { timestamps: true }
 );
 
 // Índices útiles
 productSchema.index({ 'variants.sku': 1 });
-productSchema.index({ productLine: 1 });
-productSchema.index({ complementarios: 1 });
-// productSchema.index({ slug: 1 });
+productSchema.index({ categoria: 1 });
+productSchema.index({ isActive: 1 });
+productSchema.index({ sku: 1 });
+productSchema.index({ barcode: 1 });
 
 export default mongoose.model<IProduct>('Product', productSchema);

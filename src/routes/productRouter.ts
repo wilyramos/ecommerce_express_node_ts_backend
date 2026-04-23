@@ -106,6 +106,7 @@ router.post(
     ProductController.createProduct
 );
 
+// todo: generar un nuevo create con validacione y validar con el middleware
 
 router.get('/', 
     authenticate,
