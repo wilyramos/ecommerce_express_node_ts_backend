@@ -45,7 +45,8 @@ export class ProductController {
                 return;
             }
 
-            if (hasChildren) { res.status(400).json({
+            if (hasChildren) {
+                res.status(400).json({
                     message: 'No se puede crear un producto en una categoría que tiene subcategorías'
                 });
                 return;
@@ -1929,12 +1930,13 @@ export class ProductController {
             // 1. RESOLVER CONTEXTO
             const context = await ProductController.resolveContext(slugArray);
 
-            // =================================================================
-            // FASE 1: CONSTRUCCIÓN DEL PIPELINE BASE
-            // =================================================================
             const pipeline: any[] = [];
 
-            // A. ETAPA $SEARCH (Búsqueda Inteligente)
+            // =================================================================
+            // FASE 1: BÚSQUEDA Y FILTROS
+            // =================================================================
+
+            // A. ETAPA $SEARCH (Atlas Search)
             if (query && query.trim() !== "") {
                 pipeline.push({
                     $search: {
@@ -1951,28 +1953,19 @@ export class ProductController {
                 });
             }
 
-            // B. ETAPA $MATCH (Filtros Estrictos)
+            // B. ETAPA $MATCH
             const matchStage: any = { isActive: true };
 
-            // ---------------------------------------------------------
-            // 🔥 MODIFICACIÓN CLAVE: Lógica de Familia de Categorías
-            // ---------------------------------------------------------
             if (context.category) {
                 const rootId = context.category._id.toString();
-
-                // Obtenemos array de IDs (pueden venir mezclados string/objectid)
                 const rawFamilyIds = await getCategoryFamilyIds(rootId);
-
-                // Para que el aggregate funcione, TODOS deben ser ObjectId
                 const familyObjectIds = rawFamilyIds.map((id: any) => new Types.ObjectId(id));
-
                 matchStage.categoria = { $in: familyObjectIds };
             }
 
             if (context.brand) matchStage.brand = context.brand._id;
             if (context.line) matchStage.line = context.line._id;
 
-            // Rango de Precios
             if (priceRange) {
                 const [min, max] = priceRange.split('-').map(Number);
                 if (!isNaN(min) && !isNaN(max)) {
@@ -1983,7 +1976,6 @@ export class ProductController {
                 }
             }
 
-            // Filtros de Atributos
             const attrConditions: any[] = [];
             const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceRange', 'query'];
 
@@ -1991,7 +1983,6 @@ export class ProductController {
                 if (reservedKeys.includes(key)) return;
                 const rawVal = attributeFilters[key];
                 const values = Array.isArray(rawVal) ? rawVal : [rawVal];
-
                 if (values.length > 0) {
                     attrConditions.push({
                         $or: [
@@ -2002,63 +1993,74 @@ export class ProductController {
                 }
             });
 
-            if (attrConditions.length > 0) {
-                matchStage.$and = attrConditions;
-            }
+            if (attrConditions.length > 0) matchStage.$and = attrConditions;
 
-            // Agregamos el Match al pipeline
             pipeline.push({ $match: matchStage });
 
             // =================================================================
-            // FASE 2: DEFINICIÓN DE ORDENAMIENTO
+            // FASE 2: CAMPOS CALCULADOS PARA ORDENAMIENTO
             // =================================================================
+            pipeline.push({
+                $addFields: {
+                    // Cálculo de descuento absoluto para el sort 'discount'
+                    discountAmount: {
+                        $cond: [
+                            { $and: [{ $gt: ["$precioComparativo", 0] }, { $gt: ["$precioComparativo", "$precio"] }] },
+                            { $subtract: ["$precioComparativo", "$precio"] },
+                            0
+                        ]
+                    },
+                    // Mantenemos el score de búsqueda si existe
+                    searchScore: { $meta: "searchScore" }
+                }
+            });
 
+            // =================================================================
+            // FASE 3: DEFINICIÓN DE LÓGICA DE ORDENAMIENTO
+            // =================================================================
             let sortStage: any = {};
 
-            if (sort) {
-                switch (sort) {
-                    case 'price-asc': sortStage = { precio: 1 }; break;
-                    case 'price-desc': sortStage = { precio: -1 }; break;
-                    case 'name-asc': sortStage = { nombre: 1 }; break;
-                    case 'recientes': sortStage = { createdAt: -1 }; break;
-                    case 'ventas': sortStage = { totalVentas: -1 }; break;
-                    default: sortStage = { esDestacado: -1, stock: -1 };
-                }
-            } else if (query && query.trim() !== "") {
-                sortStage = { unused: { $meta: "searchScore" } };
-            } else {
-                sortStage = { esDestacado: -1, createdAt: -1 };
+            switch (sort) {
+                case 'relevancia':
+                    // Si hay query usa score, si no, usa destacados
+                    sortStage = query ? { searchScore: -1 } : { esDestacado: -1, createdAt: -1 };
+                    break;
+                case 'recientes':
+                    sortStage = { createdAt: -1 };
+                    break;
+                case 'rating':
+                    sortStage = { rating: -1, numReviews: -1 };
+                    break;
+                case 'discount':
+                    sortStage = { discountAmount: -1 };
+                    break;
+                case 'price-asc':
+                    sortStage = { precio: 1 };
+                    break;
+                case 'price-desc':
+                    sortStage = { precio: -1 };
+                    break;
+                case 'name-asc':
+                    sortStage = { nombre: 1 };
+                    break;
+                default:
+                    // Orden por defecto: Destacados y luego más recientes
+                    sortStage = { esDestacado: -1, createdAt: -1 };
             }
 
             // =================================================================
-            // FASE 3: FACETAS (RESULTADOS + FILTROS)
+            // FASE 4: FACETAS
             // =================================================================
-
             pipeline.push({
                 $facet: {
-                    // A. PRODUCTOS PAGINADOS
                     products: [
-                        ...(sortStage.unused
-                            ? [{ $sort: { score: { $meta: "searchScore" } } }]
-                            : [{ $sort: sortStage }]
-                        ),
+                        { $sort: sortStage },
                         { $skip: skip },
                         { $limit: limitNum },
                         { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
                         { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                        {
-                            $addFields: {
-                                lineObjectId: { $toObjectId: "$line" }
-                            }
-                        },
-                        {
-                            $lookup: {
-                                from: 'lines',
-                                localField: 'lineObjectId',
-                                foreignField: '_id',
-                                as: 'line'
-                            }
-                        },
+                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
+                        { $lookup: { from: 'lines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
                         { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
                         {
                             $project: {
@@ -2066,19 +2068,12 @@ export class ProductController {
                                 imagenes: 1, stock: 1, atributos: 1, variants: 1,
                                 brand: { nombre: 1, slug: 1 },
                                 line: { nombre: 1, slug: 1 },
-                                categoria: 1,
-                                esDestacado: 1,
-                                score: { $meta: "searchScore" }
+                                categoria: 1, esDestacado: 1, esNuevo: 1,
+                                rating: 1, numReviews: 1, discountAmount: 1
                             }
                         }
                     ],
-
-                    // B. CONTEO TOTAL
-                    totalCount: [
-                        { $count: 'count' }
-                    ],
-
-                    // C. FILTROS DISPONIBLES
+                    totalCount: [{ $count: 'count' }],
                     brands: [
                         { $group: { _id: "$brand" } },
                         { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
@@ -2086,17 +2081,15 @@ export class ProductController {
                         { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
                         { $sort: { nombre: 1 } }
                     ],
-
                     lines: [
                         { $match: { line: { $exists: true, $ne: null } } },
                         { $group: { _id: "$line" } },
-                        { $addFields: { lineIdObj: { $toObjectId: "$_id" } } },
-                        { $lookup: { from: "lines", localField: "lineIdObj", foreignField: "_id", as: "l" } },
+                        { $addFields: { lObj: { $toObjectId: "$_id" } } },
+                        { $lookup: { from: "lines", localField: "lObj", foreignField: "_id", as: "l" } },
                         { $unwind: "$l" },
                         { $project: { id: "$l._id", nombre: "$l.nombre", slug: "$l.slug" } },
                         { $sort: { nombre: 1 } }
                     ],
-
                     categories: [
                         { $group: { _id: "$categoria" } },
                         { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "c" } },
@@ -2104,7 +2097,6 @@ export class ProductController {
                         { $project: { id: "$c._id", nombre: "$c.nombre", slug: "$c.slug" } },
                         { $sort: { nombre: 1 } }
                     ],
-
                     atributos: [
                         {
                             $project: {
@@ -2118,137 +2110,8 @@ export class ProductController {
                         },
                         { $unwind: "$allAttrs" },
                         { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
-                        { $project: { name: "$_id", values: 1, _id: 0 } },
-                        { $sort: { name: 1 } }
+                        { $project: { name: "$_id", values: 1, _id: 0 } }
                     ],
-
-                    price: [
-                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
-                    ]
-                }
-            });
-
-            // 4. EJECUCIÓN
-            const result = await Product.aggregate(pipeline);
-            const data = result[0];
-
-            // 5. RESPUESTA
-            const totalProducts = data.totalCount[0]?.count || 0;
-            let finalProducts = data.products;
-            let isFallback = false;
-
-            // Fallback
-            if (totalProducts === 0 && pageNum === 1) {
-                isFallback = true;
-                finalProducts = await Product.find({ isActive: true })
-                    .sort({ esDestacado: -1, createdAt: -1 })
-                    .limit(4)
-                    .populate('brand', 'nombre slug')
-                    .populate('line', 'nombre slug');
-            }
-
-            res.status(200).json({
-                products: finalProducts,
-                pagination: {
-                    currentPage: pageNum,
-                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
-                    totalItems: isFallback ? 0 : totalProducts
-                },
-                filters: {
-                    brands: data.brands || [],
-                    lines: data.lines || [],
-                    categories: data.categories || [],
-                    atributos: data.atributos || [],
-                    price: data.price || []
-                },
-                context: {
-                    categoryName: context.category ? (context.category as any).nombre : null,
-                    brandName: context.brand ? (context.brand as any).nombre : null,
-                    lineName: context.line ? (context.line as any).nombre : null,
-                    searchQuery: query || null
-                },
-                isFallback
-            });
-
-        } catch (error: any) {
-            console.error("Error en ProductController:", error);
-            res.status(500).json({ message: error.message || "Error resolving catalog" });
-        }
-    }
-
-
-    // CONTROLADOR DE NOVEDADES (New Arrivals)
-    static async getNewArrivals(req: Request, res: Response) {
-        try {
-            const { page, limit, sort, ...attributeFilters } = req.query as any;
-
-            const pageNum = Math.max(1, parseInt(page || "1", 10));
-            const limitNum = Math.max(1, parseInt(limit || "24", 10));
-            const skip = (pageNum - 1) * limitNum;
-
-            // 1. DEFINIR "NOVEDAD"
-            // Un producto es nuevo si tiene el flag 'esNuevo' activado
-            // O si fue creado en los últimos 45 días.
-            const daysAgo = new Date();
-            daysAgo.setDate(daysAgo.getDate() - 45);
-
-            const pipeline: any[] = [];
-
-            // 2. FILTRO MAESTRO (MATCH)
-            const matchStage: any = {
-                isActive: true,
-                $or: [
-                    { esNuevo: true },
-                    { createdAt: { $gte: daysAgo } }
-                ]
-            };
-
-            // Aplicar filtros dinámicos (si el usuario filtra por marca dentro de Novedades)
-            // (Reutiliza la lógica de attributeFilters de tus otros controladores aquí si deseas)
-            // ...
-
-            pipeline.push({ $match: matchStage });
-
-            // 3. ORDENAMIENTO (Siempre lo más nuevo primero por defecto)
-            let sortStage: any = { createdAt: -1 };
-
-            if (sort === 'price-asc') sortStage = { precio: 1 };
-            if (sort === 'price-desc') sortStage = { precio: -1 };
-            // Si el usuario pide 'relevancia', en novedades la relevancia ES la fecha
-
-            // 4. FACETAS (Reutilizamos la estructura estándar para compatibilidad con CatalogLayout)
-            pipeline.push({
-                $facet: {
-                    products: [
-                        { $sort: sortStage },
-                        { $skip: skip },
-                        { $limit: limitNum },
-                        // ... (Mismos Lookups que en getCatalogBySlugs: brands, lines, etc.)
-                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
-                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
-                        { $lookup: { from: 'lines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
-                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
-                        {
-                            $project: {
-                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
-                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
-                                brand: { nombre: 1, slug: 1 },
-                                line: { nombre: 1, slug: 1 },
-                                categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1
-                            }
-                        }
-                    ],
-                    totalCount: [{ $count: 'count' }],
-                    // Facetas simplificadas para Novedades
-                    brands: [
-                        { $group: { _id: "$brand" } },
-                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
-                        { $unwind: "$b" },
-                        { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
-                        { $sort: { nombre: 1 } }
-                    ],
-                    // ... (Agrega lines, categories, price si lo necesitas)
                     price: [
                         { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
                     ]
@@ -2268,10 +2131,188 @@ export class ProductController {
                 },
                 filters: {
                     brands: data.brands || [],
-                    lines: [], // Puedes completarlo si quieres filtros completos en novedades
-                    categories: [],
-                    atributos: [],
+                    lines: data.lines || [],
+                    categories: data.categories || [],
+                    atributos: data.atributos || [],
                     price: data.price || []
+                },
+                context: {
+                    categoryName: context.category ? (context.category as any).nombre : null,
+                    brandName: context.brand ? (context.brand as any).nombre : null,
+                    lineName: context.line ? (context.line as any).nombre : null,
+                    searchQuery: query || null
+                },
+                isFallback: false
+            });
+
+        } catch (error: any) {
+            console.error("Error en getCatalogBySlugs:", error);
+            res.status(500).json({ message: error.message });
+        }
+    }
+
+    // CONTROLADOR DE NOVEDADES (New Arrivals)
+    // CONTROLADOR DE NOVEDADES (New Arrivals)
+    static async getNewArrivals(req: Request, res: Response) {
+        try {
+            const { page, limit, sort, priceRange, ...attributeFilters } = req.query as any;
+
+            const pageNum = Math.max(1, parseInt(page || "1", 10));
+            const limitNum = Math.max(1, parseInt(limit || "24", 10));
+            const skip = (pageNum - 1) * limitNum;
+
+            // 1. DEFINIR "NOVEDAD"
+            const daysAgo = new Date();
+            daysAgo.setDate(daysAgo.getDate() - 45);
+
+            const pipeline: any[] = [];
+
+            // 2. FILTRO MAESTRO (MATCH)
+            const matchStage: any = {
+                isActive: true,
+                $or: [
+                    { esNuevo: true },
+                    { createdAt: { $gte: daysAgo } }
+                ]
+            };
+
+            // --- Filtro de Rango de Precio ---
+            if (priceRange) {
+                const [min, max] = priceRange.split('-').map(Number);
+                if (!isNaN(min) && !isNaN(max)) {
+                    matchStage.$and = matchStage.$and || [];
+                    matchStage.$and.push({
+                        $or: [
+                            { precio: { $gte: min, $lte: max } },
+                            { "variants.precio": { $gte: min, $lte: max } }
+                        ]
+                    });
+                }
+            }
+
+            // --- Filtros de Atributos Dinámicos ---
+            const attrConditions: any[] = [];
+            const reservedKeys = ['limit', 'page', 'sort', 'priceRange'];
+
+            Object.keys(attributeFilters).forEach((key) => {
+                if (reservedKeys.includes(key)) return;
+                const rawVal = attributeFilters[key];
+                const values = Array.isArray(rawVal) ? rawVal : [rawVal];
+
+                if (values.length > 0) {
+                    attrConditions.push({
+                        $or: [
+                            { [`atributos.${key}`]: { $in: values } },
+                            { "variants.atributos": { $elemMatch: { [key]: { $in: values } } } }
+                        ]
+                    });
+                }
+            });
+
+            if (attrConditions.length > 0) {
+                matchStage.$and = matchStage.$and || [];
+                matchStage.$and.push(...attrConditions);
+            }
+
+            pipeline.push({ $match: matchStage });
+
+            // 3. ORDENAMIENTO
+            let sortStage: any = { createdAt: -1 };
+            if (sort === 'price-asc') sortStage = { precio: 1 };
+            if (sort === 'price-desc') sortStage = { precio: -1 };
+
+            // 4. FACETAS (Estructura para CatalogResponseSchema)
+            pipeline.push({
+                $facet: {
+                    products: [
+                        { $sort: sortStage },
+                        { $skip: skip },
+                        { $limit: limitNum },
+                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                        { $lookup: { from: 'productlines', localField: 'line', foreignField: '_id', as: 'line' } },
+                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+                        {
+                            $project: {
+                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
+                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
+                                brand: { nombre: 1, slug: 1 },
+                                line: { nombre: 1, slug: 1 },
+                                categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1
+                            }
+                        }
+                    ],
+                    totalCount: [{ $count: 'count' }],
+                    brands: [
+                        { $group: { _id: "$brand" } },
+                        { $match: { _id: { $ne: null } } },
+                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
+                        { $unwind: "$b" },
+                        { $project: { id: { $toString: "$b._id" }, nombre: "$b.nombre", slug: "$b.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    lines: [
+                        { $group: { _id: "$line" } },
+                        { $match: { _id: { $ne: null } } },
+                        { $lookup: { from: "productlines", localField: "_id", foreignField: "_id", as: "l" } },
+                        { $unwind: "$l" },
+                        { $project: { id: { $toString: "$l._id" }, nombre: "$l.nombre", slug: "$l.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    categories: [
+                        { $group: { _id: "$categoria" } },
+                        { $match: { _id: { $ne: null } } },
+                        { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "c" } },
+                        { $unwind: "$c" },
+                        { $project: { id: { $toString: "$c._id" }, nombre: "$c.nombre", slug: "$c.slug" } },
+                        { $sort: { nombre: 1 } }
+                    ],
+                    atributos: [
+                        {
+                            $project: {
+                                allAttrs: {
+                                    $concatArrays: [
+                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
+                                        {
+                                            $reduce: {
+                                                input: { $ifNull: ["$variants", []] },
+                                                initialValue: [],
+                                                in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        { $unwind: "$allAttrs" },
+                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
+                        { $project: { name: "$_id", values: 1, _id: 0 } },
+                        { $sort: { name: 1 } }
+                    ],
+                    priceRangeFacet: [
+                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
+                    ]
+                }
+            });
+
+            const result = await Product.aggregate(pipeline);
+            const data = result[0];
+            const totalProducts = data.totalCount[0]?.count || 0;
+
+            // Formatear respuesta según CatalogResponseSchema
+            res.status(200).json({
+                products: data.products,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
+                    totalItems: totalProducts
+                },
+                filters: {
+                    brands: data.brands || [],
+                    lines: data.lines || [],
+                    categories: data.categories || [],
+                    atributos: data.atributos || [],
+                    price: data.priceRangeFacet[0] ? [{ min: data.priceRangeFacet[0].min, max: data.priceRangeFacet[0].max }] : []
                 },
                 context: {
                     categoryName: "Lo Último",

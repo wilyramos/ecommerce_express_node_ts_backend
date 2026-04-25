@@ -43,7 +43,7 @@ export interface IProduct extends Document {
     atributos?: Record<string, string>;
     especificaciones?: ISpecification[];
     diasEnvio?: number;
-    fechaDisponibilidad?: Date;
+    fechaDisponibilidad?: Date; // TODO: falta en el frontend, agregar a forms y validaciones
     variants?: IVariant[];
     isFrontPage?: boolean;
     complementarios?: (mongoose.Types.ObjectId | PopulatedDoc<IProduct>)[]; // Array de referencias a otros productos
