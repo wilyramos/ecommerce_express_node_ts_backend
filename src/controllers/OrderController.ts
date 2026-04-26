@@ -8,14 +8,38 @@ import { buildOrderReceipt } from '../templates/saleReceipt.template';
 import { PdfService } from '../services/pdf.service';
 import { buildShippingLabel } from '../templates/shippingLabel.template';
 
+
+
+// En OrderController.ts
+
+// Definir junto al controlador o en un archivo de constantes
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.AWAITING_PAYMENT]: [OrderStatus.PROCESSING, OrderStatus.CANCELED],
-    [OrderStatus.PROCESSING]: [OrderStatus.SHIPPED, OrderStatus.CANCELED, OrderStatus.PAID_BUT_OUT_OF_STOCK],
-    [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+    [OrderStatus.AWAITING_PAYMENT]: [
+        OrderStatus.PROCESSING,
+        OrderStatus.CANCELED,
+        OrderStatus.PAID_BUT_OUT_OF_STOCK
+    ],
+    [OrderStatus.PROCESSING]: [
+        OrderStatus.SHIPPED,
+        OrderStatus.CANCELED
+    ],
+    [OrderStatus.SHIPPED]: [
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED
+    ],
     [OrderStatus.DELIVERED]: [],
     [OrderStatus.CANCELED]: [],
-    [OrderStatus.PAID_BUT_OUT_OF_STOCK]: [OrderStatus.PROCESSING, OrderStatus.CANCELED]
+    [OrderStatus.PAID_BUT_OUT_OF_STOCK]: [
+        OrderStatus.PROCESSING,
+        OrderStatus.CANCELED
+    ],
 };
+
+const STATUSES_WITH_DEDUCTED_STOCK: OrderStatus[] = [
+    OrderStatus.PROCESSING,
+    OrderStatus.SHIPPED,
+    OrderStatus.PAID_BUT_OUT_OF_STOCK,
+];
 
 export class OrderController {
 
@@ -47,33 +71,38 @@ export class OrderController {
                 return;
             }
 
-            // Obtener productos desde DB
+            // Deduplicar productos por ID para optimizar consulta
             const productIds = items.map(i => i.productId);
-            const dbProducts = await Product.find({ _id: { $in: productIds } }).session(session);
+            const uniqueProductIds = [...new Set(productIds)];
+            const dbProducts = await Product.find({ _id: { $in: uniqueProductIds } }).session(session);
 
-            if (dbProducts.length !== items.length) {
+            if (dbProducts.length !== uniqueProductIds.length) {
                 res.status(400).json({ message: 'Uno o más productos no existen' });
                 return;
             }
 
+            // Normalizar IDs de variantes inválidos del frontend
+            const normalizeVariantId = (id: string | undefined | null): string | undefined =>
+                (!id || id === '$undefined' || id === 'undefined') ? undefined : id;
+
             let calculatedSubtotal = 0;
             const orderItems: any[] = [];
-
-            console.log("Validating order items...", items);
 
             for (const item of items) {
                 const dbProduct = dbProducts.find(p => p._id.toString() === item.productId);
                 if (!dbProduct) continue;
+
+                const variantId = normalizeVariantId(item.variantId);
 
                 let finalPrice = dbProduct.precio || 0;
                 let nombre = dbProduct.nombre;
                 let imagen: string | undefined;
                 let variantAttributes: Record<string, string> = {};
 
-                // Si es variante
-                if (item.variantId) {
-                    const variant = dbProduct.variants?.find(v => v._id.toString() === item.variantId);
+                if (variantId) {
+                    const variant = dbProduct.variants?.find(v => v._id!.toString() === variantId);
                     if (!variant) {
+                        await session.abortTransaction();
                         res.status(400).json({
                             message: `La variante seleccionada para "${dbProduct.nombre}" no existe`
                         });
@@ -81,50 +110,43 @@ export class OrderController {
                     }
 
                     finalPrice = variant.precio ?? dbProduct.precio ?? 0;
-                    nombre = `${dbProduct.nombre} ${variant.nombre ?? ''}`;
+                    nombre = `${dbProduct.nombre} ${variant.nombre ?? ''}`.trim();
                     imagen = variant.imagenes?.[0] || dbProduct.imagenes?.[0];
 
-                    // Conversión segura de atributos
-
                     try {
-                        if (variant.atributos) {
-                            console.log("Variant attributes (raw):", variant.atributos);
-                            // Convertimos a objeto plano JS puro, eliminando metadatos de Mongoose
-                            const cleanAttributes = JSON.parse(JSON.stringify(variant.atributos));
-                            console.log("Variant attributes:", cleanAttributes);
-                            variantAttributes = cleanAttributes;
-                        } else {
-                            variantAttributes = {};
-                        }
-                    } catch (e) {
+                        variantAttributes = variant.atributos
+                            ? JSON.parse(JSON.stringify(variant.atributos))
+                            : {};
+                    } catch {
                         variantAttributes = {};
                     }
 
-                    // Validar stock de la variante
                     if ((variant.stock ?? 0) < item.quantity) {
+                        await session.abortTransaction();
                         res.status(400).json({
-                            message: `No hay suficiente stock para "${nombre}". Disponible: ${variant.stock}`
+                            message: `Stock insuficiente para "${nombre}". Disponible: ${variant.stock}`
                         });
                         return;
                     }
+
 
                 } else {
-                    // Producto simple
                     imagen = dbProduct.imagenes?.[0];
 
-                    // Validar stock del producto simple
                     if ((dbProduct.stock ?? 0) < item.quantity) {
+                        await session.abortTransaction();
                         res.status(400).json({
-                            message: `No hay suficiente stock para "${nombre}". Disponible: ${dbProduct.stock}`
+                            message: `Stock insuficiente para "${nombre}". Disponible: ${dbProduct.stock}`
                         });
                         return;
                     }
+
                 }
 
-                // Validar precio enviado por frontend
                 if (item.price !== finalPrice) {
+                    await session.abortTransaction();
                     res.status(400).json({
-                        message: `El precio del producto "${nombre}" ha cambiado`
+                        message: `El precio de "${nombre}" ha cambiado. Por favor recarga la página.`
                     });
                     return;
                 }
@@ -133,7 +155,7 @@ export class OrderController {
 
                 orderItems.push({
                     productId: dbProduct._id,
-                    variantId: item.variantId,
+                    variantId: variantId ?? undefined,
                     variantAttributes,
                     quantity: item.quantity,
                     price: finalPrice,
@@ -142,18 +164,18 @@ export class OrderController {
                 });
             }
 
-            // Validar subtotal y total
             if (calculatedSubtotal !== subtotal) {
+                await session.abortTransaction();
                 res.status(400).json({ message: 'El subtotal no coincide' });
                 return;
             }
 
             if (subtotal + shippingCost !== totalPrice) {
+                await session.abortTransaction();
                 res.status(400).json({ message: 'El total no coincide' });
                 return;
             }
 
-            // Generar número de orden único
             const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
             const newOrder = await Order.create([{
@@ -185,13 +207,11 @@ export class OrderController {
                 message: 'Orden creada exitosamente',
                 order: newOrder[0]
             });
-            return;
 
         } catch (error) {
             await session.abortTransaction();
             console.error('Error al crear la orden:', error);
             res.status(500).json({ message: 'Error al crear la orden' });
-            return;
         } finally {
             session.endSession();
         }
@@ -614,7 +634,7 @@ export class OrderController {
         }
     }
 
-    // En OrderController.ts
+
 
     static async updateOrderStatus(req: Request, res: Response) {
         const session = await mongoose.startSession();
@@ -624,7 +644,6 @@ export class OrderController {
             const { id } = req.params;
             const { status: newStatus } = req.body as { status: OrderStatus };
 
-            // 1. Buscar la orden
             const order = await Order.findById(id).session(session);
             if (!order) {
                 await session.abortTransaction();
@@ -634,8 +653,7 @@ export class OrderController {
 
             const currentStatus = order.status;
 
-            // 2. Validar transición lógica
-            if (!ALLOWED_TRANSITIONS[currentStatus].includes(newStatus)) {
+            if (!ALLOWED_TRANSITIONS[currentStatus]?.includes(newStatus)) {
                 await session.abortTransaction();
                 res.status(400).json({
                     message: `Transición no permitida: de ${currentStatus} a ${newStatus}`
@@ -643,29 +661,24 @@ export class OrderController {
                 return;
             }
 
-            // 3. Lógica de Negocio: Manejo de Stock mediante OrderService
-
-            // CASO A: Se cancela una orden que YA tenía stock descontado
-            const statusesWithDeductedStock = [OrderStatus.PROCESSING, OrderStatus.SHIPPED];
-            if (newStatus === OrderStatus.CANCELED && statusesWithDeductedStock.includes(currentStatus)) {
+            // CASO A: Cancelación — restaurar stock si ya fue descontado
+            if (newStatus === OrderStatus.CANCELED && STATUSES_WITH_DEDUCTED_STOCK.includes(currentStatus)) {
                 console.log(`[Stock] Restaurando inventario para orden: ${order.orderNumber}`);
                 await OrderService.adjustStock(order.items, 'restore', session);
             }
 
-            // CASO B: Aprobación manual (De pendiente a procesamiento)
-            // Esto ocurre si el admin confirma un pago manualmente fuera de los webhooks
-            if (currentStatus === OrderStatus.AWAITING_PAYMENT && newStatus === OrderStatus.PROCESSING) {
-                console.log(`[Stock] Descontando inventario (Aprobación Manual): ${order.orderNumber}`);
-                await OrderService.adjustStock(order.items, 'deduct', session);
-            }
+            // CASO B: ELIMINADO — createOrder ya descuenta stock al crear la orden
+            // AWAITING_PAYMENT → PROCESSING no requiere ajuste de stock adicional
 
-            // CASO C: De Sin Stock a Procesamiento (El admin repuso inventario y quiere procesar la orden pagada)
+            // CASO C: PAID_BUT_OUT_OF_STOCK → PROCESSING
+            // El admin repuso inventario manualmente en DB, ahora confirma la orden
+            // Solo descontar si el stock fue previamente restaurado al entrar en este estado
+            // (depende de tu flujo de webhook — ver nota abajo)
             if (currentStatus === OrderStatus.PAID_BUT_OUT_OF_STOCK && newStatus === OrderStatus.PROCESSING) {
-                console.log(`[Stock] Intentando descontar stock tras reposición: ${order.orderNumber}`);
+                console.log(`[Stock] Descontando stock tras reposición: ${order.orderNumber}`);
                 await OrderService.adjustStock(order.items, 'deduct', session);
             }
 
-            // 4. Actualizar la orden
             order.status = newStatus;
             order.statusHistory.push({
                 status: newStatus,
@@ -673,8 +686,6 @@ export class OrderController {
             });
 
             await order.save({ session });
-
-            // 5. Confirmar cambios
             await session.commitTransaction();
 
             res.status(200).json({
@@ -683,10 +694,8 @@ export class OrderController {
             });
 
         } catch (error: any) {
-            // Si algo falla, revertimos todos los cambios (incluyendo los del service)
             await session.abortTransaction();
             console.error('Error al actualizar estado de la orden:', error);
-
             res.status(500).json({
                 message: 'Error interno al procesar el cambio de estado',
                 error: error.message
@@ -695,6 +704,7 @@ export class OrderController {
             session.endSession();
         }
     }
+
     static async generateOrderPDF(req: Request, res: Response) {
         try {
             const { id } = req.params;
