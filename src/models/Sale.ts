@@ -241,7 +241,6 @@ saleSchema.pre<ISale>("save", async function (next) {
 saleSchema.index({ cashShiftId: 1 });
 saleSchema.index({ customer: 1 });
 saleSchema.index({ employee: 1 });
-saleSchema.index({ receiptNumber: 1 }, { unique: true });
 saleSchema.index({ createdAt: -1 });
 
 export const Sale = mongoose.model<ISale>('Sale', saleSchema);

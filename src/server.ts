@@ -25,6 +25,7 @@ import productRouterV2 from './modules/product/product.routes'
 import saleRouterV2 from './modules/sale/sale.routes'
 import cashRouter from './modules/cash/cash.routes'
 import reportRouter from './modules/reports/report.routes'
+import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 
 // OPENAPI swagger //TODO: finish it
 
@@ -42,7 +43,7 @@ app.use(express.json())
 // Cors
 app.use(cors({
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
@@ -56,6 +57,7 @@ app.use('/api/products/v2', productRouterV2)
 app.use('/api/sales/v2', saleRouterV2)
 app.use('/api/cash/v2', cashRouter)
 app.use('/api/reports/v2', reportRouter)
+app.use('/api/slider-banners', sliderBannerRouter)
 
 // Routers
 app.use('/api/auth', authRouter)
@@ -68,11 +70,11 @@ app.use('/api/orders', orderRouter)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/sales', saleRouter)
 app.use('/api/lines', lineRouter)
-app.use('/api/webhooks', 
+app.use('/api/webhooks',
     express.urlencoded({ extended: true }),
     webhookRouter
 ),
-app.use('/api/purchases', purchaseRouter)
+    app.use('/api/purchases', purchaseRouter)
 
 //
 
