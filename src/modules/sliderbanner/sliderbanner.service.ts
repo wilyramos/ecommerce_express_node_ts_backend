@@ -105,7 +105,7 @@ export class SliderBannerService {
                 !(val instanceof Date)
             ) {
                 const nested = this.sanitize(val);
-                if (Object.keys(nested).length > 0) clean[key] = nested;
+                clean[key] = nested;
             } else {
                 clean[key] = val;
             }
