@@ -11,9 +11,25 @@ export type SliderLayout =
 
 export type SliderTheme = 'dark' | 'light' | 'custom';
 export type SliderContentType = 'product' | 'brand' | 'category' | 'campaign' | 'custom';
+
+// SINCRONIZADO: Incluye todos los border styles disponibles en ImageBorder.tsx
 export type SliderBorderStyle =
-    | 'none' | 'simple' | 'double' | 'rounded-top' | 'rounded-all'
-    | 'dashed' | 'dotted' | 'double-corner' | 'thick-solid';
+    | 'none'
+    | 'curved-frame'
+    | 'simple'
+    | 'double'
+    | 'rounded-top'
+    | 'rounded-all'
+    | 'dashed'
+    | 'dotted'
+    | 'double-corner'
+    | 'floating'
+    | 'film-frame'
+    | 'asymmetric'
+    | 'glass-effect'
+    | 'neon-glow'
+    | 'minimal-frame'
+    | 'diagonal-cut';
 
 export interface ISliderPrice {
     current?: number;
@@ -74,6 +90,25 @@ export interface ISliderBanner extends Document {
     };
 }
 
+const borderStylesEnum = [
+    'none',
+    'curved-frame',
+    'simple',
+    'double',
+    'rounded-top',
+    'rounded-all',
+    'dashed',
+    'dotted',
+    'double-corner',
+    'floating',
+    'film-frame',
+    'asymmetric',
+    'glass-effect',
+    'neon-glow',
+    'minimal-frame',
+    'diagonal-cut',
+] as const;
+
 const sliderBannerSchema = new Schema<ISliderBanner>({
     contentType: {
         type: String,
@@ -97,7 +132,7 @@ const sliderBannerSchema = new Schema<ISliderBanner>({
         currency: { type: String, default: 'S/' },
         border: {
             type: String,
-            enum: ['none', 'simple', 'double', 'rounded-top', 'rounded-all', 'dashed', 'dotted', 'double-corner', 'thick-solid'],
+            enum: borderStylesEnum,
             default: 'none',
         },
     },
@@ -112,7 +147,7 @@ const sliderBannerSchema = new Schema<ISliderBanner>({
         objectFit: { type: String, enum: ['contain', 'cover', 'fill'], default: 'cover' },
         border: {
             type: String,
-            enum: ['none', 'simple', 'double', 'rounded-top', 'rounded-all', 'dashed', 'dotted', 'double-corner', 'thick-solid'],
+            enum: borderStylesEnum,
             default: 'none',
         },
     },
@@ -120,9 +155,11 @@ const sliderBannerSchema = new Schema<ISliderBanner>({
     design: {
         layout: {
             type: String,
-            enum: ['default', 'image-left', 'image-center', 'image-center-split',
+            enum: [
+                'default', 'image-left', 'image-center', 'image-center-split',
                 'background-media', 'promo-box', 'fullbleed', 'split-diagonal',
-                'minimal', 'countdown', 'video'],
+                'minimal', 'countdown', 'video'
+            ],
             default: 'default',
         },
         theme: { type: String, enum: ['dark', 'light', 'custom'], default: 'dark' },
