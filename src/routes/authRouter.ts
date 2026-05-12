@@ -1,3 +1,4 @@
+//File: backend/src/routes/authRouter.ts
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { AuthController } from '../controllers/AuthController';

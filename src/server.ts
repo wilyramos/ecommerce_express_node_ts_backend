@@ -1,3 +1,5 @@
+//File: src/server.ts
+
 import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
@@ -27,9 +29,7 @@ import cashRouter from './modules/cash/cash.routes'
 import reportRouter from './modules/reports/report.routes'
 import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 
-// OPENAPI swagger //TODO: finish it
-
-// Connect to MongoDB
+import setupSwagger from './config/swagger.config'
 
 dotenv.config()
 
@@ -50,6 +50,8 @@ app.use(cors({
 app.get('/', (req, res) => {
     res.send('API is running...')
 })
+
+setupSwagger(app)
 
 
 // Version 2.0: Refactor to use controllers and services for products and sales
@@ -81,5 +83,7 @@ app.use('/api/webhooks',
 
 // Middleware global for error handling 
 app.use(globalErrorHandler);
+
+
 
 export default app

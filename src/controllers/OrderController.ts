@@ -220,45 +220,64 @@ export class OrderController {
     // Trear todas las orders para el administrador
     static async getOrders(req: Request, res: Response) {
         try {
-
-            // TODO: query
             const page = parseInt(req.query.page as string) || 1;
             let limit = parseInt(req.query.limit as string) || 10;
             const pedido = req.query.pedido as string || '';
             const fecha = req.query.fecha as string || '';
+            const fechaFin = req.query.fechaFin as string || '';
             const estadoPago = req.query.estadoPago as string || '';
             const estadoEnvio = req.query.estadoEnvio as string || '';
-
-            console.log({ page, limit, pedido, fecha, estadoPago, estadoEnvio });
+            const usuario = req.query.usuario as string || '';
+            const montoMin = req.query.montoMin as string || '';
+            const montoMax = req.query.montoMax as string || '';
 
             if (limit > 50) {
-                limit = 50; // Limitar a un máximo de 50
+                limit = 50;
             }
+
             const skip = (page - 1) * limit;
             const searchConditions: any = {};
 
-            if (pedido) {
-                searchConditions.$or = [
-                    { orderNumber: { $regex: pedido, $options: "i" } },
-                ];
+            // Filtro por número de pedido
+            if (pedido?.trim()) {
+                searchConditions.orderNumber = { $regex: pedido, $options: "i" };
             }
 
+            // Filtro por rango de fechas
             if (fecha) {
-                searchConditions.createdAt = { $gte: new Date(fecha), $lt: new Date(fecha + 'T23:59:59') };
+                const startDate = new Date(fecha);
+                const endDate = new Date(fechaFin || fecha);
+                endDate.setHours(23, 59, 59, 999);
+                searchConditions.createdAt = { $gte: startDate, $lte: endDate };
             }
 
+            // Filtro por estado de pago
             if (estadoPago) {
                 searchConditions['payment.status'] = estadoPago;
             }
 
+            // Filtro por estado de envío
             if (estadoEnvio) {
                 searchConditions.status = estadoEnvio;
             }
 
+            // Filtro por rango de monto
+            if (montoMin || montoMax) {
+                searchConditions.totalPrice = {};
+                if (montoMin) {
+                    searchConditions.totalPrice.$gte = parseFloat(montoMin);
+                }
+                if (montoMax) {
+                    searchConditions.totalPrice.$lte = parseFloat(montoMax);
+                }
+            }
+
             const orders = await Order.find(searchConditions)
-                .sort({ createdAt: -1 }) // Ordenar
+                .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
+                // .populate('user', 'nombre email')
+                // .populate('items.productId', 'nombre');
 
             const totalOrders = await Order.countDocuments(searchConditions);
 
@@ -270,12 +289,10 @@ export class OrderController {
             });
 
         } catch (error) {
-            // console.error(error);
+            console.error('Error fetching orders:', error);
             res.status(500).json({ message: 'Error al obtener las órdenes' });
-            return;
         }
     }
-
     static async getOrdersByUser(req: Request, res: Response) {
         try {
 
