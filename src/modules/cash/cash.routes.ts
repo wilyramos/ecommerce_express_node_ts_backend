@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getStatus, open, close, addMovement, getSummary } from './cash.controller';
+import { getStatus, open, close, addMovement, getSummary, getMovements } from './cash.controller';
 
 const router = Router();
 
@@ -9,4 +9,6 @@ router.post('/movement', addMovement);
 router.post('/close', close);
 
 router.get('/summary/:shiftId', getSummary);
+
+router.get('/movements/:shiftId', getMovements);
 export default router;

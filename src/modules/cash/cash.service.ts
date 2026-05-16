@@ -117,4 +117,11 @@ export class CashService {
       breakdown          // Extra info (allowed by .passthrough())
     };
   }
+
+  /**
+ * Retrieves all manual movements for a specific shift.
+ */
+async getMovements(shiftId: string) {
+  return await CashMovement.find({ shiftId }).sort({ createdAt: -1 });
+}
 }

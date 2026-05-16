@@ -143,33 +143,73 @@ export class SaleService {
     /**
      * QUERIES DE HISTORIAL
      */
-    // Actualizar el método getSaleHistory
-async getSaleHistory(page: number = 1, limit: number = 10, search?: string) {
-    const skip = (page - 1) * limit;
-    
-    // Construir filtro de búsqueda opcional (por número de comprobante)
-    const query: any = { status: { $ne: SaleStatus.QUOTE } };
-    if (search) {
-        query.receiptNumber = { $regex: search, $options: 'i' };
+    async getSaleHistory(filters: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        startDate?: string;
+        endDate?: string;
+        status?: string;
+        cashShiftId?: string;
+    }) {
+        const {
+            page = 1,
+            limit = 10,
+            search,
+            startDate,
+            endDate,
+            status,
+            cashShiftId
+        } = filters;
+
+        const skip = (page - 1) * limit;
+
+        // Filtro base: Excluir proformas del historial de ventas real
+        const query: any = { status: { $ne: SaleStatus.QUOTE } };
+
+        // Filtro por búsqueda global (Número, Cliente o Documento)
+        if (search) {
+            query.$or = [
+                { receiptNumber: { $regex: search, $options: 'i' } },
+                { "customerSnapshot.nombre": { $regex: search, $options: 'i' } },
+                { "customerSnapshot.numeroDocumento": { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        // Filtro por Rango de Fechas
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                query.createdAt.$lte = end;
+            }
+        }
+
+        // Filtro por Estado (COMPLETED, REFUNDED, etc.)
+        if (status) query.status = status;
+
+        // Filtro por Turno de Caja (Útil para ver ventas de un arqueo específico)
+        if (cashShiftId) query.cashShiftId = new Types.ObjectId(cashShiftId);
+
+        const [sales, total] = await Promise.all([
+            Sale.find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate('employee', 'nombre')
+                .populate('customer', 'nombre'),
+            Sale.countDocuments(query)
+        ]);
+
+        return {
+            sales,
+            total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page
+        };
     }
-
-    const [sales, total] = await Promise.all([
-        Sale.find(query)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .populate('employee', 'nombre')
-            .populate('customer', 'nombre'),
-        Sale.countDocuments(query)
-    ]);
-
-    return {
-        sales,
-        total,
-        totalPages: Math.ceil(total / limit),
-        currentPage: page
-    };
-}
 
     async getQuotes() {
         return await Sale.find({ status: SaleStatus.QUOTE })
@@ -204,7 +244,7 @@ async getSaleHistory(page: number = 1, limit: number = 10, search?: string) {
             // 2. AJUSTAR CAJA (Solo si la venta fue en CASH y la caja sigue abierta)
             if (sale.paymentMethod === PaymentMethod.CASH) {
                 const activeShift = await CashShift.findById(sale.cashShiftId).session(session);
-                
+
                 // Si la caja del turno original sigue abierta, restamos directamente
                 if (activeShift && activeShift.status === 'OPEN') {
                     activeShift.totalSalesCash -= sale.totalPrice;

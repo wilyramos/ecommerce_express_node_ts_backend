@@ -226,7 +226,7 @@ export class PaymentsController {
             const data = await culqiResponse.json();
 
             if (!culqiResponse.ok) {
-                console.error("❌ Error de Culqi:", data);
+                console.error("Error de Culqi:", data);
                 res.status(culqiResponse.status).json({
                     status: "error",
                     message: data.user_message || "El pago no pudo ser procesado",
@@ -235,7 +235,7 @@ export class PaymentsController {
                 return;
             }
 
-            console.log("✅ Culqi OK:", data);
+            console.log(" Culqi OK:", data);
             res.status(200).json({
                 status: "success",
                 message: "Pago procesado exitosamente",
@@ -243,13 +243,12 @@ export class PaymentsController {
             });
             return;
         } catch (error) {
-            console.error("💥 Error interno:", error);
+            console.error("Error interno:", error);
             res.status(500).json({ message: "Error interno del servidor", error: (error as Error).message });
             return;
         }
     }
 
-    // Agrega esto dentro de la clase PaymentsController
 
     static async processPaymentYape(req: Request, res: Response) {
         try {
@@ -260,27 +259,70 @@ export class PaymentsController {
                 return;
             }
 
+            // 1. Buscamos la orden y al usuario simultáneamente para obtener toda la metadata
+            const [user, order] = await Promise.all([
+                User.findOne({ email: payer.email.toLowerCase() }),
+                Order.findById(orderId)
+            ]);
+
+            if (!user || !order) {
+                res.status(404).json({ message: 'Usuario u Orden no encontrados' });
+                return;
+            }
+
             const paymentData = {
                 transaction_amount: Number(transaction_amount),
                 token: token,
-                description: description || `Pago de orden ${orderId}`,
+                description: description || `Pago de orden ${order.orderNumber || orderId}`,
                 installments: 1,
                 payment_method_id: 'yape',
+                // binary_mode: true asegura que la respuesta de aprobación sea instantánea 
+                binary_mode: true,
+                // statement_descriptor aparece en el resumen de la tarjeta del cliente 
+                statement_descriptor: "GOPHONE.PE",
+                // mapeo de items
+                items: order.items.map((item) => ({
+                    id: item.productId.toString(), // [cite: 37-38]
+                    title: item.nombre, // [cite: 42-43]
+                    description: item.nombre, // [cite: 34-35]
+                    category_id: "electronics", // Categoría recomendada para tecnología 
+                    quantity: item.quantity, // [cite: 40-41]
+                    unit_price: item.price // [cite: 45-46]
+                })),
+
+                // 3. Información extendida del Payer [cite: 16, 17-30]
                 payer: {
-                    email: payer.email
+                    email: user.email, // [cite: 17-18]
+                    first_name: user.nombre, // [cite: 20-21]
+                    last_name: user.apellidos || "", // [cite: 26-27]
+                    identification: {
+                        type: user.tipoDocumento || "DNI", // [cite: 23-24]
+                        number: user.numeroDocumento || "00000000" // [cite: 23-24]
+                    },
+                    phone: {
+                        number: user.telefono || "" // [cite: 29-30]
+                    },
+                    // Se utiliza la dirección de envío como referencia para el motor de fraude [cite: 14-15]
+                    address: {
+                        zip_code: "",
+                        street_name: order.shippingAddress.direccion,
+                        street_number: ""
+                    }
                 },
-                external_reference: orderId, // ← NECESARIO PARA QUE EL WEBHOOK SEPA A QUÉ ORDEN PERTENECE
-                notification_url: process.env.MP_NOTIFICATION_URL, // ← NECESARIO PARA QUE EL WEBHOOK SE EJECUTE
+
+                // 4. Conciliación y Webhooks [cite: 51, 55-56, 63-64]
+                external_reference: orderId,
+                notification_url: process.env.MP_NOTIFICATION_URL,
                 metadata: {
-                    order_id: orderId // opcional, no se usa
+                    order_id: orderId
                 }
             };
 
-            console.log("🚀 Procesando pago Yape:", paymentData);
+            console.log("Procesando pago Yape homologado:", paymentData);
 
             const response = await payment.create({ body: paymentData });
 
-            console.log("✅ Pago Yape respuesta:", response);
+            console.log("Respuesta Mercado Pago:", response);
 
             res.status(200).json({
                 status: response.status,
@@ -289,7 +331,7 @@ export class PaymentsController {
             });
 
         } catch (error: any) {
-            console.error('❌ Error procesando pago Yape:', error);
+            console.error('Error procesando pago Yape:', error);
             res.status(500).json({
                 message: 'Error al procesar el pago con Yape',
                 error: error.message || error

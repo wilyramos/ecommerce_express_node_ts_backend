@@ -40,6 +40,29 @@ export const createQuote: RequestHandler = async (req, res) => {
     }
 };
 
+export const getSales: RequestHandler = async (req, res) => {
+    try {
+        const filters = {
+            page: parseInt(req.query.page as string) || 1,
+            limit: parseInt(req.query.limit as string) || 10,
+            search: req.query.search as string,
+            startDate: req.query.startDate as string,
+            endDate: req.query.endDate as string,
+            status: req.query.status as string,
+            cashShiftId: req.query.cashShiftId as string,
+        };
+
+        const result = await saleService.getSaleHistory(filters);
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error: unknown) {
+        res.status(500).json({ success: false, message: 'Error al obtener historial' });
+    }
+};
+
 /**
  * CONVERTIR PROFORMA A VENTA REAL
  */
@@ -69,20 +92,32 @@ export const convertQuote: RequestHandler = async (req, res) => {
 /**
  * OBTENER LISTADO DE VENTAS Y PROFORMAS
  */
-export const getSales: RequestHandler = async (req, res) => {
+export const exportSalesReport: RequestHandler = async (req, res) => {
     try {
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 10;
-        const search = req.query.search as string;
-
-        const result = await saleService.getSaleHistory(page, limit, search);
-        
-        res.status(200).json({ 
-            success: true, 
-            ...result 
+        // Reutilizamos la lógica de filtros pero sin paginación
+        const salesData = await saleService.getSaleHistory({
+            ...req.query,
+            limit: 5000, // Límite razonable para un reporte
+            page: 1
         });
-    } catch (error: unknown) {
-        res.status(500).json({ success: false, message: 'Error al obtener historial' });
+
+        const sales = salesData.sales;
+
+        // Cabeceras del CSV
+        let csv = 'Fecha,Comprobante,Cliente,Documento,Metodo,Total,Estado\n';
+
+        sales.forEach((s: any) => {
+            const fecha = s.createdAt.toISOString().split('T')[0];
+            const cliente = s.customerSnapshot?.nombre || 'Cliente Varios';
+            const doc = s.customerSnapshot?.numeroDocumento || '-';
+            csv += `${fecha},${s.receiptNumber},${cliente},${doc},${s.paymentMethod},${s.totalPrice},${s.status}\n`;
+        });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=reporte-ventas.csv');
+        res.status(200).send(csv);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al exportar reporte' });
     }
 };
 
@@ -129,13 +164,28 @@ export const refundSale: RequestHandler = async (req, res) => {
         const { reason } = req.body;
 
         const refundedSale = await saleService.refundSale(id, reason || 'Anulación de venta');
-        
+
         res.status(200).json({
             success: true,
             message: 'Venta anulada y stock restablecido',
             sale: refundedSale
         });
     } catch (error: any) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+export const getById: RequestHandler = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const sale = await saleService.getSaleById(id);
+        if (!sale) {
+            res.status(404).json({ success: false, message: 'Venta no encontrada' });
+            return;
+        }
+        res.status(200).json({ success: true, sale });
+    }
+    catch (error: any) {
         res.status(400).json({ success: false, message: error.message });
     }
 };

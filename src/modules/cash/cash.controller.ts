@@ -81,3 +81,18 @@ export const getSummary: RequestHandler = async (req, res) => {
         res.status(500).json({ success: false, message });
     }
 };
+
+export const getMovements: RequestHandler = async (req, res) => {
+    try {
+        const { shiftId } = req.params;
+        if (!shiftId) {
+            res.status(400).json({ success: false, message: "ID de turno requerido" });
+            return;
+        }
+        const movements = await cashService.getMovements(shiftId);
+        res.status(200).json({ success: true, movements });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Error al obtener movimientos';
+        res.status(500).json({ success: false, message });
+    }
+};

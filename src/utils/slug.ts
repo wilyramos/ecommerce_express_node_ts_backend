@@ -1,3 +1,5 @@
+//File: slug.ts
+
 import slugify from "slugify";
 import Product from "../models/Product";
 

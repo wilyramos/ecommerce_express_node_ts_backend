@@ -1,29 +1,28 @@
 import { Router } from 'express';
 import {
     processSale,
+    getSales,
     createQuote,
     convertQuote,
-    getSales,
     getQuotes,
     downloadTicket,
-    refundSale
+    refundSale,
+    exportSalesReport,
+    getById
 } from './sale.controller';
 
 const router = Router();
 
-/**
- * BASE URL: /api/sales/v2
- */
-
 // --- OPERACIONES DE VENTA ---
 router.post('/', processSale);           // Crear venta real
-router.get('/', getSales);               // Listado de historial de ventas
-router.get('/:id/ticket', downloadTicket); // Generar PDF (Venta o Proforma)
-
+router.get('/', getSales);               // <-- Faltaba esta ruta para el listado/filtros
+router.get('/export', exportSalesReport); // Reporte CSV
+router.get('/:id/ticket', downloadTicket); // PDF
+router.get('/:id', getById);
 // --- OPERACIONES DE PROFORMAS ---
-router.post('/quote', createQuote);       // Guardar presupuesto
-router.get('/quotes', getQuotes);         // Listar proformas pendientes
-router.post('/:id/convert', convertQuote); // El "Botón Mágico"
-router.post('/:id/refund', refundSale); // Endpoint para devoluciones
+router.post('/quote', createQuote);
+router.get('/quotes', getQuotes);
+router.post('/:id/convert', convertQuote);
+router.post('/:id/refund', refundSale);
 
 export default router;
