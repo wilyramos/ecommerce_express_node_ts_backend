@@ -31,6 +31,7 @@ import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 
 import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
+import comparisonRouter from './modules/comparison/comparison.router'
 
 dotenv.config()
 
@@ -61,8 +62,8 @@ app.use('/api/sales/v2', saleRouterV2)
 app.use('/api/cash/v2', cashRouter)
 app.use('/api/reports/v2', reportRouter)
 app.use('/api/slider-banners', sliderBannerRouter)
-app.use('/api/collections', collectionRouter) // Agregado router para colecciones
-
+app.use('/api/collections', collectionRouter)
+app.use('/api/comparisons', comparisonRouter)
 // Routers
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
