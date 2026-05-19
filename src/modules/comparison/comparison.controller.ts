@@ -1,12 +1,9 @@
-// File: backend/src/controllers/comparison.controller.ts
-
 import { Request, Response, NextFunction } from 'express';
 import { ComparisonService } from './comparison.service';
 
 export class ComparisonController {
     /**
      * POST /api/comparisons
-     * Crea una nueva comparativa.
      */
     static async create(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
@@ -22,7 +19,6 @@ export class ComparisonController {
 
     /**
      * GET /api/comparisons
-     * Obtiene el listado de comparativas paginado y filtrado.
      */
     static async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
@@ -37,9 +33,14 @@ export class ComparisonController {
             };
 
             const result = await ComparisonService.getAll(filters);
+
+            // CORRECCIÓN: Encapsulamos la información en la propiedad 'data' para el frontend
             res.status(200).json({
                 status: 'success',
-                ...result
+                data: result.comparisons,
+                total: result.total,
+                page: result.page,
+                pages: result.pages
             });
         } catch (error) {
             next(error);
@@ -48,12 +49,10 @@ export class ComparisonController {
 
     /**
      * GET /api/comparisons/slug/:slug
-     * Obtiene una comparativa específica por su slug.
      */
     static async getBySlug(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { slug } = req.params;
-            // Si viene de una ruta de administración, permite ver inactivas pasando ?isPublic=false
             const isPublic = req.query.isPublic !== 'false';
 
             const comparison = await ComparisonService.getBySlug(slug, isPublic);
@@ -66,6 +65,9 @@ export class ComparisonController {
         }
     }
 
+    /**
+     * GET /api/comparisons/:id
+     */
     static async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { id } = req.params;
@@ -81,7 +83,6 @@ export class ComparisonController {
 
     /**
      * PUT /api/comparisons/:id
-     * Actualiza una comparativa existente.
      */
     static async update(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
@@ -98,7 +99,6 @@ export class ComparisonController {
 
     /**
      * DELETE /api/comparisons/:id
-     * Aplica borrado lógico a una comparativa.
      */
     static async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
@@ -115,7 +115,6 @@ export class ComparisonController {
 
     /**
      * GET /api/comparisons/product/:productId
-     * Obtiene comparativas relacionadas a un producto específico para SEO interno.
      */
     static async getRelatedToProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {

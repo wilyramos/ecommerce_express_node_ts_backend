@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import slugify from 'slugify';
+import mongoose from 'mongoose';
 import Category from '../models/Category';
 import Product from '../models/Product';
 import { v4 as uuid } from 'uuid';
@@ -8,52 +9,36 @@ import cloudinary from '../config/cloudinary';
 export class CategoryController {
     static async createCategory(req: Request, res: Response) {
         try {
-            let { nombre, descripcion, parent, attributes, image, isActive } = req.body;
-
-            console.log("Attributes received:", attributes);
+            let { nombre, descripcion, parent, attributes, image, isActive, order } = req.body;
 
             if (parent === "null" || parent === "" || parent === undefined) {
                 parent = null;
             }
+
             const slug = slugify(nombre, { lower: true, strict: true });
 
-            const existing = await Category.findOne({ slug });
+            const existing = await Category.findOne({ slug, deletedAt: null });
             if (existing) {
-                res.status(400).json({ message: "La categoria ya existe" });
+                res.status(400).json({ message: "La categoría ya existe y se encuentra activa." });
                 return;
             }
 
             if (parent !== null) {
-                const parentExists = await Category.findById(parent);
+                if (!mongoose.Types.ObjectId.isValid(parent)) {
+                    res.status(400).json({ message: "El ID de la categoría padre no es válido." });
+                    return;
+                }
+                const parentExists = await Category.findOne({ _id: parent, deletedAt: null });
                 if (!parentExists) {
-                    res.status(400).json({ message: "La categoria padre no existe" });
+                    res.status(400).json({ message: "La categoría padre especificada no existe o fue eliminada." });
                     return;
                 }
             }
 
-
-            if (attributes) {
-                if (!Array.isArray(attributes)) {
-                    res.status(400).json({ message: "Los atributos deben ser un array" });
-                    return;
-                }
-
+            if (attributes && Array.isArray(attributes)) {
                 for (const attr of attributes) {
-                    if (
-                        !attr.name ||
-                        !Array.isArray(attr.values) ||
-                        attr.values.length === 0
-                    ) {
-                        res.status(400).json({
-                            message: "Cada atributo debe tener un nombre y al menos un valor"
-                        });
-                        return;
-                    }
-
-                    if (attr.isVariant !== undefined && typeof attr.isVariant !== "boolean") {
-                        res.status(400).json({
-                            message: "El campo isVariant debe ser boolean"
-                        });
+                    if (!attr.name || !Array.isArray(attr.values) || attr.values.length === 0) {
+                        res.status(400).json({ message: "Cada atributo debe tener un nombre y al menos un valor" });
                         return;
                     }
                 }
@@ -66,84 +51,115 @@ export class CategoryController {
                 parent: parent || null,
                 image,
                 isActive,
+                order: order ? Number(order) : 0, // ✅ Corrección: Persistir el orden de prioridad
                 attributes: attributes?.map(a => ({
                     name: a.name.trim(),
-                    values: a.values.map(v => v.trim()),
+                    values: a.values.map((v: string) => v.trim()),
                     isVariant: a.isVariant ?? false
                 }))
             });
 
             await newCategory.save();
-            res.status(201).json({ message: "Category created successfully" });
-
+            res.status(201).json({ message: "Categoría creada con éxito." });
         } catch (error) {
             console.error(error);
-            res.status(500).json({ message: "Error al crear la categoria" });
-            return;
+            res.status(500).json({ message: "Error al crear la categoría" });
         }
     }
 
     static async getCategories(req: Request, res: Response) {
         try {
-            const categories = await Category.find().select('_id nombre slug descripcion parent attributes variants image')
+            const categories = await Category.find({ deletedAt: null })
+                .select('_id nombre slug descripcion parent attributes image order isActive createdAt updatedAt')
                 .populate('parent', '_id nombre slug')
-                .sort({ createdAt: -1 });
-            // console.log('Categories:', categories);
+                .sort({ order: 1, createdAt: -1 });
             res.status(200).json(categories);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las categorias' });
-            return;
+            res.status(500).json({ message: 'Error al obtener las categorías' });
         }
     }
+
     static async getCategoryById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const category = await Category.findById(id)
-                .select('_id nombre slug descripcion parent attributes variants image isActive')
-                .populate('parent', '_id nombre slug');
-            if (!category) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
+
+            // ✅ Corrección: Validar formato del parámetro ID
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ message: 'El ID provisto no tiene un formato válido' });
                 return;
             }
 
-            // console.log('Category:', category);
+            // ✅ Corrección: Añadidos 'createdAt' y 'updatedAt' al .select()
+            const category = await Category.findOne({ _id: id, deletedAt: null })
+                .select('_id nombre slug descripcion parent attributes image isActive createdAt updatedAt')
+                .populate('parent', '_id nombre slug');
+
+            if (!category) {
+                res.status(404).json({ message: 'Categoría no encontrada o eliminada' });
+                return;
+            }
             res.status(200).json(category);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener la categoria', error });
-            return;
+            res.status(500).json({ message: 'Error al obtener la categoría' });
         }
     }
 
     static async getCategoryBySlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
-            const category = await Category.findOne({ slug })
-                .select('_id nombre slug descripcion parent attributes image isActive')
+
+            // ✅ Corrección: Añadidos 'createdAt' y 'updatedAt' al .select()
+            const category = await Category.findOne({ slug, deletedAt: null })
+                .select('_id nombre slug descripcion parent attributes image isActive createdAt updatedAt')
                 .populate('parent', '_id nombre slug');
 
             if (!category) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
+                res.status(404).json({ message: 'Categoría no encontrada' });
                 return;
             }
             res.status(200).json(category);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener la categoria', error });
-            return;
+            res.status(500).json({ message: 'Error al obtener la categoría' });
         }
     }
 
     static async updateCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            let { nombre, descripcion, parent, attributes, image, isActive } = req.body;
 
-            console.log("Attributes received:", attributes.isVariant);
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ message: 'El ID de la categoría a actualizar no es válido' });
+                return;
+            }
+
+            // ✅ Corrección: Extraer 'order' del req.body
+            let { nombre, descripcion, parent, attributes, image, isActive, order } = req.body;
 
             if (parent === "null" || parent === "" || parent === undefined) {
                 parent = null;
             }
 
-            const existing = await Category.findById(id);
+            if (parent !== null) {
+                if (!mongoose.Types.ObjectId.isValid(parent)) {
+                    res.status(400).json({ message: "El ID de la categoría padre no es válido" });
+                    return;
+                }
+                if (parent === id) {
+                    res.status(400).json({ message: "No se puede establecer una categoría como su propio padre" });
+                    return;
+                }
+                if (await CategoryController.isCyclical(id, parent)) {
+                    res.status(400).json({ message: "No se puede crear una relación circular de categorías" });
+                    return;
+                }
+                const parentExists = await Category.findOne({ _id: parent, deletedAt: null });
+                if (!parentExists) {
+                    res.status(400).json({ message: "La categoría padre no existe o está eliminada" });
+                    return;
+                }
+            }
+
+            const existing = await Category.findOne({ _id: id, deletedAt: null });
             if (!existing) {
                 res.status(404).json({ message: "Categoría no encontrada" });
                 return;
@@ -151,52 +167,10 @@ export class CategoryController {
 
             const slug = slugify(nombre, { lower: true, strict: true });
 
-            const existingSlug = await Category.findOne({ slug });
+            const existingSlug = await Category.findOne({ slug, deletedAt: null });
             if (existingSlug && existingSlug._id.toString() !== id) {
-                res.status(400).json({ message: "El slug ya existe" });
+                res.status(400).json({ message: "El slug ya se encuentra en uso por otra categoría activa" });
                 return;
-            }
-
-            if (parent !== null) {
-                if (parent === id) {
-                    res.status(400).json({
-                        message: "No se puede establecer una categoría como su propio padre"
-                    });
-                    return;
-                }
-
-                const parentExists = await Category.findById(parent);
-                if (!parentExists) {
-                    res.status(400).json({ message: "La categoría padre no existe" });
-                    return;
-                }
-            }
-
-            if (attributes) {
-                if (!Array.isArray(attributes)) {
-                    res.status(400).json({ message: "Los atributos deben ser un array" });
-                    return;
-                }
-
-                for (const attr of attributes) {
-                    if (
-                        !attr.name ||
-                        !Array.isArray(attr.values) ||
-                        attr.values.length === 0
-                    ) {
-                        res.status(400).json({
-                            message: "Cada atributo debe tener un nombre y al menos un valor"
-                        });
-                        return;
-                    }
-
-                    if (attr.isVariant !== undefined && typeof attr.isVariant !== "boolean") {
-                        res.status(400).json({
-                            message: "El campo isVariant debe ser boolean"
-                        });
-                        return;
-                    }
-                }
             }
 
             const updated = await Category.findByIdAndUpdate(
@@ -206,10 +180,11 @@ export class CategoryController {
                     descripcion,
                     slug,
                     parent,
+                    order: order !== undefined ? Number(order) : existing.order, // ✅ Corrección: Actualizar el orden
                     attributes: attributes
                         ? attributes.map(a => ({
                             name: a.name.trim(),
-                            values: a.values.map(v => v.trim()),
+                            values: a.values.map((v: string) => v.trim()),
                             isVariant: a.isVariant ?? false
                         }))
                         : existing.attributes,
@@ -219,137 +194,124 @@ export class CategoryController {
                 { new: true }
             );
 
-            if (!updated) {
-                res.status(404).json({ message: "Categoría no encontrada" });
-                return;
-            }
-
-            res.status(200).json({ message: "Categoría actualizada con éxito" });
+            res.status(200).json({ message: "Categoría actualizada con éxito", data: updated });
         } catch (error) {
             res.status(500).json({ message: "Error al actualizar la categoría" });
-            return;
         }
     }
 
+    private static async isCyclical(categoryId: string, parentId: string): Promise<boolean> {
+        let current: string | null = parentId;
+        const visited = new Set<string>();
+
+        while (current) {
+            if (current === categoryId || visited.has(current)) return true;
+            visited.add(current);
+            if (!mongoose.Types.ObjectId.isValid(current)) return false;
+            const cat = await Category.findOne({ _id: current, deletedAt: null });
+            current = cat?.parent ? cat.parent.toString() : null;
+        }
+        return false;
+    }
 
     static async deleteCategory(req: Request, res: Response) {
         try {
             const { id } = req.params;
 
-            const productWithCategory = await Product.countDocuments({ categoria: id });
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ message: 'El ID provisto no tiene un formato válido' });
+                return;
+            }
 
-            // verificar si la categoria existe
-            const existingCategory = await Category.findById(id);
+            const existingCategory = await Category.findOne({ _id: id, deletedAt: null });
             if (!existingCategory) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
+                res.status(404).json({ message: 'Categoría no encontrada o ya eliminada' });
                 return;
             }
 
-            // Verificar si la categoria tiene subcategorias
-            const categoryWithSubcategories = await Category.countDocuments({ parent: id });
-            if (categoryWithSubcategories > 0) {
-                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene subcategorias asociadas' });
+            const hasSubcategories = await Category.countDocuments({ parent: id, deletedAt: null });
+            if (hasSubcategories > 0) {
+                res.status(400).json({ message: 'No se puede eliminar la categoría porque tiene subcategorías asociadas' });
                 return;
             }
 
-            // Verificar si la categoria tiene productos asociados
-            if (productWithCategory > 0) {
-                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene productos asociados' });
+            const hasProducts = await Product.countDocuments({ categoria: id, deletedAt: null });
+            if (hasProducts > 0) {
+                res.status(400).json({ message: 'No se puede eliminar la categoría porque contiene productos activos vinculados' });
                 return;
             }
 
-
-            // Verificar si la categoria tiene subcategorias
-            const subcategories = await Category.countDocuments({ parent: id });
-            if (subcategories > 0) {
-                res.status(400).json({ message: 'No se puede eliminar la categoria porque tiene subcategorias asociadas' });
-                return;
-            }
-
-
-            const category = await Category.findByIdAndDelete(id);
-            if (!category) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
-                return;
-            }
-
-            res.status(200).json({ message: 'Categoria eliminada con exito' });
+            await Category.findByIdAndUpdate(id, { deletedAt: new Date(), isActive: false });
+            res.status(200).json({ message: 'Categoría eliminada con éxito' });
         } catch (error) {
-            // console.error(error);
-            res.status(500).json({ message: 'Error al eliminar la categoria' });
-            return;
+            res.status(500).json({ message: 'Error al eliminar la categoría' });
         }
     }
 
-    // Traer solo las categorias raiz
     static async getRootCategories(req: Request, res: Response) {
         try {
-
-            const rootCategories = await Category.find({ parent: null })
-                .select('_id nombre slug descripcion')
-                .sort({ createdAt: -1 });
+            // ✅ Corrección: Añadidos 'createdAt' y 'updatedAt' al .select()
+            const rootCategories = await Category.find({ parent: null, deletedAt: null })
+                .select('_id nombre slug descripcion order image createdAt updatedAt')
+                .sort({ order: 1, createdAt: -1 });
 
             if (rootCategories.length === 0) {
-                res.status(404).json({ message: 'No se encontraron categorias raiz' });
+                res.status(404).json({ message: 'No se encontraron categorías raíz' });
                 return;
             }
-
             res.status(200).json(rootCategories);
-
-
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las categorias raiz' });
-            return;
+            res.status(500).json({ message: 'Error al obtener las categorías raíz' });
         }
     }
 
-    // Traer las subcategorias de una categoria
     static async getSubcategories(req: Request, res: Response) {
         try {
             const { id } = req.params;
 
-            // Verificar si la categoria existe
-            const existingCategory = await Category.findById(id);
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ message: 'El ID de la categoría base no es válido' });
+                return;
+            }
+
+            const existingCategory = await Category.findOne({
+                _id: id,
+                deletedAt: null,
+                isActive: true
+            });
+
             if (!existingCategory) {
-                res.status(404).json({ message: 'Categoria no encontrada' });
+                res.status(404).json({ message: 'Categoría base no encontrada o inactiva' });
                 return;
             }
 
-            const subcategories = await Category.find({ parent: id })
-                .select('_id nombre slug descripcion attributes')
-                .sort({ createdAt: -1 });
-
-            if (subcategories.length === 0) {
-                res.status(404).json({ message: 'No se encontraron subcategorias' });
-                return;
-            }
+            // ✅ Corrección: Añadidos 'createdAt' y 'updatedAt' al .select()
+            const subcategories = await Category.find({
+                parent: id,
+                deletedAt: null,
+                isActive: true
+            })
+                .select('_id nombre slug descripcion attributes image isActive createdAt updatedAt')
+                .sort({ order: 1, createdAt: -1 });
 
             res.status(200).json(subcategories);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las subcategorias' });
-            return;
+            console.error("Error en getSubcategories:", error);
+            res.status(500).json({ message: 'Error al obtener las subcategorías' });
         }
     }
 
-    // Traer todas las subcategorias pobladas
     static async getAllSubcategoriesPobladas(req: Request, res: Response) {
         try {
-            // get only subcategoriesActive
-
-            const categories = await Category.find({ parent: { $ne: null }, isActive: true })
-                .select('_id nombre slug descripcion parent attributes image')
+            // ✅ Corrección: Añadidos 'createdAt' y 'updatedAt' al .select()
+            const categories = await Category.find({ parent: { $ne: null }, isActive: true, deletedAt: null })
+                .select('_id nombre slug descripcion parent attributes image createdAt updatedAt')
                 .populate('parent', '_id nombre slug')
                 .sort({ createdAt: -1 });
 
-            if (categories.length === 0) {
-                res.status(404).json({ message: 'No se encontraron subcategorias' });
-                return;
-            }
-
             res.status(200).json(categories);
         } catch (error) {
-            res.status(500).json({ message: 'Error al obtener las subcategorias' });
-            return;
+            res.status(500).json({ message: 'Error al obtener las subcategorías' });
         }
     }
 
@@ -369,10 +331,8 @@ export class CategoryController {
                 ]
             });
             res.status(200).json({ image: results.secure_url });
-
         } catch (error) {
             res.status(500).json({ message: 'Error uploading file' });
-            return;
         }
     }
 }

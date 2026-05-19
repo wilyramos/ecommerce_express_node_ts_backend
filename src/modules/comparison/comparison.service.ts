@@ -1,5 +1,3 @@
-// File: backend/src/services/comparison.service.ts
-
 import Comparison, { IComparison } from './comparison.model';
 import Product from '../../models/Product';
 import { AppError } from '../../utils/AppError';
@@ -28,17 +26,17 @@ export class ComparisonService {
             throw new AppError('Se requieren al menos 2 productos para la comparativa.', 400);
         }
 
-        // Limpiar duplicados del array de IDs
-        const uniqueIds = [...new Set(data.products.map(p => p.toString()))];
+        // SOLUCIÓN: Definición explícita de tipos para evitar inferencias 'unknown'
+        const uniqueIds: string[] = Array.from(new Set(data.products.map(p => p.toString())));
         const dbProducts = await Product.find({ _id: { $in: uniqueIds }, isActive: true, deletedAt: null }).select('_id nombre');
 
         if (dbProducts.length !== uniqueIds.length) {
             throw new AppError('Uno o más productos no existen o están inactivos.', 400);
         }
 
-        // Mantener el orden exacto enviado por el usuario
-        data.products = uniqueIds.map(id => new Types.ObjectId(id));
-        // Validar mínimos de texto para evitar contenido pobre (Thin Content) ante Google
+        // SOLUCIÓN: Tipado explícito de (id: string) en la instanciación de ObjectId
+        data.products = uniqueIds.map((id: string) => new Types.ObjectId(id));
+
         if (!data.introduccion || data.introduccion.trim().length < 150) {
             throw new AppError('La introducción debe tener al menos 150 caracteres para SEO.', 400);
         }
@@ -46,7 +44,6 @@ export class ComparisonService {
             throw new AppError('La conclusión debe tener al menos 150 caracteres para SEO.', 400);
         }
 
-        // Auto-generar MetaTags si vienen vacíos
         if (!data.metaTitle) {
             data.metaTitle = `${dbProducts.map(p => p.nombre).join(' vs ')} - Comparativa`;
         }
@@ -58,7 +55,7 @@ export class ComparisonService {
     }
 
     /**
-     * Obtiene listado paginado con soporte de búsqueda (Para catálogo/blog y administración).
+     * Obtiene listado paginado con soporte de búsqueda.
      */
     static async getAll(filters: { isActive?: boolean; isFeatured?: boolean; search?: string; limit?: number; page?: number } = {}) {
         const { isActive, isFeatured, search, limit = 10, page = 1 } = filters;
@@ -85,7 +82,7 @@ export class ComparisonService {
     }
 
     /**
-     * Recupera una comparativa por slug con datos comerciales actualizados en tiempo real.
+     * Recupera una comparativa por slug.
      */
     static async getBySlug(slug: string, isPublic: boolean = true) {
         const query: any = { slug, deletedAt: null };
@@ -111,48 +108,86 @@ export class ComparisonService {
     }
 
     /**
- * Recupera una comparativa por su ID único (Especial para el panel de administración).
- */
-static async getById(id: string) {
-    if (!Types.ObjectId.isValid(id)) {
-        throw new AppError('ID de comparativa inválido.', 400);
-    }
-
-    const comparison = await Comparison.findOne({ _id: id, deletedAt: null })
-        .populate({
-            path: 'products',
-            select: 'nombre slug imagenes precio precioComparativo stock rating numReviews brand isActive descripcion',
-            populate: { path: 'brand', select: 'nombre logo' }
-        })
-        .populate({ path: 'analisisEditorial.product', select: 'nombre slug imagenes precio' });
-
-    if (!comparison) {
-        throw new AppError('La comparativa solicitada no existe.', 404);
-    }
-
-    return comparison;
-}
-
-    /**
-     * Actualiza la comparativa validando restricciones de negocio.
+     * Recupera una comparativa por su ID único.
      */
-    static async update(id: string, data: Partial<IComparison>) {
-        if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
-
-        if (data.slug) {
-            data.slug = slugify(data.slug, { lower: true, strict: true });
-            const exists = await Comparison.findOne({ slug: data.slug, _id: { $ne: id }, deletedAt: null });
-            if (exists) throw new AppError('El slug ya está en uso.', 400);
+    static async getById(id: string) {
+        if (!Types.ObjectId.isValid(id)) {
+            throw new AppError('ID de comparativa inválido.', 400);
         }
 
-        const comparison = await Comparison.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-        if (!comparison) throw new AppError('Comparativa no encontrada.', 404);
+        const comparison = await Comparison.findOne({ _id: id, deletedAt: null })
+            .populate({
+                path: 'products',
+                select: 'nombre slug imagenes precio precioComparativo stock rating numReviews brand isActive descripcion',
+                populate: { path: 'brand', select: 'nombre logo' }
+            })
+            .populate({ path: 'analisisEditorial.product', select: 'nombre slug imagenes precio' });
+
+        if (!comparison) {
+            throw new AppError('La comparativa solicitada no existe.', 404);
+        }
 
         return comparison;
     }
 
     /**
-     * Borrado lógico (Soft Delete) para proteger la indexación de la URL en motores de búsqueda.
+     * Actualiza la comparativa replicando las restricciones de negocio y SEO de la creación.
+     */
+    static async update(id: string, data: Partial<IComparison>) {
+        if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
+
+        const current = await Comparison.findOne({ _id: id, deletedAt: null });
+        if (!current) throw new AppError('Comparativa no encontrada.', 404);
+
+        if (data.title && !data.slug) {
+            data.slug = slugify(data.title, { lower: true, strict: true });
+        } else if (data.slug) {
+            data.slug = slugify(data.slug, { lower: true, strict: true });
+        }
+
+        if (data.slug) {
+            const exists = await Comparison.findOne({ slug: data.slug, _id: { $ne: id }, deletedAt: null });
+            if (exists) throw new AppError('El slug ya está en uso.', 400);
+        }
+
+        if (data.products) {
+            if (data.products.length < 2) {
+                throw new AppError('Se requieren al menos 2 productos para la comparativa.', 400);
+            }
+
+            // SOLUCIÓN: Definición explícita de tipos también en el método de actualización
+            const uniqueIds: string[] = Array.from(new Set(data.products.map(p => p.toString())));
+            const dbProducts = await Product.find({ _id: { $in: uniqueIds }, isActive: true, deletedAt: null }).select('_id nombre');
+
+            if (dbProducts.length !== uniqueIds.length) {
+                throw new AppError('Uno o más productos no existen o están inactivos.', 400);
+            }
+            data.products = uniqueIds.map((id: string) => new Types.ObjectId(id));
+
+            if (!data.metaTitle) {
+                data.metaTitle = `${dbProducts.map(p => p.nombre).join(' vs ')} - Comparativa`;
+            }
+        }
+
+        if (data.introduccion !== undefined && data.introduccion.trim().length < 150) {
+            throw new AppError('La introducción debe tener al menos 150 caracteres para SEO.', 400);
+        }
+        if (data.conclusion !== undefined && data.conclusion.trim().length < 150) {
+            throw new AppError('La conclusión debe tener al menos 150 caracteres para SEO.', 400);
+        }
+
+        if (data.introduccion && !data.metaDescription) {
+            data.metaDescription = data.introduccion.substring(0, 155).trim().concat('...');
+        }
+
+        const comparison = await Comparison.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+        if (!comparison) throw new AppError('Comparativa no encontrada durante la actualización.', 404);
+
+        return comparison;
+    }
+
+    /**
+     * Borrado lógico.
      */
     static async delete(id: string) {
         if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
@@ -164,7 +199,7 @@ static async getById(id: string) {
     }
 
     /**
-     * Estrategia de Enlazado Interno (SEO Link Equity): Comparativas relacionadas a una ficha de producto.
+     * Comparativas relacionadas a una ficha de producto.
      */
     static async getRelatedToProduct(productId: string, limit: number = 5) {
         if (!Types.ObjectId.isValid(productId)) throw new AppError('ID de producto inválido.', 400);
