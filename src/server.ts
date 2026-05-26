@@ -32,6 +32,7 @@ import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
 import comparisonRouter from './modules/comparison/comparison.router'
+import mediaRouter from './modules/media/media.routes';
 
 dotenv.config()
 
@@ -64,6 +65,7 @@ app.use('/api/reports/v2', reportRouter)
 app.use('/api/slider-banners', sliderBannerRouter)
 app.use('/api/collections', collectionRouter)
 app.use('/api/comparisons', comparisonRouter)
+app.use('/api/media', mediaRouter)
 // Routers
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
