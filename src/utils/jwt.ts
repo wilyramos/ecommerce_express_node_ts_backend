@@ -1,3 +1,5 @@
+//File: backend/src/utils/jwt.ts
+
 import jwt from 'jsonwebtoken';
 import Types from 'mongoose';
 

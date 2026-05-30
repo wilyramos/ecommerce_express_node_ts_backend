@@ -6,6 +6,7 @@ import { generateUniqueSlug } from '../../utils/slug';
 export interface GetAllFilters {
     isActive?: boolean;
     type?: CollectionType;
+    showInHomepage?: boolean;
 }
 
 export interface GetProductsOptions {
@@ -30,7 +31,6 @@ export class CollectionService {
             image: data.image,
             bannerImage: data.bannerImage,
             color: data.color,
-            icon: data.icon,
             order: data.order ?? 0,
             startsAt: data.startsAt,
             endsAt: data.endsAt,
@@ -39,6 +39,11 @@ export class CollectionService {
             seoTitle: data.seoTitle,
             seoDescription: data.seoDescription,
             isActive: data.isActive ?? true,
+            isSystem: false, // nunca se puede crear una collection del sistema desde la API
+            showInHomepage: data.showInHomepage ?? false,
+            homepageOrder: data.homepageOrder ?? 0,
+            maxHomepageItems: data.maxHomepageItems ?? 8,
+            homepageLayout: data.homepageLayout ?? 'grid',
         });
 
         return collection.save();
@@ -49,6 +54,7 @@ export class CollectionService {
 
         if (filters.isActive !== undefined) query.isActive = filters.isActive;
         if (filters.type) query.type = filters.type;
+        if (filters.showInHomepage !== undefined) query.showInHomepage = filters.showInHomepage;
 
         return Collection.find(query).sort({ order: 1 }).lean();
     }
@@ -58,23 +64,19 @@ export class CollectionService {
     }
 
     async getBySlug(slug: string): Promise<ICollection | null> {
-        // Consulta indexada ultra limpia
         const collection = await Collection.findOne({
             slug,
             isActive: true,
-            deletedAt: null
+            deletedAt: null,
         });
 
         if (!collection) return null;
 
-        // La lógica temporal de expiración se resuelve de forma explícita en JS
-        if (collection.type === 'promotion') {
-            const now = new Date();
-            const hasStarted = !collection.startsAt || collection.startsAt <= now;
-            const hasNotEnded = !collection.endsAt || collection.endsAt >= now;
-
-            if (!hasStarted || !hasNotEnded) return null;
-        }
+        // Validar vigencia temporal para tipos con fechas
+        const now = new Date();
+        const hasStarted = !collection.startsAt || collection.startsAt <= now;
+        const hasNotEnded = !collection.endsAt || collection.endsAt >= now;
+        if (!hasStarted || !hasNotEnded) return null;
 
         return collection;
     }
@@ -82,6 +84,10 @@ export class CollectionService {
     async update(id: string, data: Partial<ICollection>): Promise<ICollection | null> {
         const current = await Collection.findOne({ _id: id, deletedAt: null });
         if (!current) throw new Error('Collection not found or deleted');
+
+        // Campos protegidos — nunca se modifican desde la API
+        delete (data as any).isSystem;
+        delete (data as any).deletedAt;
 
         this.validateAndCleanDates(data, current);
 
@@ -97,10 +103,51 @@ export class CollectionService {
     }
 
     async softDelete(id: string): Promise<ICollection | null> {
+        const collection = await Collection.findOne({ _id: id, deletedAt: null });
+        if (!collection) return null;
+
+        // Colecciones del sistema no se pueden eliminar
+        if (collection.isSystem) {
+            throw new Error('Las colecciones del sistema no pueden eliminarse');
+        }
+
         return Collection.findOneAndUpdate(
             { _id: id, deletedAt: null },
             { deletedAt: new Date(), isActive: false },
             { new: true }
+        );
+    }
+
+    // ─── HOMEPAGE ────────────────────────────────────────────────────────────
+
+    async getHomepageSections(): Promise<{ collection: ICollection; products: any[] }[]> {
+        const now = new Date();
+
+        const collections = await Collection.find({
+            isActive: true,
+            deletedAt: null,
+            showInHomepage: true,
+            $and: [
+                { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+                { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+            ],
+        })
+            .sort({ homepageOrder: 1 })
+            .lean();
+
+        return Promise.all(
+            collections.map(async (col) => ({
+                collection: col,
+                products: await Product.find({
+                    collections: col._id,
+                    isActive: true,
+                    deletedAt: null,
+                })
+                    .sort({ updatedAt: -1 })
+                    .limit(col.maxHomepageItems)
+                    .select('nombre slug precio precioComparativo imagenes stock')
+                    .lean()
+            }))
         );
     }
 
@@ -146,8 +193,8 @@ export class CollectionService {
 
         const [products, total] = await Promise.all([
             Product.find(filter)
-                .select('nombre precio precioComparativo imagenes slug categoria stock esDestacado')
-                .sort({ esDestacado: -1, createdAt: -1 })
+                .select('nombre precio precioComparativo imagenes slug categoria stock')
+                .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),
@@ -160,22 +207,11 @@ export class CollectionService {
     // ─── AUXILIARES PRIVADOS ──────────────────────────────────────────────────
 
     private validateAndCleanDates(data: Partial<ICollection>, current?: ICollection): void {
-        const type = data.type ?? current?.type;
         const startsAt = data.startsAt !== undefined ? data.startsAt : current?.startsAt;
         const endsAt = data.endsAt !== undefined ? data.endsAt : current?.endsAt;
 
-        if (type === 'promotion' && startsAt && endsAt) {
-            if (new Date(startsAt) >= new Date(endsAt)) {
-                throw new Error('endsAt must be greater than startsAt');
-            }
-        }
-
-        // Limpieza segura usando undefined para remover campos innecesarios en Mongoose
-        if (type !== 'promotion' && data.type !== undefined) {
-            data.startsAt = undefined;
-            data.endsAt = undefined;
-            data.badgeLabel = undefined;
-            data.badgeColor = undefined;
+        if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
+            throw new Error('endsAt debe ser mayor que startsAt');
         }
     }
 
@@ -200,5 +236,37 @@ export class CollectionService {
         );
 
         return `${baseSlug}-${max + 1}`;
+    }
+
+    /**
+     * Reordena las colecciones generales basándose en un arreglo ordenado de IDs
+     */
+    async updateOrder(orderedIds: string[]): Promise<void> {
+        if (!orderedIds || orderedIds.length === 0) return;
+
+        const bulkOps = orderedIds.map((id, index) => ({
+            updateOne: {
+                filter: { _id: id, deletedAt: null },
+                update: { $set: { order: index + 1 } } // Indexamos desde 1 para mayor claridad
+            }
+        }));
+
+        await Collection.bulkWrite(bulkOps);
+    }
+
+    /**
+     * Reordena específicamente el orden visual del Home (homepageOrder)
+     */
+    async updateHomepageOrder(orderedIds: string[]): Promise<void> {
+        if (!orderedIds || orderedIds.length === 0) return;
+
+        const bulkOps = orderedIds.map((id, index) => ({
+            updateOne: {
+                filter: { _id: id, deletedAt: null, showInHomepage: true },
+                update: { $set: { homepageOrder: index + 1 } }
+            }
+        }));
+
+        await Collection.bulkWrite(bulkOps);
     }
 }

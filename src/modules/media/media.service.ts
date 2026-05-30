@@ -22,8 +22,8 @@ export class MediaService {
     private static async cleanupTemp(filepath: string): Promise<void> {
         try {
             await fs.unlink(filepath);
-        } catch {
-            // Archivo ya eliminado o inexistente
+        } catch (error) {
+            // Evitamos propagar errores si el archivo ya no existe
         }
     }
 
@@ -40,20 +40,15 @@ export class MediaService {
         }
     }
 
-    // ─── Upload ─────────────────────────────────────────────────────────────────
-
     static async uploadImage(filepath: string, folder: MediaFolder, uploadedBy?: Types.ObjectId): Promise<IMedia> {
+        let publicIdToDelete: string | null = null;
         try {
             const stat = await fs.stat(filepath);
             if (stat.size > MAX_IMAGE_SIZE_BYTES) {
                 throw new AppError(`Imagen supera el límite de ${MAX_IMAGE_SIZE_BYTES / 1024 / 1024} MB`, 400);
             }
 
-            // Procesamiento asíncrono controlado con Sharp en memoria
             const webpBuffer = await sharp(filepath).webp({ quality: 82 }).toBuffer();
-
-            // Liberamos el archivo físico original del disco tan pronto como tenemos el buffer en RAM
-            await this.cleanupTemp(filepath);
 
             const result = await new Promise<UploadResult>((resolve, reject) => {
                 const stream = cloudinary.uploader.upload_stream(
@@ -74,15 +69,21 @@ export class MediaService {
                 stream.end(webpBuffer);
             });
 
-            return await Media.create({ ...result, folder, uploadedBy });
+            publicIdToDelete = result.publicId;
+            const newMedia = await Media.create({ ...result, folder, uploadedBy });
+            return newMedia;
         } catch (error) {
-            // Bloque de contingencia si falla antes de Sharp o durante la subida por stream
-            await this.cleanupTemp(filepath);
+            if (publicIdToDelete) {
+                await cloudinary.uploader.destroy(publicIdToDelete, { resource_type: 'image' }).catch(() => {});
+            }
             throw error;
+        } finally {
+            await this.cleanupTemp(filepath);
         }
     }
 
     static async uploadVideo(filepath: string, folder: MediaFolder, uploadedBy?: Types.ObjectId): Promise<IMedia> {
+        let publicIdToDelete: string | null = null;
         try {
             const stat = await fs.stat(filepath);
             if (stat.size > MAX_VIDEO_SIZE_BYTES) {
@@ -95,7 +96,9 @@ export class MediaService {
                 resource_type: 'video',
             });
 
-            return await Media.create({
+            publicIdToDelete = cloudRes.public_id;
+
+            const newMedia = await Media.create({
                 publicId: cloudRes.public_id,
                 secureUrl: cloudRes.secure_url,
                 folder,
@@ -107,12 +110,16 @@ export class MediaService {
                 duration: cloudRes.duration,
                 uploadedBy,
             });
-        } finally {      // Aseguramos limpieza del archivo temporal en cualquier caso
+            return newMedia;
+        } catch (error) {
+            if (publicIdToDelete) {
+                await cloudinary.uploader.destroy(publicIdToDelete, { resource_type: 'video' }).catch(() => {});
+            }
+            throw error;
+        } finally {
             await this.cleanupTemp(filepath);
         }
     }
-
-    // ─── Delete ──────────────────────────────────────────────────────────────────
 
     static async deleteByPublicId(publicId: string, resourceType: ResourceType = 'image'): Promise<void> {
         await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
@@ -122,7 +129,6 @@ export class MediaService {
     static async deleteById(id: string): Promise<void> {
         const media = await Media.findById(id);
         if (!media) throw new AppError('Recurso no encontrado en la base de datos', 404);
-
         await this.deleteByPublicId(media.publicId, media.resourceType);
     }
 
@@ -133,20 +139,18 @@ export class MediaService {
         await this.deleteByPublicId(media.publicId, media.resourceType);
     }
 
-    // ─── Query ───────────────────────────────────────────────────────────────────
-
-    static async listByFolder(folder: MediaFolder, page = 1, limit = 20): Promise<{ data: IMedia[]; total: number; pages: number }> {
+    static async listByFolder(folder: MediaFolder, page = 1, limit = 20): Promise<{ data: any[]; total: number; pages: number }> {
         const skip = (page - 1) * limit;
         const [data, total] = await Promise.all([
-            Media.find({ folder }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+            Media.find({ folder }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean().exec(),
             Media.countDocuments({ folder }),
         ]);
         return { data, total, pages: Math.ceil(total / limit) };
     }
 
-    static async getById(id: string): Promise<IMedia> {
-        const media = await Media.findById(id).lean();
+    static async getById(id: string): Promise<any> {
+        const media = await Media.findById(id).lean().exec();
         if (!media) throw new AppError('Recurso no encontrado', 404);
-        return media as unknown as IMedia;
+        return media;
     }
 }

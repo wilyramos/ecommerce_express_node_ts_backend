@@ -9,6 +9,7 @@ const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.DATABASE_URL);
         console.log(colors.cyan.bold(`MongoDB Conectado: ${conn.connection.host}`));
+        return conn; 
         
     } catch (error) {
         console.log(colors.bgRed.bold('Error en la conexion a MongoDB'));

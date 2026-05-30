@@ -73,16 +73,23 @@ const CATALOG_FACET = {
 export class ProductController {
     static async createProduct(req: Request, res: Response) {
         try {
-            const { nombre, descripcion, precio, precioComparativo, costo, imagenes, categoria, stock, sku, barcode,
-                esDestacado,
-                esNuevo,
+            const {
+                nombre,
+                descripcion,
+                precio,
+                precioComparativo,
+                costo,
+                imagenes,
+                categoria,
+                stock,
+                sku,
+                barcode,
                 isActive,
                 atributos,
                 especificaciones,
                 brand,
                 diasEnvio,
                 variants,
-                isFrontPage,
                 line,
                 tags,
                 weight,
@@ -90,22 +97,13 @@ export class ProductController {
                 metaTitle,
                 metaDescription,
                 complementarios,
+                collections
             } = req.body;
 
-            const [selectedCategory, hasChildren] = await Promise.all([
-                Category.findById(categoria),
-                Category.exists({ parent: categoria })
-            ]);
+            const selectedCategory = await Category.findOne({ _id: categoria, deletedAt: null });
 
             if (!selectedCategory) {
-                res.status(400).json({ message: 'La categoría no existe' });
-                return;
-            }
-
-            if (hasChildren) {
-                res.status(400).json({
-                    message: 'No se puede crear un producto en una categoría que tiene subcategorías'
-                });
+                res.status(400).json({ message: 'La categoría especificada no existe o está eliminada.' });
                 return;
             }
 
@@ -129,36 +127,10 @@ export class ProductController {
                 return;
             }
 
-            if (tags && !Array.isArray(tags)) {
-                res.status(400).json({ message: 'Tags deben ser un array' });
-                return;
-            }
-
-            if (weight && Number(weight) < 0) {
-                res.status(400).json({ message: 'El peso no puede ser negativo' });
-                return;
-            }
-
-            if (dimensions) {
-                const { length, width, height } = dimensions;
-                if (
-                    (length && length < 0) ||
-                    (width && width < 0) ||
-                    (height && height < 0)
-                ) {
-                    res.status(400).json({ message: 'Las dimensiones no pueden ser negativas' });
-                    return;
-                }
-            }
-
-            if (metaTitle && metaTitle.length > 60) {
-                res.status(400).json({ message: 'El metaTitle no puede superar los 60 caracteres' });
-                return;
-            }
-
-            if (metaDescription && metaDescription.length > 160) {
-                res.status(400).json({ message: 'La metaDescription no puede superar los 160 caracteres' });
-                return;
+            // Mapeo atómico y asíncrono de ObjectIds basándose en los slugs del sistema provistos
+            let resolvedCollectionIds: Types.ObjectId[] = [];
+            if (collections && Array.isArray(collections) && collections.length > 0) {
+                resolvedCollectionIds = collections.map(id => new Types.ObjectId(id));
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : 1;
@@ -219,15 +191,12 @@ export class ProductController {
                 stock: totalStockFromVariants,
                 sku,
                 barcode,
-                esDestacado,
-                esNuevo,
                 isActive,
                 atributos,
                 especificaciones,
                 brand,
                 diasEnvio: dias,
                 variants: preparedVariants,
-                isFrontPage,
                 line,
                 tags: tags ?? [],
                 weight: weight ? Number(weight) : undefined,
@@ -235,6 +204,7 @@ export class ProductController {
                 metaTitle: metaTitle ?? undefined,
                 metaDescription: metaDescription ?? undefined,
                 complementarios: complementarios ?? [],
+                collections: resolvedCollectionIds // Inyección directa del set indexado
             };
 
             const product = new Product(newProduct);
@@ -244,6 +214,184 @@ export class ProductController {
         } catch (error: any) {
             console.error('Error creating product:', error);
             res.status(500).json({ message: error.message || 'Error creating product' });
+        }
+    }
+
+    static async updateProduct(req: Request, res: Response) {
+        try {
+            const {
+                nombre,
+                descripcion,
+                precio,
+                precioComparativo,
+                costo,
+                imagenes,
+                categoria,
+                stock,
+                sku,
+                barcode,
+                isActive,
+                atributos,
+                especificaciones,
+                brand,
+                diasEnvio,
+                variants,
+                line,
+                complementarios,
+                collections // Array de slugs entrante del Frontend
+            } = req.body;
+
+            console.log('Campos recibidos para actualización:', {
+                nombre, complementarios, collections
+            });
+
+            const productId = req.params.id;
+            const existingProduct = await Product.findById(productId);
+
+            if (!existingProduct) {
+                res.status(404).json({ message: 'Producto no encontrado' });
+                return;
+            }
+
+            if (imagenes && imagenes.length > 15) {
+                res.status(400).json({ message: 'No se pueden subir más de 15 imágenes' });
+                return;
+            }
+
+            if (atributos && typeof atributos !== 'object') {
+                res.status(400).json({ message: 'Los atributos deben ser un objeto' });
+                return;
+            }
+
+            if (especificaciones && !Array.isArray(especificaciones)) {
+                res.status(400).json({ message: 'Las especificaciones deben ser un array' });
+                return;
+            }
+
+            if (categoria) {
+                const categoryExists = await Category.findOne({ _id: categoria, deletedAt: null });
+                if (!categoryExists) {
+                    res.status(400).json({ message: 'La categoría específica no existe o está eliminada' });
+                    return;
+                }
+                existingProduct.categoria = categoria;
+            }
+
+            // Resolución y actualización relacional de las colecciones del sistema
+            if (collections && Array.isArray(collections)) {
+                const incomingSystemIdsStr = collections.map(id => id.toString());
+
+                // 1. Buscamos las colecciones del sistema nativas para usarlas como filtro exclusionary
+                const dbSystemCollections = await Collection.find({ isSystem: true, deletedAt: null }).select('_id').lean();
+                const allSystemIdsStr = dbSystemCollections.map(c => c._id.toString());
+
+                // 2. Extraemos las colecciones custom que ya poseía el producto antes de ser editado
+                const currentCollections: any[] = existingProduct.collections || [];
+                const filteredCustomCollections = currentCollections.filter(cId => {
+                    const idStr = cId instanceof Types.ObjectId ? cId.toString() : String(cId);
+                    return !allSystemIdsStr.includes(idStr);
+                });
+
+                // 3. Unificamos las colecciones custom intactas con las nuevas modificaciones de los switches del Admin
+                existingProduct.collections = [
+                    ...filteredCustomCollections.map(id => new Types.ObjectId(id)),
+                    ...incomingSystemIdsStr.map(id => new Types.ObjectId(id))
+                ];
+            }
+
+            const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
+
+            if (Array.isArray(variants) && variants.length > 0) {
+                const preparedVariants = variants.map(v => {
+                    if (!v.atributos || typeof v.atributos !== 'object')
+                        throw new Error('Cada variante debe tener atributos válidos');
+
+                    const nombreGenerado =
+                        v.nombre ||
+                        Object.keys(v.atributos)
+                            .sort()
+                            .map(key => `${v.atributos[key]}`)
+                            .join(' / ');
+
+                    let precioComparativoFinal =
+                        v.precioComparativo != null ? Number(v.precioComparativo) : undefined;
+
+                    if (
+                        precioComparativoFinal !== undefined &&
+                        (precioComparativoFinal <= 0 ||
+                            (v.precio != null &&
+                                precioComparativoFinal < Number(v.precio)))
+                    ) {
+                        precioComparativoFinal = undefined;
+                    }
+
+                    return {
+                        nombre: nombreGenerado,
+                        precio: v.precio != null ? Number(v.precio) : undefined,
+                        precioComparativo: precioComparativoFinal,
+                        stock: v.stock != null ? Number(v.stock) : 0,
+                        sku: v.sku,
+                        barcode: v.barcode,
+                        imagenes: v.imagenes ?? [],
+                        atributos: v.atributos
+                    };
+                });
+
+                const seen = new Set();
+                for (const v of preparedVariants) {
+                    const key = JSON.stringify(v.atributos);
+                    if (seen.has(key)) {
+                        res.status(400).json({ message: 'Variantes duplicadas detectadas' });
+                        return;
+                    }
+                    seen.add(key);
+                }
+
+                existingProduct.variants = preparedVariants;
+                existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
+            } else {
+                existingProduct.variants = [];
+                if (stock != null) existingProduct.stock = Number(stock);
+            }
+
+            if (nombre && nombre !== existingProduct.nombre) {
+                existingProduct.slug = await generateUniqueSlug(nombre);
+                existingProduct.nombre = nombre;
+            }
+
+            if (descripcion) existingProduct.descripcion = descripcion;
+            if (precio != null) existingProduct.precio = Number(precio);
+
+            if (
+                precioComparativo !== undefined &&
+                precioComparativo !== null &&
+                Number(precioComparativo) > 0 &&
+                (precio == null || Number(precioComparativo) >= Number(precio))
+            ) {
+                existingProduct.precioComparativo = Number(precioComparativo);
+            } else {
+                existingProduct.precioComparativo = undefined;
+            }
+
+            if (costo != null) existingProduct.costo = Number(costo);
+            if (imagenes) existingProduct.imagenes = imagenes;
+            if (sku) existingProduct.sku = sku;
+            if (barcode) existingProduct.barcode = barcode;
+            if (brand) existingProduct.brand = brand;
+            if (atributos) existingProduct.atributos = atributos;
+            if (especificaciones) existingProduct.especificaciones = especificaciones;
+
+            existingProduct.diasEnvio = dias;
+            existingProduct.isActive = isActive ?? existingProduct.isActive;
+            existingProduct.line = line ?? existingProduct.line;
+            existingProduct.complementarios = complementarios ?? existingProduct.complementarios;
+
+            await existingProduct.save();
+
+            res.status(200).json({ message: 'Producto actualizado correctamente' });
+        } catch (error: any) {
+            console.error('Error updating product:', error);
+            res.status(500).json({ message: 'Error actualizando producto', error: error.message });
         }
     }
 
@@ -748,20 +896,22 @@ export class ProductController {
     static async getProductById(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            // populate category to get the name and slug
+
             const product = await Product.findById(id)
                 .select('+costo')
                 .populate('categoria', 'nombre slug')
                 .populate('brand', 'nombre slug')
-                .populate('line', 'nombre slug');
+                .populate('line', 'nombre slug')
+                .populate('collections', 'name slug isSystem');
 
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });
                 return;
             }
+
             res.status(200).json(product);
-        } catch (error) {
-            res.status(500).json({ message: 'Error obteniendo el producto', error });
+        } catch (error: any) {
+            res.status(500).json({ message: 'Error obteniendo el producto', error: error.message });
             return;
         }
     }
@@ -785,164 +935,7 @@ export class ProductController {
         }
     }
 
-    static async updateProduct(req: Request, res: Response) {
-        try {
-            const {
-                nombre,
-                descripcion,
-                precio,
-                precioComparativo,
-                costo,
-                imagenes,
-                categoria,
-                stock,
-                sku,
-                barcode,
-                esDestacado,
-                esNuevo,
-                isActive,
-                atributos,
-                especificaciones,
-                brand,
-                diasEnvio,
-                variants,
-                isFrontPage,
-                line,
-                complementarios
-            } = req.body;
 
-            console.log('complentario llego:', req.body.complementarios);
-
-            const productId = req.params.id;
-            const existingProduct = await Product.findById(productId);
-
-            if (!existingProduct) {
-                res.status(404).json({ message: 'Producto no encontrado' });
-                return;
-            }
-
-            if (imagenes && imagenes.length > 15) {
-                res.status(400).json({ message: 'No se pueden subir más de 15 imágenes' });
-                return;
-            }
-
-            if (atributos && typeof atributos !== 'object') {
-                res.status(400).json({ message: 'Los atributos deben ser un objeto' });
-                return;
-            }
-
-            if (especificaciones && !Array.isArray(especificaciones)) {
-                res.status(400).json({ message: 'Las especificaciones deben ser un array' });
-                return;
-            }
-
-            if (categoria) {
-                const categoryExists = await Category.findById(categoria);
-                if (!categoryExists) {
-                    res.status(400).json({ message: 'La categoría especificada no existe' });
-                    return;
-                }
-                existingProduct.categoria = categoria;
-            }
-
-            const dias = diasEnvio ? Number(diasEnvio) : existingProduct.diasEnvio;
-
-            if (Array.isArray(variants) && variants.length > 0) {
-                const preparedVariants = variants.map(v => {
-                    if (!v.atributos || typeof v.atributos !== 'object')
-                        throw new Error('Cada variante debe tener atributos válidos');
-
-                    const nombreGenerado =
-                        v.nombre ||
-                        Object.keys(v.atributos)
-                            .sort()
-                            .map(key => `${v.atributos[key]}`)
-                            .join(' / ');
-
-                    let precioComparativoFinal =
-                        v.precioComparativo != null ? Number(v.precioComparativo) : undefined;
-
-                    if (
-                        precioComparativoFinal !== undefined &&
-                        (precioComparativoFinal <= 0 ||
-                            (v.precio != null &&
-                                precioComparativoFinal < Number(v.precio)))
-                    ) {
-                        precioComparativoFinal = undefined;
-                    }
-
-                    return {
-                        nombre: nombreGenerado,
-                        precio: v.precio != null ? Number(v.precio) : undefined,
-                        precioComparativo: precioComparativoFinal,
-                        stock: v.stock != null ? Number(v.stock) : 0,
-                        sku: v.sku,
-                        barcode: v.barcode,
-                        imagenes: v.imagenes ?? [],
-                        atributos: v.atributos
-                    };
-                });
-
-                const seen = new Set();
-                for (const v of preparedVariants) {
-                    const key = JSON.stringify(v.atributos);
-                    if (seen.has(key)) {
-                        res.status(400).json({ message: 'Variantes duplicadas detectadas' });
-                        return;
-                    }
-                    seen.add(key);
-                }
-
-                existingProduct.variants = preparedVariants;
-                existingProduct.stock = preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
-            } else {
-                existingProduct.variants = [];
-                if (stock != null) existingProduct.stock = Number(stock);
-            }
-
-            if (nombre && nombre !== existingProduct.nombre) {
-                existingProduct.slug = await generateUniqueSlug(nombre);
-                existingProduct.nombre = nombre;
-            }
-
-            if (descripcion) existingProduct.descripcion = descripcion;
-            if (precio != null) existingProduct.precio = Number(precio);
-
-            if (
-                precioComparativo !== undefined &&
-                precioComparativo !== null &&
-                Number(precioComparativo) > 0 &&
-                (precio == null || Number(precioComparativo) >= Number(precio))
-            ) {
-                existingProduct.precioComparativo = Number(precioComparativo);
-            } else {
-                existingProduct.precioComparativo = undefined;
-            }
-
-            if (costo != null) existingProduct.costo = Number(costo);
-            if (imagenes) existingProduct.imagenes = imagenes;
-            if (sku) existingProduct.sku = sku;
-            if (barcode) existingProduct.barcode = barcode;
-            if (brand) existingProduct.brand = brand;
-            if (atributos) existingProduct.atributos = atributos;
-            if (especificaciones) existingProduct.especificaciones = especificaciones;
-
-            existingProduct.diasEnvio = dias;
-            existingProduct.esDestacado = esDestacado ?? existingProduct.esDestacado;
-            existingProduct.esNuevo = esNuevo ?? existingProduct.esNuevo;
-            existingProduct.isActive = isActive ?? existingProduct.isActive;
-            existingProduct.isFrontPage = isFrontPage ?? existingProduct.isFrontPage;
-            existingProduct.line = line ?? existingProduct.line;
-            existingProduct.complementarios = complementarios ?? existingProduct.complementarios;
-
-            await existingProduct.save();
-
-            res.status(200).json({ message: 'Producto actualizado correctamente' });
-        } catch (error: any) {
-            console.error('Error updating product:', error);
-            res.status(500).json({ message: 'Error actualizando producto', error: error.message });
-        }
-    }
 
 
 
@@ -2387,163 +2380,162 @@ export class ProductController {
 
 
     // En tu ProductController.ts
- // File: backend — getCatalogByCollectionSlug completo y corregido
+    // File: backend — getCatalogByCollectionSlug completo y corregido
 
-static async getCatalogByCollectionSlug(req: Request, res: Response) {
-    try {
-        const { slug } = req.params;
-        const { page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
+    static async getCatalogByCollectionSlug(req: Request, res: Response) {
+        try {
+            const { slug } = req.params;
+            const { page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
 
-        const collection = await Collection.findOne({ slug, isActive: true });
-        if (!collection) {
-            res.status(404).json({ message: 'Colección no encontrada' });
-            return;
-        }
-
-        const pageNum  = Math.max(1, parseInt(page  || "1",  10));
-        const limitNum = Math.max(1, parseInt(limit || "24", 10));
-        const skip     = (pageNum - 1) * limitNum;
-
-        const pipeline: any[] = [];
-
-        // A. SEARCH (Atlas Search — debe ser la primera etapa si existe)
-        if (query && query.trim() !== "") {
-            pipeline.push({
-                $search: {
-                    index: "ecommerce_search_products",
-                    compound: {
-                        should: [
-                            { text: { query, path: "nombre",          score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
-                            { text: { query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
-                            { text: { query, path: "descripcion",                                     fuzzy: { maxEdits: 1 } } },
-                        ],
-                        minimumShouldMatch: 1,
-                    },
-                },
-            });
-        }
-
-        // B. MATCH — se declara PRIMERO, luego se enriquece
-        const matchStage: any = { isActive: true, collections: collection._id };
-
-        // Filtro de precio
-        if (priceRange) {
-            const [min, max] = priceRange.split('-').map(Number);
-            if (!isNaN(min) && !isNaN(max)) {
-                matchStage.$or = [
-                    { precio:            { $gte: min, $lte: max } },
-                    { "variants.precio": { $gte: min, $lte: max } },
-                ];
+            const collection = await Collection.findOne({ slug, isActive: true });
+            if (!collection) {
+                res.status(404).json({ message: 'Colección no encontrada' });
+                return;
             }
-        }
 
-        // Filtros de categoría, marca y línea como query params
-        // (vienen de CollectionSidebar como ?categoria=slug&brand=slug&line=slug)
-        if (attributeFilters.categoria) {
-            const cat = await Category.findOne({ slug: attributeFilters.categoria }).select("_id").lean();
-            if (cat) matchStage.categoria = cat._id;
-            delete attributeFilters.categoria;
-        }
+            const pageNum = Math.max(1, parseInt(page || "1", 10));
+            const limitNum = Math.max(1, parseInt(limit || "24", 10));
+            const skip = (pageNum - 1) * limitNum;
 
-        if (attributeFilters.brand) {
-            const brand = await Brand.findOne({ slug: attributeFilters.brand }).select("_id").lean();
-            if (brand) matchStage.brand = brand._id;
-            delete attributeFilters.brand;
-        }
+            const pipeline: any[] = [];
 
-        if (attributeFilters.line) {
-            const line = await ProductLine.findOne({ slug: attributeFilters.line }).select("_id").lean();
-            if (line) matchStage.line = line._id.toString();
-            delete attributeFilters.line;
-        }
-
-        // Filtros de atributos dinámicos (color, almacenamiento, etc.)
-        const reservedKeys = ['limit', 'page', 'sort', 'priceRange', 'query'];
-        const attrConditions: any[] = [];
-
-        Object.keys(attributeFilters).forEach((key) => {
-            if (reservedKeys.includes(key)) return;
-            const values = Array.isArray(attributeFilters[key])
-                ? attributeFilters[key]
-                : [attributeFilters[key]];
-            if (values.length > 0) {
-                attrConditions.push({
-                    $or: [
-                        { [`atributos.${key}`]: { $in: values } },
-                        { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } },
-                    ],
-                });
-            }
-        });
-
-        if (attrConditions.length > 0) matchStage.$and = attrConditions;
-
-        pipeline.push({ $match: matchStage });
-
-        // C. ORDENAMIENTO
-        let sortStage: any = { esDestacado: -1, createdAt: -1 };
-        if (sort === 'price-asc')  sortStage = { precio: 1 };
-        if (sort === 'price-desc') sortStage = { precio: -1 };
-        if (query && query.trim() !== "") sortStage = { score: { $meta: "searchScore" } };
-
-        // D. FACETA
-        pipeline.push({
-            $facet: {
-                ...CATALOG_FACET,
-                products: [
-                    { $sort: sortStage },
-                    { $skip: skip },
-                    { $limit: limitNum },
-                    { $lookup: { from: 'brands',       localField: 'brand',       foreignField: '_id', as: 'brand' } },
-                    { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                    { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
-                    { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line'  } },
-                    { $unwind: { path: '$line',  preserveNullAndEmptyArrays: true } },
-                    {
-                        $project: {
-                            nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
-                            imagenes: 1, stock: 1, atributos: 1, variants: 1,
-                            brand: { nombre: 1, slug: 1 }, line: { nombre: 1, slug: 1 },
-                            categoria: 1, esDestacado: 1, esNuevo: 1, rating: 1, numReviews: 1,
+            // A. SEARCH (Atlas Search — debe ser la primera etapa si existe)
+            if (query && query.trim() !== "") {
+                pipeline.push({
+                    $search: {
+                        index: "ecommerce_search_products",
+                        compound: {
+                            should: [
+                                { text: { query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query, path: "descripcion", fuzzy: { maxEdits: 1 } } },
+                            ],
+                            minimumShouldMatch: 1,
                         },
                     },
-                ],
-            },
-        });
+                });
+            }
 
-        const [data] = await Product.aggregate(pipeline);
+            // B. MATCH — se declara PRIMERO, luego se enriquece
+            const matchStage: any = { isActive: true, collections: collection._id };
 
-        res.status(200).json({
-            products: data.products,
-            pagination: {
-                currentPage: pageNum,
-                totalPages:  Math.ceil((data.totalCount[0]?.count || 0) / limitNum) || 1,
-                totalItems:  data.totalCount[0]?.count || 0,
-            },
-            filters: {
-                brands:     data.brands           || [],
-                lines:      data.lines            || [],
-                categories: data.categories       || [],
-                atributos:  data.atributos        || [],
-                price:      data.priceRangeFacet  || [],
-            },
-            context: {
-                categoryName: null,
-                brandName:    null,
-                lineName:     null,
-                searchQuery:  query || null,
-                collectionName:  collection.name,
-                collectionDesc:  collection.description  ?? null,
-                collectionImage: collection.image        ?? null,
-                collectionColor: collection.color        ?? null,
-                collectionIcon:  collection.icon         ?? null,
-            },
-            isFallback: false,
-        });
+            // Filtro de precio
+            if (priceRange) {
+                const [min, max] = priceRange.split('-').map(Number);
+                if (!isNaN(min) && !isNaN(max)) {
+                    matchStage.$or = [
+                        { precio: { $gte: min, $lte: max } },
+                        { "variants.precio": { $gte: min, $lte: max } },
+                    ];
+                }
+            }
 
-    } catch (error: any) {
-        console.error("Error en getCatalogByCollectionSlug:", error);
-        res.status(500).json({ message: error.message });
+            // Filtros de categoría, marca y línea como query params
+            // (vienen de CollectionSidebar como ?categoria=slug&brand=slug&line=slug)
+            if (attributeFilters.categoria) {
+                const cat = await Category.findOne({ slug: attributeFilters.categoria }).select("_id").lean();
+                if (cat) matchStage.categoria = cat._id;
+                delete attributeFilters.categoria;
+            }
+
+            if (attributeFilters.brand) {
+                const brand = await Brand.findOne({ slug: attributeFilters.brand }).select("_id").lean();
+                if (brand) matchStage.brand = brand._id;
+                delete attributeFilters.brand;
+            }
+
+            if (attributeFilters.line) {
+                const line = await ProductLine.findOne({ slug: attributeFilters.line }).select("_id").lean();
+                if (line) matchStage.line = line._id.toString();
+                delete attributeFilters.line;
+            }
+
+            // Filtros de atributos dinámicos (color, almacenamiento, etc.)
+            const reservedKeys = ['limit', 'page', 'sort', 'priceRange', 'query'];
+            const attrConditions: any[] = [];
+
+            Object.keys(attributeFilters).forEach((key) => {
+                if (reservedKeys.includes(key)) return;
+                const values = Array.isArray(attributeFilters[key])
+                    ? attributeFilters[key]
+                    : [attributeFilters[key]];
+                if (values.length > 0) {
+                    attrConditions.push({
+                        $or: [
+                            { [`atributos.${key}`]: { $in: values } },
+                            { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } },
+                        ],
+                    });
+                }
+            });
+
+            if (attrConditions.length > 0) matchStage.$and = attrConditions;
+
+            pipeline.push({ $match: matchStage });
+
+            // C. ORDENAMIENTO
+            let sortStage: any = { esDestacado: -1, createdAt: -1 };
+            if (sort === 'price-asc') sortStage = { precio: 1 };
+            if (sort === 'price-desc') sortStage = { precio: -1 };
+            if (query && query.trim() !== "") sortStage = { score: { $meta: "searchScore" } };
+
+            // D. FACETA
+            pipeline.push({
+                $facet: {
+                    ...CATALOG_FACET,
+                    products: [
+                        { $sort: sortStage },
+                        { $skip: skip },
+                        { $limit: limitNum },
+                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
+                        { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
+                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+                        {
+                            $project: {
+                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
+                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
+                                brand: { nombre: 1, slug: 1 }, line: { nombre: 1, slug: 1 },
+                                categoria: 1, esDestacado: 1, esNuevo: 1, rating: 1, numReviews: 1,
+                            },
+                        },
+                    ],
+                },
+            });
+
+            const [data] = await Product.aggregate(pipeline);
+
+            res.status(200).json({
+                products: data.products,
+                pagination: {
+                    currentPage: pageNum,
+                    totalPages: Math.ceil((data.totalCount[0]?.count || 0) / limitNum) || 1,
+                    totalItems: data.totalCount[0]?.count || 0,
+                },
+                filters: {
+                    brands: data.brands || [],
+                    lines: data.lines || [],
+                    categories: data.categories || [],
+                    atributos: data.atributos || [],
+                    price: data.priceRangeFacet || [],
+                },
+                context: {
+                    categoryName: null,
+                    brandName: null,
+                    lineName: null,
+                    searchQuery: query || null,
+                    collectionName: collection.name,
+                    collectionDesc: collection.description ?? null,
+                    collectionImage: collection.image ?? null,
+                    collectionColor: collection.color ?? null,
+                },
+                isFallback: false,
+            });
+
+        } catch (error: any) {
+            console.error("Error en getCatalogByCollectionSlug:", error);
+            res.status(500).json({ message: error.message });
+        }
     }
-}
 }

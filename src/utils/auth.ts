@@ -1,3 +1,5 @@
+//File: src/utils/auth.ts
+
 import bcrypt from 'bcrypt'
 
 export const hashPassword = async (password: string) => {

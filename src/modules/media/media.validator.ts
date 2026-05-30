@@ -1,5 +1,5 @@
 // File: src/modules/media/media.validator.ts
-import { Request, Response, NextFunction } from 'express';
+import { Request } from 'express';
 import { ALLOWED_FOLDERS } from './media.constants';
 import { MediaFolder } from './media.model';
 import { AppError } from '../../utils/AppError';

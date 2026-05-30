@@ -1,5 +1,3 @@
-// File: backend/src/modules/collection/collection.controller.ts
-
 import { Request, Response } from 'express';
 import { CollectionService, GetAllFilters } from './collection.service';
 import { COLLECTION_TYPES, CollectionType } from './collection.model';
@@ -22,7 +20,6 @@ export const getAllCollections = async (req: Request, res: Response): Promise<vo
         if (req.query.active !== undefined) {
             filters.isActive = req.query.active === 'true';
         }
-
         if (req.query.type) {
             const type = req.query.type as string;
             if (!COLLECTION_TYPES.includes(type as CollectionType)) {
@@ -30,6 +27,9 @@ export const getAllCollections = async (req: Request, res: Response): Promise<vo
                 return;
             }
             filters.type = type as CollectionType;
+        }
+        if (req.query.homepage !== undefined) {
+            filters.showInHomepage = req.query.homepage === 'true';
         }
 
         const collections = await collectionService.getAll(filters);
@@ -61,24 +61,28 @@ export const getCollectionBySlug = async (req: Request, res: Response): Promise<
         }
 
         const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-        const page = Math.max(parseInt(req.query.page as string) || 1, 1);
-        const skip = (page - 1) * limit;
+        const page  = Math.max(parseInt(req.query.page  as string) || 1,  1);
+        const skip  = (page - 1) * limit;
 
         const { products, total } = await collectionService.getProducts(
-            collection._id as string,
+            (collection._id as string).toString(),
             { limit, skip }
         );
 
         res.status(200).json({
             collection,
             products,
-            pagination: {
-                total,
-                page,
-                limit,
-                pages: Math.ceil(total / limit),
-            },
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
         });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+export const getHomepageSections = async (_req: Request, res: Response): Promise<void> => {
+    try {
+        const sections = await collectionService.getHomepageSections();
+        res.status(200).json(sections);
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
@@ -115,7 +119,9 @@ export const deleteCollection = async (req: Request, res: Response): Promise<voi
         }
         res.status(200).json({ message: 'Colección eliminada correctamente', collection });
     } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        // isSystem lanza error con mensaje específico
+        const status = error.message.includes('sistema') ? 403 : 500;
+        res.status(status).json({ message: error.message });
     }
 };
 
@@ -164,13 +170,40 @@ export const getCollectionProducts = async (req: Request, res: Response): Promis
 
         res.status(200).json({
             products,
-            pagination: {
-                total,
-                page,
-                limit,
-                pages: Math.ceil(total / limit),
-            },
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
         });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+export const updateCollectionsOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { orderedIds } = req.body;
+        
+        if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+            res.status(400).json({ message: 'orderedIds debe ser un arreglo de IDs no vacío' });
+            return;
+        }
+
+        await collectionService.updateOrder(orderedIds);
+        res.status(200).json({ message: 'Orden general actualizado correctamente' });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+export const updateHomepageOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { orderedIds } = req.body;
+        
+        if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+            res.status(400).json({ message: 'orderedIds debe ser un arreglo de IDs no vacío' });
+            return;
+        }
+
+        await collectionService.updateHomepageOrder(orderedIds);
+        res.status(200).json({ message: 'Orden del Home actualizado correctamente' });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }

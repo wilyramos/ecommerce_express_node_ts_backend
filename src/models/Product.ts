@@ -1,5 +1,3 @@
-//File: backend/src/models/Product.ts
-
 import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
 import { ICategory } from './Category';
 import { IBrand } from './Brand';
@@ -38,15 +36,12 @@ export interface IProduct extends Document {
     sku?: string;
     barcode?: string;
     isActive: boolean;
-    esDestacado?: boolean;
-    esNuevo?: boolean;
     atributos?: Record<string, string>;
     especificaciones?: ISpecification[];
     diasEnvio?: number;
-    fechaDisponibilidad?: Date; // TODO: falta en el frontend, agregar a forms y validaciones
+    fechaDisponibilidad?: Date;
     variants?: IVariant[];
-    isFrontPage?: boolean;
-    complementarios?: (mongoose.Types.ObjectId | PopulatedDoc<IProduct>)[]; // Array de referencias a otros productos
+    complementarios?: (mongoose.Types.ObjectId | PopulatedDoc<IProduct>)[];
     tags?: string[];
     weight?: number;
     dimensions?: {
@@ -59,7 +54,7 @@ export interface IProduct extends Document {
     rating: number;
     numReviews: number;
     deletedAt?: Date;
-    collections?: Types.ObjectId[];
+    collections?: Types.ObjectId[]; // Mantiene la estructura exacta que ya tienes en producción
 }
 
 // --- Sub-schema de especificación ---
@@ -82,7 +77,6 @@ const variantSchema = new Schema<IVariant>(
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
         imagenes: { type: [String], default: [] },
-
         atributos: {
             type: Map,
             of: String,
@@ -91,8 +85,6 @@ const variantSchema = new Schema<IVariant>(
     },
     { _id: true }
 );
-
-// Añadir SearchIndex for searchs
 
 // --- Schema principal ---
 const productSchema = new Schema<IProduct>(
@@ -113,24 +105,19 @@ const productSchema = new Schema<IProduct>(
             type: Schema.Types.ObjectId,
             ref: 'ProductLine',
             index: true // Importante para filtrar rápido por línea
-        }, stock: { type: Number, min: 0, default: 0 },
+        }, 
+        stock: { type: Number, min: 0, default: 0 },
         sku: { type: String, trim: true },
         barcode: { type: String, trim: true },
         isActive: { type: Boolean, default: true },
-        esDestacado: { type: Boolean, default: false },
-        esNuevo: { type: Boolean, default: false },
-
         atributos: {
             type: Map,
             of: String,
             default: {}
         },
-
         especificaciones: { type: [specificationSchema], default: [] },
-
         diasEnvio: { type: Number, min: 0, default: 1 },
         fechaDisponibilidad: { type: Date },
-
         variants: { type: [variantSchema], default: [] },
         complementarios: [
             {
@@ -158,15 +145,18 @@ const productSchema = new Schema<IProduct>(
             }
         ]
     },
-
     { timestamps: true }
 );
 
-// Índices útiles
+// --- ÍNDICES DE RENDIMIENTO ---
 productSchema.index({ 'variants.sku': 1 });
 productSchema.index({ categoria: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ sku: 1 });
 productSchema.index({ barcode: 1 });
+
+// (best_sellers, on_sale, new_arrivals, featured) ordenándolos por fecha de forma óptima
+productSchema.index({ collections: 1, isActive: 1, deletedAt: 1 });
+productSchema.index({ isActive: 1, deletedAt: 1, createdAt: -1 });
 
 export default mongoose.model<IProduct>('Product', productSchema);
