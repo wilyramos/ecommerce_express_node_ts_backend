@@ -298,4 +298,182 @@ export class WebhookController {
             session.endSession();
         }
     }
+
+    // --- CULQI ---
+    static async handleWebHookCulqi(req: Request, res: Response) {
+        const session = await mongoose.startSession();
+
+        try {
+            const event = req.body;
+
+            console.log("📦 [Webhook Culqi] Payload recibido:", JSON.stringify(event, null, 2));
+
+            // Culqi envía el evento con el tipo en el campo "type"
+            // El evento para órdenes pagadas es: "order.status.changed"
+            // El evento para cargos es: "charge.status.changed" o "charge"
+            const eventType: string = event.type ?? "";
+            const eventObject = event.data?.object ?? event.object ?? event;
+
+            console.log("🔍 [Webhook Culqi] Tipo de evento:", eventType);
+            console.log("🔍 [Webhook Culqi] Objeto del evento:", eventObject);
+
+            // ── Cargo con tarjeta ─────────────────────────────────────────────────
+            if (eventType === "charge" || eventType === "charge.status.changed") {
+                const chargeStatus: string = eventObject.outcome?.type ?? eventObject.status ?? "";
+                const chargeId: string = eventObject.id ?? "";
+                // Culqi no manda orderId directamente en el charge webhook,
+                // pero puedes guardarlo en metadata al crear el cargo
+                const orderId: string = eventObject.metadata?.order_id ?? "";
+
+                console.log("💳 [Webhook Culqi] Cargo recibido:", { chargeId, chargeStatus, orderId });
+
+                if (!orderId) {
+                    console.warn("⚠️ [Webhook Culqi] No se encontró order_id en metadata del cargo");
+                    res.status(200).json({ message: "Evento recibido sin order_id" });
+                    return;
+                }
+
+                if (chargeStatus !== "venta") {
+                    console.log(`ℹ️ [Webhook Culqi] Estado de cargo no manejado: ${chargeStatus}`);
+                    res.status(200).json({ message: `Estado ${chargeStatus} ignorado` });
+                    return;
+                }
+
+                session.startTransaction();
+                await processCulqiApprovedOrder(orderId, chargeId, session);
+                await session.commitTransaction();
+                session.endSession();
+
+                res.status(200).json({ message: "Cargo procesado exitosamente" });
+                return;
+            }
+
+            // ── Orden (Yape, PagoEfectivo, billeteras, Cuotéalo) ─────────────────
+            if (eventType === "order.status.changed") {
+                const orderStatus: string = eventObject.state ?? eventObject.status ?? "";
+                const culqiOrderId: string = eventObject.id ?? "";
+                // El order_id de tu sistema debe estar en metadata de la orden Culqi
+                const orderId: string = eventObject.metadata?.order_id ?? "";
+
+                console.log("📱 [Webhook Culqi] Orden recibida:", {
+                    culqiOrderId,
+                    orderStatus,
+                    orderId,
+                });
+
+                if (!orderId) {
+                    console.warn("⚠️ [Webhook Culqi] No se encontró order_id en metadata de la orden Culqi");
+                    res.status(200).json({ message: "Evento recibido sin order_id" });
+                    return;
+                }
+
+                // Estados posibles de orden Culqi: "paid", "expired", "deleted"
+                if (orderStatus !== "paid") {
+                    console.log(`ℹ️ [Webhook Culqi] Estado de orden no aprobado: ${orderStatus}`);
+
+                    if (orderStatus === "expired") {
+                        // Opcional: marcar orden como cancelada
+                        await Order.findByIdAndUpdate(orderId, {
+                            "payment.status": PaymentStatus.REJECTED,
+                            status: OrderStatus.CANCELED,
+                            $push: { statusHistory: { status: OrderStatus.CANCELED, changedAt: new Date() } },
+                        });
+                        console.log(`❌ [Webhook Culqi] Orden ${orderId} expirada, marcada como cancelada`);
+                    }
+
+                    res.status(200).json({ message: `Estado ${orderStatus} registrado` });
+                    return;
+                }
+
+                session.startTransaction();
+                await processCulqiApprovedOrder(orderId, culqiOrderId, session);
+                await session.commitTransaction();
+                session.endSession();
+
+                res.status(200).json({ message: "Orden procesada exitosamente" });
+                return;
+            }
+
+            // Evento no manejado — siempre responder 200 a Culqi para evitar reintentos
+            console.log(`ℹ️ [Webhook Culqi] Evento no manejado: ${eventType}`);
+            res.status(200).json({ message: `Evento ${eventType} no manejado` });
+
+        } catch (error) {
+            if (session.inTransaction()) await session.abortTransaction();
+            session.endSession();
+            console.error("❌ [Webhook Culqi] Error interno:", error);
+            // Responder 200 igualmente para que Culqi no reintente en errores de lógica
+            res.status(500).json({ message: "Error interno del servidor" });
+        }
+    }
+}
+
+
+// Helper interno — reutilizable para cargo y orden Culqi
+async function processCulqiApprovedOrder(
+    orderId: string,
+    transactionId: string,
+    session: mongoose.ClientSession
+) {
+    console.log(`🔄 [Culqi] Procesando orden aprobada: ${orderId}, transacción: ${transactionId}`);
+
+    const order = await Order.findById(orderId)
+        .populate("user")
+        .session(session);
+
+    if (!order) {
+        throw new Error(`Orden no encontrada: ${orderId}`);
+    }
+
+    if (order.payment.status === PaymentStatus.APPROVED) {
+        console.warn(`⚠️ [Culqi] Orden ${orderId} ya procesada, ignorando duplicado`);
+        return;
+    }
+
+    // Descontar stock
+    for (const item of order.items) {
+        const product = await Product.findById(item.productId._id ?? item.productId).session(session);
+        if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
+
+        if (item.variantId) {
+            const variant = product.variants?.find(
+                (v) => v._id.toString() === item.variantId?.toString()
+            );
+            if (!variant) throw new Error(`Variante no encontrada en ${product.nombre}`);
+            if (variant.stock < item.quantity)
+                throw new Error(`Stock insuficiente para variante ${variant.nombre ?? ""} de ${product.nombre}`);
+
+            variant.stock -= item.quantity;
+            product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+        } else {
+            if (product.stock < item.quantity)
+                throw new Error(`Stock insuficiente para ${product.nombre}`);
+            product.stock -= item.quantity;
+        }
+
+        await product.save({ session });
+    }
+
+    order.payment.status = PaymentStatus.APPROVED;
+    order.payment.transactionId = transactionId;
+    order.status = OrderStatus.PROCESSING;
+    order.statusHistory.push({ status: OrderStatus.PROCESSING, changedAt: new Date() });
+
+    await order.save({ session });
+
+    // Email de confirmación
+    const user = order.user as any;
+    if (user?.email) {
+        await OrderEmail.sendOrderConfirmationEmail({
+            email: user.email,
+            name: user.nombre,
+            orderId: order._id.toString(),
+            totalPrice: order.totalPrice,
+            shippingMethod: order.shippingAddress?.direccion ?? "Culqi",
+            items: order.items,
+        });
+        console.log(`📧 [Culqi] Email de confirmación enviado a ${user.email}`);
+    }
+
+    console.log(`✅ [Culqi] Orden ${orderId} procesada y stock descontado`);
 }

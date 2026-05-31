@@ -67,6 +67,7 @@ router.post('/create-user-if-not-exists',
     AuthController.createUserIfNotExists,
 )
 
+
 // Edit user profile
 router.put('/edit-profile',
     authenticate,
@@ -77,7 +78,6 @@ router.put('/edit-profile',
     handleInputErrors,
     AuthController.editUser,
 )
-
 
 
 

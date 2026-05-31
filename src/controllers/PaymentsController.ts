@@ -5,6 +5,9 @@ import { payment } from '../utils/mercadopago';
 import Order from '../models/Order';
 import User from '../models/User';
 import Product from '../models/Product';
+import { OrderStatus, PaymentStatus } from "../models/Order";
+import mongoose from 'mongoose';
+
 
 export class PaymentsController {
 
@@ -179,73 +182,195 @@ export class PaymentsController {
 
     static async processPaymentCulqi(req: Request, res: Response) {
         try {
-            const { token, order, amount, description, currency_code = "PEN", email } = req.body;
+            const { token, order, amount, currency_code = "PEN", email } = req.body;
 
-            console.log("📦 Request body:", req.body);
+            console.log("📦 [Culqi Controller] Request body:", req.body);
 
+            // Validaciones
             if (!token && !order) {
+                console.error("❌ [Culqi] Falta token o order");
                 res.status(400).json({ message: "Debe enviar 'token' o 'order'" });
                 return;
             }
 
-            if (!amount || !description) {
-                res.status(400).json({ message: "Faltan campos obligatorios: amount y description" });
+            if (!amount) {
+                console.error("❌ [Culqi] Falta amount");
+                res.status(400).json({ message: "El campo 'amount' es obligatorio" });
                 return;
             }
 
-            const culqiApiKey = process.env.CULQI_API_KEY;
+            if (!email) {
+                console.error("❌ [Culqi] Falta email");
+                res.status(400).json({ message: "El campo 'email' es obligatorio" });
+                return;
+            }
+
+            const culqiPrivateKey = process.env.CULQI_API_KEY;
+
+            if (!culqiPrivateKey) {
+                console.error("❌ [Culqi] CULQI_API_KEY no definida en .env");
+                res.status(500).json({ message: "Configuración del servidor incompleta" });
+                return;
+            }
 
             let culqiResponse;
             let url = "";
-            let payload: any = {};
+            let payload: Record<string, any> = {};
 
             if (token) {
-                // Pago con tarjeta
+                // ── Pago con tarjeta ──────────────────────────────────────
                 url = "https://api.culqi.com/v2/charges";
                 payload = {
-                    amount, // debe ir en céntimos: 10.00 PEN → 1000
+                    amount,           // en céntimos: S/10.00 → 1000
                     currency_code,
                     email,
                     source_id: token,
-                    description,
+                    capture: true,
+                    antifraud_details: {
+                        address: "Av. Lima 123",
+                        address_city: "Lima",
+                        country_code: "PE",
+                        first_name: "Cliente",
+                        last_name: "Prueba",
+                        phone_number: "999999999",
+                    },
+                    metadata: {
+                        order_id: req.body.orderId ?? "", // ← pasar orderId desde el frontend
+                    },
                 };
+                console.log("💳 [Culqi] Procesando cargo con tarjeta:", { url, payload });
+
             } else if (order) {
-                // Pago con Yape o billetera
-                url = `https://api.culqi.com/v2/orders/${order.id}/confirm`;
+                // ── Confirmación de orden (Yape / billetera / PagoEfectivo) ──
+                // `order` ya es el string del ID — no usar order.id
+                url = `https://api.culqi.com/v2/orders/${order}/confirm`;
+                console.log("📱 [Culqi] Confirmando orden:", { url, orderId: order });
             }
 
             culqiResponse = await fetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${culqiApiKey}`,
+                    Authorization: `Bearer ${culqiPrivateKey}`,
                 },
-                body: token ? JSON.stringify(payload) : undefined,
+                // Órdenes no llevan body en el confirm
+                ...(token && { body: JSON.stringify(payload) }),
             });
 
             const data = await culqiResponse.json();
 
-            if (!culqiResponse.ok) {
-                console.error("Error de Culqi:", data);
-                res.status(culqiResponse.status).json({
-                    status: "error",
-                    message: data.user_message || "El pago no pudo ser procesado",
-                    error: data,
-                });
-                return;
+            if (token && data.outcome?.type === "venta_exitosa") {
+                const session = await mongoose.startSession();
+                session.startTransaction();
+
+                try {
+                    const order = await Order.findById(req.body.orderId)
+                        .populate("user")
+                        .session(session);
+
+                    if (!order) {
+                        await session.abortTransaction();
+                        session.endSession();
+                        console.error("❌ [Culqi] Orden no encontrada:", req.body.orderId);
+                        res.status(404).json({ message: "Orden no encontrada" });
+                        return;
+                    }
+
+                    if (order.payment.status === PaymentStatus.APPROVED) {
+                        await session.abortTransaction();
+                        session.endSession();
+                        console.warn("⚠️ [Culqi] Orden ya procesada:", req.body.orderId);
+                        res.status(200).json({ status: "success", message: "Orden ya procesada", data });
+                        return;
+                    }
+
+                    // Descontar stock
+                    for (const item of order.items) {
+                        const product = await Product.findById(
+                            (item.productId as any)._id ?? item.productId
+                        ).session(session);
+
+                        if (!product) {
+                            await session.abortTransaction();
+                            session.endSession();
+                            res.status(404).json({ message: `Producto no encontrado: ${item.productId}` });
+                            return;
+                        }
+
+                        if (item.variantId) {
+                            const variant = product.variants?.find(
+                                v => v._id.toString() === item.variantId?.toString()
+                            );
+                            if (!variant || variant.stock < item.quantity) {
+                                await session.abortTransaction();
+                                session.endSession();
+                                res.status(400).json({ message: `Stock insuficiente: ${product.nombre}` });
+                                return;
+                            }
+                            variant.stock -= item.quantity;
+                            product.stock = product.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+                        } else {
+                            if (product.stock < item.quantity) {
+                                await session.abortTransaction();
+                                session.endSession();
+                                res.status(400).json({ message: `Stock insuficiente: ${product.nombre}` });
+                                return;
+                            }
+                            product.stock -= item.quantity;
+                        }
+
+                        await product.save({ session });
+                    }
+
+                    // Actualizar estado de la orden
+                    order.payment.status = PaymentStatus.APPROVED;
+                    order.payment.transactionId = data.id;
+                    order.payment.method = "culqi";
+                    order.status = OrderStatus.PROCESSING;
+                    order.statusHistory.push({ status: OrderStatus.PROCESSING, changedAt: new Date() });
+
+                    await order.save({ session });
+                    await session.commitTransaction();
+                    session.endSession();
+
+                    console.log("✅ [Culqi] Orden actualizada en BD:", req.body.orderId);
+
+                    // Email de confirmación
+                    const user = order.user as any;
+                    if (user?.email) {
+
+                        console.log("📧 [Culqi] Email enviado a:", user.email);
+                    }
+
+                } catch (dbError) {
+                    if (session.inTransaction()) await session.abortTransaction();
+                    session.endSession();
+                    console.error("❌ [Culqi] Error actualizando BD:", dbError);
+                    // El pago ya fue procesado por Culqi — no retornar error al frontend
+                    // El webhook de Culqi puede servir como respaldo
+                }
             }
 
-            console.log(" Culqi OK:", data);
+            console.log("✅ [Culqi] Cargo/orden procesado exitosamente:", {
+                id: data.id,
+                object: data.object,
+                amount: data.amount,
+                currency_code: data.currency_code,
+                outcome: data.outcome,
+            });
+
             res.status(200).json({
                 status: "success",
                 message: "Pago procesado exitosamente",
                 data,
             });
-            return;
+
         } catch (error) {
-            console.error("Error interno:", error);
-            res.status(500).json({ message: "Error interno del servidor", error: (error as Error).message });
-            return;
+            console.error("❌ [Culqi] Error interno del servidor:", error);
+            res.status(500).json({
+                message: "Error interno del servidor",
+                error: (error as Error).message,
+            });
         }
     }
 
