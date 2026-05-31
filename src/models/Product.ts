@@ -1,3 +1,5 @@
+//File: backend/src/models/Product.ts
+
 import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
 import { ICategory } from './Category';
 import { IBrand } from './Brand';

@@ -1,3 +1,5 @@
+//File: backend/src/models/User.ts
+
 import mongoose, { Schema, Document } from 'mongoose';
 
 export type UserRole = 'cliente' | 'administrador' | 'vendedor';

@@ -77,7 +77,9 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
     provincia: { type: String, required: true },
     distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    referencia: { type: String }
+    referencia: { type: String },
+    numero: { type: String },
+    pisoDpto: { type: String }
 }, { _id: false });
 
 const orderItemSchema = new Schema<IOrderItem>({

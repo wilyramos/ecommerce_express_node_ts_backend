@@ -7,6 +7,7 @@ import User from '../models/User';
 import Product from '../models/Product';
 import { OrderStatus, PaymentStatus } from "../models/Order";
 import mongoose from 'mongoose';
+import { OrderEmail } from '../emails/OrderEmailResend';
 
 
 export class PaymentsController {
@@ -90,7 +91,7 @@ export class PaymentsController {
                     id: String(product._id),
                     title: product.nombre,
                     quantity: item.quantity,
-                    unit_price: product.precio
+                    unit_price: item.price
                 };
             }));
 
@@ -202,6 +203,11 @@ export class PaymentsController {
             if (!email) {
                 console.error("❌ [Culqi] Falta email");
                 res.status(400).json({ message: "El campo 'email' es obligatorio" });
+                return;
+            }
+
+            if (!req.body.orderId) {
+                res.status(400).json({ message: "orderId es obligatorio" });
                 return;
             }
 
@@ -324,6 +330,7 @@ export class PaymentsController {
 
                     // Actualizar estado de la orden
                     order.payment.status = PaymentStatus.APPROVED;
+                    order.payment.provider = 'culqi';
                     order.payment.transactionId = data.id;
                     order.payment.method = "culqi";
                     order.status = OrderStatus.PROCESSING;
@@ -338,8 +345,16 @@ export class PaymentsController {
                     // Email de confirmación
                     const user = order.user as any;
                     if (user?.email) {
-
-                        console.log("📧 [Culqi] Email enviado a:", user.email);
+                        console.log("📧 Enviando email de confirmación a:", user.email);
+                        await OrderEmail.sendOrderConfirmationEmail({
+                            email: user.email,
+                            name: user.nombre,
+                            orderId: order._id.toString(),
+                            totalPrice: order.totalPrice,
+                            shippingMethod: "Culqi",
+                            items: order.items,
+                        });
+                        console.log("📧 Email de confirmación enviado tras pago Culqi");
                     }
 
                 } catch (dbError) {

@@ -302,23 +302,33 @@ export class WebhookController {
     // --- CULQI ---
     static async handleWebHookCulqi(req: Request, res: Response) {
         const session = await mongoose.startSession();
+        session.startTransaction();
 
         try {
             const event = req.body;
 
             console.log("📦 [Webhook Culqi] Payload recibido:", JSON.stringify(event, null, 2));
+            console.log("🔔 [Culqi] notification_url:", process.env.CULQI_NOTIFICATION_URL);
 
             // Culqi envía el evento con el tipo en el campo "type"
             // El evento para órdenes pagadas es: "order.status.changed"
             // El evento para cargos es: "charge.status.changed" o "charge"
             const eventType: string = event.type ?? "";
-            const eventObject = event.data?.object ?? event.object ?? event;
-
+            let eventObject: any;
+            try {
+                eventObject = typeof event.data === 'string'
+                    ? JSON.parse(event.data)
+                    : event.data?.object ?? event;
+            } catch {
+                console.error("❌ [Webhook Culqi] Error parseando event.data");
+                res.status(400).json({ message: "Payload inválido" });
+                return;
+            }
             console.log("🔍 [Webhook Culqi] Tipo de evento:", eventType);
             console.log("🔍 [Webhook Culqi] Objeto del evento:", eventObject);
 
             // ── Cargo con tarjeta ─────────────────────────────────────────────────
-            if (eventType === "charge" || eventType === "charge.status.changed") {
+            if (eventType === "charge.creation.succeeded" || eventType === "charge.status.changed") {
                 const chargeStatus: string = eventObject.outcome?.type ?? eventObject.status ?? "";
                 const chargeId: string = eventObject.id ?? "";
                 // Culqi no manda orderId directamente en el charge webhook,
@@ -333,13 +343,12 @@ export class WebhookController {
                     return;
                 }
 
-                if (chargeStatus !== "venta") {
+                if (chargeStatus !== "venta_exitosa") {
                     console.log(`ℹ️ [Webhook Culqi] Estado de cargo no manejado: ${chargeStatus}`);
                     res.status(200).json({ message: `Estado ${chargeStatus} ignorado` });
                     return;
                 }
 
-                session.startTransaction();
                 await processCulqiApprovedOrder(orderId, chargeId, session);
                 await session.commitTransaction();
                 session.endSession();
