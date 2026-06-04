@@ -1,10 +1,8 @@
-//File: backend/src/models/Order.ts
-
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
 
-// Status 
+// Status Enums (Asegurar consistencia con los mapeos del frontend)
 export enum OrderStatus {
     AWAITING_PAYMENT = 'awaiting_payment',
     PROCESSING = 'processing',
@@ -21,7 +19,7 @@ export enum PaymentStatus {
     REFUNDED = 'refunded'
 }
 
-// Interfaces
+// Interfaces de Soporte
 export interface IShippingAddress {
     departamento: string;
     provincia: string;
@@ -37,8 +35,8 @@ export interface ICustomerProfile {
     apellidos: string;
     email: string;
     telefono: string;
-    tipoDocumento?: string;   // Opcional para flexibilidad de checkout rápido tipo Shopify
-    numeroDocumento?: string; // Opcional para flexibilidad de checkout rápido tipo Shopify
+    tipoDocumento?: string;
+    numeroDocumento?: string;
 }
 
 export interface IOrderItem {
@@ -49,8 +47,8 @@ export interface IOrderItem {
     price: number;
     nombre: string;
     imagen?: string;
-    sku?: string;      // MEJORA: Historial técnico de almacén
-    barcode?: string;  // MEJORA: Historial técnico de almacén
+    sku?: string;
+    barcode?: string;
 }
 
 export interface IPaymentInfo {
@@ -66,8 +64,13 @@ export interface IStatusHistory {
     changedAt: Date;
 }
 
+// Interfaz del Documento Core
 export interface IOrder extends Document {
     orderNumber: string;
+    // ════════════════════════════════════════════════════════════════
+    // MODIFICACIÓN 1: Tipado del ID de orden generado por servidores de Culqi
+    // ════════════════════════════════════════════════════════════════
+    culqiOrderId?: string; 
     user?: Types.ObjectId | IUser;
     customerProfile: ICustomerProfile;
     items: IOrderItem[];
@@ -79,13 +82,13 @@ export interface IOrder extends Document {
     statusHistory: IStatusHistory[];
     shippingAddress: IShippingAddress;
     payment?: IPaymentInfo;
-    trackingNumber?: string;           // MEJORA: Logística (Olva, Shalom, etc.)
-    notes?: string;                    // MEJORA: Instrucciones del cliente
+    trackingNumber?: string;
+    notes?: string;
     createdAt: Date;
     updatedAt: Date;
 }
 
-// Schemas
+// Schemas de subdocumentos embebidos
 const shippingAddressSchema = new Schema<IShippingAddress>({
     departamento: { type: String, required: true },
     provincia: { type: String, required: true },
@@ -133,6 +136,10 @@ const statusHistorySchema = new Schema<IStatusHistory>({
 // Schema principal de la orden
 const orderSchema = new Schema<IOrder>({
     orderNumber: { type: String, unique: true, required: true },
+    // ════════════════════════════════════════════════════════════════
+    // MODIFICACIÓN 2: Almacén físico en la colección para token ord_...
+    // ════════════════════════════════════════════════════════════════
+    culqiOrderId: { type: String, trim: true, required: false },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: false },
     customerProfile: { type: customerProfileSchema, required: true },
     items: { type: [orderItemSchema], required: true },
@@ -155,6 +162,8 @@ orderSchema.index({ 'payment.transactionId': 1 }, { sparse: true });
 orderSchema.index({ trackingNumber: 1 }, { sparse: true }); 
 orderSchema.index({ 'customerProfile.email': 1 }); 
 orderSchema.index({ orderNumber: 1 }); 
+// Indexar el ID de Culqi agiliza búsquedas asíncronas en futuras conciliaciones
+orderSchema.index({ culqiOrderId: 1 }, { sparse: true }); 
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 

@@ -61,11 +61,15 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 1. Crear orden
     // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. Crear orden (Integrado con Culqi Multipago V2 Orders)
+    // ─────────────────────────────────────────────────────────────────────────
     async createOrder(dto: CreateOrderDTO): Promise<IOrder> {
         const orderNumber = generateSecureOrderNumber();
         const items: IOrderItem[] = [];
         let subtotal = 0;
 
+        // Validación de productos y cálculo del subtotal histórico estático
         for (const item of dto.items) {
             const dbProduct = await Product.findOne({
                 _id: item.productId,
@@ -134,12 +138,59 @@ export const orderService = {
             });
         }
 
-        // TODO: implementar lógica de costo de envío real
-        const shippingCost = 0;
+        // Lógica interna de costos logísticos locales
+        const shippingCost = subtotal > 200 ? 0 : 15;
         const totalPrice = subtotal + shippingCost;
 
+        // Transformación matemática: Culqi no acepta flotantes en el "amount" (Ej: S/. 150.50 -> 15050)
+        const amountInCents = Math.round(totalPrice * 100);
+
+        // ════════════════════════════════════════════════════════════════
+        // CONEXIÓN CON LA API DE ÓRDENES DE CULQI (Habilitador Multipago)
+        // ════════════════════════════════════════════════════════════════
+        let culqiOrderId: string | undefined = undefined;
+
+        try {
+            const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${process.env.CULQI_SECRET_KEY}`, // sk_live_... o sk_test_...
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    amount: amountInCents,
+                    currency_code: dto.currency ?? "PEN",
+                    description: `Cargo por orden comercial ${orderNumber}`,
+                    order_number: orderNumber,
+                    // Exigencia del SDK: Tiempo límite en formato Unix Timestamp (Ej: Expira en 24 horas)
+                    expiration_date: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+                    client_details: {
+                        first_name: dto.customerProfile.nombre,
+                        last_name: dto.customerProfile.apellidos,
+                        email: dto.customerProfile.email,
+                        phone_number: dto.customerProfile.telefono
+                    },
+                    confirm: true
+                })
+            });
+
+            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string;[key: string]: unknown };
+
+            if (culqiResponse.ok && culqiOrderData.id) {
+                culqiOrderId = culqiOrderData.id; // Ahora TypeScript sabe que .id es un string seguro
+            } else {
+                console.error("⚠️ La API de Culqi denegó la creación de la orden:", culqiOrderData);
+            }
+        } catch (error) {
+            console.error("❌ Error de red / Timeout al comunicar con Culqi Orders API:", error);
+            // Fail-safe: Si Culqi falla, permitimos la persistencia del flujo local. 
+            // El frontend abrirá el modal únicamente con tarjetas en modo degradado seguro.
+        }
+
+        // Persistencia física en la colección de MongoDB
         return Order.create({
             orderNumber,
+            culqiOrderId, // Inyección del identificador multipago en el documento raíz
             user: dto.userId ? new Types.ObjectId(dto.userId) : undefined,
             customerProfile: dto.customerProfile,
             items,
@@ -153,7 +204,6 @@ export const orderService = {
             statusHistory: [{ status: OrderStatus.AWAITING_PAYMENT, changedAt: new Date() }],
         });
     },
-
     // ─────────────────────────────────────────────────────────────────────────
     // 2. Obtener orden por ObjectId
     // ─────────────────────────────────────────────────────────────────────────
@@ -297,8 +347,8 @@ export const orderService = {
             paymentData.status === PaymentStatus.APPROVED
                 ? OrderStatus.PROCESSING
                 : paymentData.status === PaymentStatus.REJECTED
-                ? OrderStatus.CANCELED
-                : undefined;
+                    ? OrderStatus.CANCELED
+                    : undefined;
 
         const update: UpdateQuery<IOrder> = { $set: { payment: paymentData } };
 
