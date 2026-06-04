@@ -194,34 +194,22 @@ export class PaymentsController {
     }
 
 
-    static async processPaymentCulqi(req: Request, res: Response) {
+    /**
+     * Procesamiento unificado de respuestas de Culqi (Multipago)
+     */
+    static async processPaymentCulqi(req: Request, res: Response): Promise<void> {
         try {
             const { token, order, amount, currency_code = "PEN", email, orderId } = req.body;
 
             console.log("📦 [Culqi Controller] Request body:", req.body);
 
-            // Validaciones iniciales
             if (!token && !order) {
-                console.error("❌ [Culqi] Falta token u order");
                 res.status(400).json({ message: "Debe enviar 'token' o 'order'" });
                 return;
             }
 
-            if (!amount) {
-                console.error("❌ [Culqi] Falta amount");
-                res.status(400).json({ message: "El campo 'amount' es obligatorio" });
-                return;
-            }
-
-            if (!email) {
-                console.error("❌ [Culqi] Falta email");
-                res.status(400).json({ message: "El campo 'email' es obligatorio" });
-                return;
-            }
-
-            if (!orderId) {
-                console.error("❌ [Culqi] Falta orderId en el body");
-                res.status(400).json({ message: "orderId es obligatorio" });
+            if (!amount || !email || !orderId) {
+                res.status(400).json({ message: "Faltan parámetros requeridos (amount, email, orderId)" });
                 return;
             }
 
@@ -232,17 +220,13 @@ export class PaymentsController {
                 return;
             }
 
-            // ── Validar estado actual de la orden en Base de Datos de manera segura ──
             const existingOrder = await Order.findById(orderId);
             if (!existingOrder) {
-                console.error("❌ [Culqi] Orden no encontrada en BD:", orderId);
-                res.status(404).json({ message: "Orden no encontrada" });
+                res.status(404).json({ message: "Orden no encontrada en la base de datos" });
                 return;
             }
 
-            // Encadenamiento opcional (?.) previene el TypeError si 'payment' viene indefinido
             if (existingOrder?.payment?.status === PaymentStatus.APPROVED) {
-                console.warn("⚠️ [Culqi] Orden ya aprobada previamente:", orderId);
                 res.status(200).json({
                     status: "success",
                     message: "La orden ya ha sido pagada y procesada anteriormente."
@@ -250,49 +234,60 @@ export class PaymentsController {
                 return;
             }
 
-            let url = "";
-            let payload: Record<string, any> = {};
-
-            if (token) {
-                // ── Flujo: Pago directo con tarjeta / Yape ───────────────────────
-                url = "https://api.culqi.com/v2/charges";
-                payload = {
-                    amount,
-                    currency_code,
-                    email,
-                    source_id: token,
-                    capture: true,
-                    antifraud_details: {
-                        address: "Av. Lima 123",
-                        address_city: "Lima",
-                        country_code: "PE",
-                        first_name: "Cliente",
-                        last_name: "Prueba",
-                        phone_number: "999999999",
-                    },
-                    metadata: {
-                        order_id: orderId, // Crucial para enlazarlo en el webhook posterior
-                    },
+            // ── Flujo 1: Si es pago asíncrono con QR, Código de pago o Billeteras (Culqi.order) ──
+            if (order) {
+                console.log("📱 [Culqi Controller] Flujo asíncrono detectado para orden:", order);
+                
+                // Omitimos llamar a /v2/orders/:id/confirm porque Culqi lo hace internamente.
+                // Guardamos directamente el estado transicional en la base de datos.
+                existingOrder.payment = {
+                    provider: 'culqi',
+                    method: 'multipago',
+                    transactionId: order, // Almacenamos el ord_live_... como referencia de rastreo
+                    status: PaymentStatus.PENDING
                 };
-                console.log("💳 [Culqi] Enviando solicitud de cargo a Culqi...");
-            } else if (order) {
-                // ── Flujo: Confirmación de PagoEfectivo / Billeteras ─────────────
-                url = `https://api.culqi.com/v2/orders/${order}/confirm`;
-                console.log("📱 [Culqi] Enviando confirmación de orden a Culqi:", order);
+                await existingOrder.save();
+
+                res.status(200).json({
+                    status: "success",
+                    message: "Orden en pasarela registrada localmente de forma exitosa. Esperando pago físico.",
+                });
+                return;
             }
 
-            // Petición al API de Culqi
+            // ── Flujo 2: Cargo inmediato con Tarjetas o Yape Directo (Culqi.token) ──
+            const url = "https://api.culqi.com/v2/charges";
+            const payload = {
+                amount,
+                currency_code,
+                email,
+                source_id: token,
+                capture: true,
+                antifraud_details: {
+                    address: "Av. Lima 123",
+                    address_city: "Lima",
+                    country_code: "PE",
+                    first_name: existingOrder.customerProfile.nombre,
+                    last_name: existingOrder.customerProfile.apellidos,
+                    phone_number: existingOrder.customerProfile.telefono,
+                },
+                metadata: {
+                    order_id: orderId,
+                },
+            };
+
+            console.log("💳 [Culqi] Enviando solicitud de cargo síncrono por tarjeta/yape...");
             const culqiResponse = await fetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${culqiPrivateKey}`,
                 },
-                ...(token && { body: JSON.stringify(payload) }),
+                body: JSON.stringify(payload)
             });
 
             const data = (await culqiResponse.json()) as CulqiApiResponse;
-            // Controlar respuestas de error del API de Culqi
+
             if (!culqiResponse.ok) {
                 console.error("❌ [Culqi] Respuesta de error de la pasarela:", data);
                 res.status(culqiResponse.status).json({
@@ -302,13 +297,8 @@ export class PaymentsController {
                 return;
             }
 
-            console.log("✅ [Culqi] Transacción procesada por Culqi de forma síncrona:", {
-                id: data.id,
-                object: data.object,
-                outcome: data.outcome ?? "N/A"
-            });
+            console.log("✅ [Culqi] Cargo inmediato procesado correctamente:", data.id);
 
-            // Retornar éxito al cliente. El webhook se encargará del stock y la persistencia asíncrona.
             res.status(200).json({
                 status: "success",
                 message: "Transacción enviada correctamente. Esperando confirmación del webhook.",
@@ -322,9 +312,9 @@ export class PaymentsController {
                 error: (error as Error).message,
             });
         }
-
-
     }
+
+    
     static async processPaymentYape(req: Request, res: Response) {
         try {
             const { token, transaction_amount, payer, description, orderId } = req.body;
