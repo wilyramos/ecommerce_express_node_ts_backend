@@ -139,7 +139,7 @@ export const orderService = {
         }
 
         // Lógica interna de costos logísticos locales
-        const shippingCost = subtotal > 200 ? 0 : 15;
+        const shippingCost = subtotal > 200 ? 0 : 0;
         const totalPrice = subtotal + shippingCost;
 
         // Transformación matemática: Culqi no acepta flotantes en el "amount" (Ej: S/. 150.50 -> 15050)
@@ -154,7 +154,7 @@ export const orderService = {
             const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
                 method: "POST",
                 headers: {
-                    "Authorization": `Bearer ${process.env.CULQI_SECRET_KEY}`, // sk_live_... o sk_test_...
+                    "Authorization": `Bearer ${process.env.CULQI_API_KEY}`, 
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
@@ -162,7 +162,6 @@ export const orderService = {
                     currency_code: dto.currency ?? "PEN",
                     description: `Cargo por orden comercial ${orderNumber}`,
                     order_number: orderNumber,
-                    // Exigencia del SDK: Tiempo límite en formato Unix Timestamp (Ej: Expira en 24 horas)
                     expiration_date: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
                     client_details: {
                         first_name: dto.customerProfile.nombre,
