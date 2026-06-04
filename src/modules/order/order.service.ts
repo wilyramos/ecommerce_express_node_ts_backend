@@ -169,7 +169,7 @@ export const orderService = {
                         email: dto.customerProfile.email,
                         phone_number: dto.customerProfile.telefono
                     },
-                    confirm: true
+                    confirm: false, // Solo creamos la orden en Culqi, el pago se confirmará posteriormente desde el frontend o webhooks
                 })
             });
 
