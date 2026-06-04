@@ -2,7 +2,7 @@ import { ISale } from "../models/Sale";
 
 const COMPANY = {
     nombre: "GOPHONE",
-    ruc: "1078632515",
+    ruc: "10725169715",
     direccion: "Jr. Bernardo Ohggins 120",
     city: "Cañete, Lima - Perú",
     telefono: "925054636",

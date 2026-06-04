@@ -902,7 +902,7 @@ export class ProductController {
                 .populate('categoria', 'nombre slug')
                 .populate('brand', 'nombre slug')
                 .populate('line', 'nombre slug')
-                .populate('collections', 'name slug isSystem');
+            // .populate('collections', 'name slug isSystem');
 
             if (!product) {
                 res.status(404).json({ message: 'Product not found' });

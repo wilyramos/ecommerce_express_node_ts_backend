@@ -46,9 +46,6 @@ router.post('/izipay/create-payment',
 // Culqi
 
 router.post('/process-payment-culqi',
-    authenticate,
-    // body('token').notEmpty().withMessage('Token is required'),
-    // body('order').notEmpty().withMessage('Order is required'),
     PaymentsController.processPaymentCulqi
 );
 

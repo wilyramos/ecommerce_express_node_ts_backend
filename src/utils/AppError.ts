@@ -1,3 +1,5 @@
+//File: backend/src/utils/AppError.ts
+
 export class AppError extends Error {
     public readonly statusCode: number;
     public readonly isOperational: boolean;

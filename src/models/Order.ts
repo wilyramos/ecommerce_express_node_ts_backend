@@ -32,14 +32,25 @@ export interface IShippingAddress {
     referencia?: string;
 }
 
+export interface ICustomerProfile {
+    nombre: string;
+    apellidos: string;
+    email: string;
+    telefono: string;
+    tipoDocumento?: string;   // Opcional para flexibilidad de checkout rápido tipo Shopify
+    numeroDocumento?: string; // Opcional para flexibilidad de checkout rápido tipo Shopify
+}
+
 export interface IOrderItem {
     productId: Types.ObjectId | IProduct;
     variantId?: Types.ObjectId;
     variantAttributes?: Record<string, string>;
     quantity: number;
     price: number;
-    nombre: string; // nombre histórico producto + variante
+    nombre: string;
     imagen?: string;
+    sku?: string;      // MEJORA: Historial técnico de almacén
+    barcode?: string;  // MEJORA: Historial técnico de almacén
 }
 
 export interface IPaymentInfo {
@@ -57,7 +68,8 @@ export interface IStatusHistory {
 
 export interface IOrder extends Document {
     orderNumber: string;
-    user: Types.ObjectId | IUser;
+    user?: Types.ObjectId | IUser;
+    customerProfile: ICustomerProfile;
     items: IOrderItem[];
     subtotal: number;
     shippingCost: number;
@@ -66,7 +78,9 @@ export interface IOrder extends Document {
     status: OrderStatus;
     statusHistory: IStatusHistory[];
     shippingAddress: IShippingAddress;
-    payment: IPaymentInfo;
+    payment?: IPaymentInfo;
+    trackingNumber?: string;           // MEJORA: Logística (Olva, Shalom, etc.)
+    notes?: string;                    // MEJORA: Instrucciones del cliente
     createdAt: Date;
     updatedAt: Date;
 }
@@ -77,9 +91,18 @@ const shippingAddressSchema = new Schema<IShippingAddress>({
     provincia: { type: String, required: true },
     distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    referencia: { type: String },
-    numero: { type: String },
-    pisoDpto: { type: String }
+    numero: { type: String },     
+    pisoDpto: { type: String },   
+    referencia: { type: String }
+}, { _id: false });
+
+const customerProfileSchema = new Schema<ICustomerProfile>({
+    nombre: { type: String, required: true, trim: true },
+    apellidos: { type: String, required: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    telefono: { type: String, required: true, trim: true },
+    tipoDocumento: { type: String, enum: ['DNI', 'RUC', 'CE'] }, 
+    numeroDocumento: { type: String }
 }, { _id: false });
 
 const orderItemSchema = new Schema<IOrderItem>({
@@ -89,7 +112,9 @@ const orderItemSchema = new Schema<IOrderItem>({
     quantity: { type: Number, required: true },
     price: { type: Number, required: true },
     nombre: { type: String, required: true },
-    imagen: { type: String }
+    imagen: { type: String },
+    sku: { type: String },     
+    barcode: { type: String }  
 }, { _id: false });
 
 const paymentSchema = new Schema<IPaymentInfo>({
@@ -107,8 +132,9 @@ const statusHistorySchema = new Schema<IStatusHistory>({
 
 // Schema principal de la orden
 const orderSchema = new Schema<IOrder>({
-    orderNumber: { type: String, unique: true },
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    orderNumber: { type: String, unique: true, required: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: false },
+    customerProfile: { type: customerProfileSchema, required: true },
     items: { type: [orderItemSchema], required: true },
     subtotal: { type: Number, required: true },
     shippingCost: { type: Number, default: 0 },
@@ -117,13 +143,18 @@ const orderSchema = new Schema<IOrder>({
     status: { type: String, enum: Object.values(OrderStatus), default: OrderStatus.AWAITING_PAYMENT },
     statusHistory: { type: [statusHistorySchema], default: [] },
     shippingAddress: { type: shippingAddressSchema, required: true },
-    payment: { type: paymentSchema, required: true }
+    payment: { type: paymentSchema, required: false },
+    trackingNumber: { type: String, trim: true },
+    notes: { type: String, trim: true, maxlength: 300 }
 }, { timestamps: true });
 
-// Índices útiles
-orderSchema.index({ user: 1 });
+// ÍNDICES OPTIMIZADOS PARA PRODUCCIÓN
+orderSchema.index({ user: 1 }, { sparse: true }); 
 orderSchema.index({ status: 1 });
-orderSchema.index({ 'payment.transactionId': 1 });
+orderSchema.index({ 'payment.transactionId': 1 }, { sparse: true });
+orderSchema.index({ trackingNumber: 1 }, { sparse: true }); 
+orderSchema.index({ 'customerProfile.email': 1 }); 
+orderSchema.index({ orderNumber: 1 }); 
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 

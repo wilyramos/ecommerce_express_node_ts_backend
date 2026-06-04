@@ -2,9 +2,9 @@ import PDFDocument from 'pdfkit';
 
 const COMPANY = {
     nombre: "GOPHONE",
-    ruc: "1078632515",
+    ruc: "10725169715",
     direccion: "Jr. Bernardo O'Higgins 120",
-    city: "Cañete, Lima - Perú",
+    city: "San vicente de Cañete, Lima - Perú",
     telefono: "925054636",
 };
 
