@@ -43,8 +43,8 @@ router.post(
 
     body('imagenes')
         .optional()
-        .isArray({ max: 5 })
-        .withMessage('Las imágenes deben ser un arreglo con un máximo de 5 elementos'),
+        .isArray({ max: 15 })
+        .withMessage('Las imágenes deben ser un arreglo con un máximo de 15 elementos'),
 
     body('categoria')
         .notEmpty()
