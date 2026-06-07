@@ -154,7 +154,7 @@ export const orderService = {
             const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
                 method: "POST",
                 headers: {
-                    "Authorization": `Bearer ${process.env.CULQI_API_KEY}`, 
+                    "Authorization": `Bearer ${process.env.CULQI_API_KEY}`,
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({

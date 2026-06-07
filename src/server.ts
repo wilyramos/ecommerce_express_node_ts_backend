@@ -28,6 +28,8 @@ import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 import userRouterV2 from './modules/users/users.router'
 import orderRouterV2 from './modules/order/order.router' 
 import webhookRouterV2 from './modules/webhook/webhook.router' 
+import sectionRouter from './modules/section/section.router'
+import advertisementRouter from './modules/advertisement/advertisement.routes'
 
 import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
@@ -64,8 +66,6 @@ app.use(morgan('dev'))
 // El interceptor intercepta los bytes exactos antes de que se limpie el stream de la petición HTTP
 app.use(express.json());
 
-
-
 app.use(express.urlencoded({ extended: true }))
 
 app.use(cors({
@@ -96,10 +96,12 @@ app.use('/api/reports/v2', reportRouter)
 app.use('/api/users/v2', userRouterV2)
 app.use('/api/orders/v2', orderRouterV2) 
 app.use('/api/slider-banners', sliderBannerRouter)
+app.use('/api/sections', sectionRouter)
 app.use('/api/collections', collectionRouter)
 app.use('/api/comparisons', comparisonRouter)
 app.use('/api/media', mediaRouter)
 app.use('/api/claims', claimRouter)
+app.use('/api/advertisements', advertisementRouter)
 
 // ════════════════════════════════════════════════════════════════
 // 4. RUTAS VERSION 1 / LEGADO
