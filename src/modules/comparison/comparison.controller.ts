@@ -1,3 +1,4 @@
+// backend/src/modules/comparison/comparison.controller.ts
 import { Request, Response, NextFunction } from 'express';
 import { ComparisonService } from './comparison.service';
 
@@ -34,7 +35,6 @@ export class ComparisonController {
 
             const result = await ComparisonService.getAll(filters);
 
-            // CORRECCIÓN: Encapsulamos la información en la propiedad 'data' para el frontend
             res.status(200).json({
                 status: 'success',
                 data: result.comparisons,

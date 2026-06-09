@@ -1,3 +1,4 @@
+// backend/src/modules/comparison/comparison.service.ts
 import Comparison, { IComparison } from './comparison.model';
 import Product from '../../models/Product';
 import { AppError } from '../../utils/AppError';
@@ -6,7 +7,7 @@ import slugify from 'slugify';
 
 export class ComparisonService {
     /**
-     * Crea una comparativa con validaciones esenciales de SEO e integridad de productos.
+     * Crea una comparativa optimizada para conversión visual con validaciones de scores.
      */
     static async create(data: Partial<IComparison>) {
         if (!data.slug && data.title) {
@@ -26,7 +27,6 @@ export class ComparisonService {
             throw new AppError('Se requieren al menos 2 productos para la comparativa.', 400);
         }
 
-        // SOLUCIÓN: Definición explícita de tipos para evitar inferencias 'unknown'
         const uniqueIds: string[] = Array.from(new Set(data.products.map(p => p.toString())));
         const dbProducts = await Product.find({ _id: { $in: uniqueIds }, isActive: true, deletedAt: null }).select('_id nombre');
 
@@ -34,28 +34,37 @@ export class ComparisonService {
             throw new AppError('Uno o más productos no existen o están inactivos.', 400);
         }
 
-        // SOLUCIÓN: Tipado explícito de (id: string) en la instanciación de ObjectId
         data.products = uniqueIds.map((id: string) => new Types.ObjectId(id));
 
-        if (!data.introduccion || data.introduccion.trim().length < 150) {
-            throw new AppError('La introducción debe tener al menos 150 caracteres para SEO.', 400);
+        if (!data.veredictoRapido || data.veredictoRapido.trim().length < 20) {
+            throw new AppError('El veredicto rápido es obligatorio y debe ser directo para el cliente.', 400);
         }
-        if (!data.conclusion || data.conclusion.trim().length < 150) {
-            throw new AppError('La conclusión debe tener al menos 150 caracteres para SEO.', 400);
+
+        // Validación estricta de las puntuaciones numéricas para los gráficos interactivos
+        if (data.analisisEditorial) {
+            for (const ed of data.analisisEditorial) {
+                if (ed.scores && ed.scores.length > 0) {
+                    for (const scoreItem of ed.scores) {
+                        if (scoreItem.score < 0 || scoreItem.score > 100) {
+                            throw new AppError(`El puntaje para el criterio '${scoreItem.criterion}' debe estar estrictamente entre 0 y 100.`, 400);
+                        }
+                    }
+                }
+            }
         }
 
         if (!data.metaTitle) {
-            data.metaTitle = `${dbProducts.map(p => p.nombre).join(' vs ')} - Comparativa`;
+            data.metaTitle = `${dbProducts.map(p => p.nombre).join(' vs ')} - Comparativa Directa`;
         }
         if (!data.metaDescription) {
-            data.metaDescription = data.introduccion.substring(0, 155).trim().concat('...');
+            data.metaDescription = data.veredictoRapido.substring(0, 155).trim().concat('...');
         }
 
         return await new Comparison(data).save();
     }
 
     /**
-     * Obtiene listado paginado con soporte de búsqueda.
+     * Obtiene el listado paginado con proyección limpia de los productos implicados.
      */
     static async getAll(filters: { isActive?: boolean; isFeatured?: boolean; search?: string; limit?: number; page?: number } = {}) {
         const { isActive, isFeatured, search, limit = 10, page = 1 } = filters;
@@ -66,7 +75,7 @@ export class ComparisonService {
 
         if (search?.trim()) {
             const regex = new RegExp(search, 'i');
-            query.$or = [{ title: regex }, { introduccion: regex }, { palabrasClaveSecundarias: regex }];
+            query.$or = [{ title: regex }, { veredictoRapido: regex }];
         }
 
         const [comparisons, total] = await Promise.all([
@@ -82,7 +91,7 @@ export class ComparisonService {
     }
 
     /**
-     * Recupera una comparativa por slug.
+     * Recupera la comparativa por slug inyectando datos limpios listos para tablas y gráficos.
      */
     static async getBySlug(slug: string, isPublic: boolean = true) {
         const query: any = { slug, deletedAt: null };
@@ -94,10 +103,10 @@ export class ComparisonService {
                 select: 'nombre slug imagenes precio precioComparativo stock rating numReviews brand isActive',
                 populate: { path: 'brand', select: 'nombre logo' }
             })
-            .populate({ path: 'analisisEditorial.product', select: 'nombre slug imagenes' });
+            .populate({ path: 'analisisEditorial.product', select: 'nombre slug imagenes precio' });
 
         if (!comparison) {
-            throw new AppError('La comparativa no existe o no está activa.', 404);
+            throw new AppError('La comparativa solicitada no se encuentra disponible.', 404);
         }
 
         if (isPublic) {
@@ -108,7 +117,7 @@ export class ComparisonService {
     }
 
     /**
-     * Recupera una comparativa por su ID único.
+     * Recupera una comparativa por su ID único para paneles de administración.
      */
     static async getById(id: string) {
         if (!Types.ObjectId.isValid(id)) {
@@ -118,20 +127,20 @@ export class ComparisonService {
         const comparison = await Comparison.findOne({ _id: id, deletedAt: null })
             .populate({
                 path: 'products',
-                select: 'nombre slug imagenes precio precioComparativo stock rating numReviews brand isActive descripcion',
+                select: 'nombre slug imagenes precio precioComparativo stock rating numReviews brand isActive',
                 populate: { path: 'brand', select: 'nombre logo' }
             })
             .populate({ path: 'analisisEditorial.product', select: 'nombre slug imagenes precio' });
 
         if (!comparison) {
-            throw new AppError('La comparativa solicitada no existe.', 404);
+            throw new AppError('La comparativa no existe.', 404);
         }
 
         return comparison;
     }
 
     /**
-     * Actualiza la comparativa replicando las restricciones de negocio y SEO de la creación.
+     * Actualiza la comparativa manteniendo consistencia en scores y simplificación de textos.
      */
     static async update(id: string, data: Partial<IComparison>) {
         if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
@@ -154,8 +163,6 @@ export class ComparisonService {
             if (data.products.length < 2) {
                 throw new AppError('Se requieren al menos 2 productos para la comparativa.', 400);
             }
-
-            // SOLUCIÓN: Definición explícita de tipos también en el método de actualización
             const uniqueIds: string[] = Array.from(new Set(data.products.map(p => p.toString())));
             const dbProducts = await Product.find({ _id: { $in: uniqueIds }, isActive: true, deletedAt: null }).select('_id nombre');
 
@@ -163,31 +170,32 @@ export class ComparisonService {
                 throw new AppError('Uno o más productos no existen o están inactivos.', 400);
             }
             data.products = uniqueIds.map((id: string) => new Types.ObjectId(id));
+        }
 
-            if (!data.metaTitle) {
-                data.metaTitle = `${dbProducts.map(p => p.nombre).join(' vs ')} - Comparativa`;
+        if (data.analisisEditorial) {
+            for (const ed of data.analisisEditorial) {
+                if (ed.scores && ed.scores.length > 0) {
+                    for (const scoreItem of ed.scores) {
+                        if (scoreItem.score < 0 || scoreItem.score > 100) {
+                            throw new AppError(`El puntaje para el criterio '${scoreItem.criterion}' debe estar estrictamente entre 0 y 100.`, 400);
+                        }
+                    }
+                }
             }
         }
 
-        if (data.introduccion !== undefined && data.introduccion.trim().length < 150) {
-            throw new AppError('La introducción debe tener al menos 150 caracteres para SEO.', 400);
-        }
-        if (data.conclusion !== undefined && data.conclusion.trim().length < 150) {
-            throw new AppError('La conclusión debe tener al menos 150 caracteres para SEO.', 400);
-        }
-
-        if (data.introduccion && !data.metaDescription) {
-            data.metaDescription = data.introduccion.substring(0, 155).trim().concat('...');
+        if (data.veredictoRapido !== undefined && data.veredictoRapido.trim().length < 20) {
+            throw new AppError('El veredicto rápido no puede estar vacío y debe ser directo.', 400);
         }
 
         const comparison = await Comparison.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-        if (!comparison) throw new AppError('Comparativa no encontrada durante la actualización.', 404);
+        if (!comparison) throw new AppError('Error al actualizar la comparativa.', 404);
 
         return comparison;
     }
 
     /**
-     * Borrado lógico.
+     * Ejecuta el borrado lógico.
      */
     static async delete(id: string) {
         if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
@@ -199,13 +207,13 @@ export class ComparisonService {
     }
 
     /**
-     * Comparativas relacionadas a una ficha de producto.
+     * Busca comparativas vinculadas directamente a un producto para cross-selling comercial.
      */
     static async getRelatedToProduct(productId: string, limit: number = 5) {
         if (!Types.ObjectId.isValid(productId)) throw new AppError('ID de producto inválido.', 400);
 
         return await Comparison.find({ products: new Types.ObjectId(productId), isActive: true, deletedAt: null })
-            .select('title slug metaDescription createdAt viewCount')
+            .select('title slug metaDescription ctaConfig createdAt viewCount')
             .limit(limit)
             .sort({ isFeatured: -1, viewCount: -1 })
             .lean();

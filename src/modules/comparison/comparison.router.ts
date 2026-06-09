@@ -7,7 +7,6 @@ const router = Router();
 router.route('/')
     .get(ComparisonController.getAll)
     .post(ComparisonController.create);
-    // .post(authenticate, isAdminOrVendedor, ComparisonController.create);
 
 router.get('/slug/:slug', ComparisonController.getBySlug);
 router.get('/product/:productId', ComparisonController.getRelatedToProduct);
