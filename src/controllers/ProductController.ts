@@ -31,9 +31,15 @@ const CATALOG_FACET = {
         { $group: { _id: "$line" } },
         { $addFields: { lObj: { $toObjectId: "$_id" } } },
         { $lookup: { from: "productlines", localField: "lObj", foreignField: "_id", as: "l" } },
-        { $unwind: { path: "$l", preserveNullAndEmptyArrays: false } },
-        { $project: { id: { $toString: "$l._id" }, nombre: "$l.nombre", slug: "$l.slug" } },
-        { $sort: { nombre: 1 } }
+        { $unwind: "$allAttrs" },
+        { $group: { _id: { k: "$allAttrs.k", v: "$allAttrs.v" }, count: { $sum: 1 } } },
+        {
+            $group: {
+                _id: "$_id.k",
+                values: { $push: { value: "$_id.v", count: "$count" } }
+            }
+        },
+        { $project: { name: "$_id", values: 1, _id: 0 } }
     ],
     categories: [
         { $group: { _id: "$categoria" } },
@@ -61,9 +67,17 @@ const CATALOG_FACET = {
             }
         },
         { $unwind: "$allAttrs" },
-        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
-        { $project: { name: "$_id", values: 1, _id: 0 } },
-        { $sort: { name: 1 } }
+        // 1. Agrupar por la pareja {nombre del atributo, valor} para contar
+        { $group: { _id: { k: "$allAttrs.k", v: "$allAttrs.v" }, count: { $sum: 1 } } },
+        // 2. Agrupar por nombre del atributo y pushear el objeto {value, count}
+        {
+            $group: {
+                _id: "$_id.k",
+                values: { $push: { value: "$_id.v", count: "$count" } }
+            }
+        },
+        // 3. Proyectar con el formato que espera tu Zod Schema
+        { $project: { name: "$_id", values: 1, _id: 0 } }
     ],
     priceRangeFacet: [
         { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
@@ -1970,7 +1984,7 @@ export class ProductController {
 
     static async getCatalogBySlugs(req: Request, res: Response) {
         try {
-            const { slugs, page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
+            const { slugs, page, limit, sort, priceMin, priceMax, query, ...attributeFilters } = req.query as any;
 
             const pageNum = Math.max(1, parseInt(page || "1", 10));
             const limitNum = Math.max(1, parseInt(limit || "24", 10));
@@ -1982,59 +1996,58 @@ export class ProductController {
 
             const pipeline: any[] = [];
 
-            // =================================================================
-            // FASE 1: BÚSQUEDA Y FILTROS
-            // =================================================================
-
-            // A. ETAPA $SEARCH (Atlas Search)
+            // 2. FASE: SEARCH (Atlas Search)
             if (query && query.trim() !== "") {
                 pipeline.push({
                     $search: {
                         index: "ecommerce_search_products",
                         compound: {
                             should: [
-                                { text: { query: query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
-                                { text: { query: query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
-                                { text: { query: query, path: "descripcion", fuzzy: { maxEdits: 1 } } }
+                                { text: { query, path: "nombre", score: { boost: { value: 3 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query, path: "variants.nombre", score: { boost: { value: 2 } }, fuzzy: { maxEdits: 1 } } },
+                                { text: { query, path: "descripcion", fuzzy: { maxEdits: 1 } } }
                             ],
-                            minimumShouldMatch: 1
-                        }
-                    }
+                            minimumShouldMatch: 1,
+                        },
+                    },
                 });
             }
 
-            // B. ETAPA $MATCH
+            // 3. FASE: MATCH (Filtros duros)
             const matchStage: any = { isActive: true };
 
             if (context.category) {
                 const rootId = context.category._id.toString();
                 const rawFamilyIds = await getCategoryFamilyIds(rootId);
-                const familyObjectIds = rawFamilyIds.map((id: any) => new Types.ObjectId(id));
-                matchStage.categoria = { $in: familyObjectIds };
+                matchStage.categoria = { $in: rawFamilyIds.map((id: any) => new Types.ObjectId(id)) };
             }
-
             if (context.brand) matchStage.brand = context.brand._id;
             if (context.line) matchStage.line = context.line._id;
 
-            if (priceRange) {
-                const [min, max] = priceRange.split('-').map(Number);
+            // FILTRADO AVANZADO (Precio + Atributos atómicos por variante)
+            const filterConditions: any[] = [];
+
+            // Precio
+            if (priceMin !== undefined || priceMax !== undefined) {
+                const min = Number(priceMin ?? 0);
+                const max = Number(priceMax ?? Infinity);
                 if (!isNaN(min) && !isNaN(max)) {
-                    matchStage.$or = [
-                        { precio: { $gte: min, $lte: max } },
-                        { "variants.precio": { $gte: min, $lte: max } }
-                    ];
+                    filterConditions.push({
+                        $or: [
+                            { precio: { $gte: min, $lte: max } },
+                            { variants: { $elemMatch: { precio: { $gte: min, $lte: max } } } }
+                        ]
+                    });
                 }
             }
 
-            const attrConditions: any[] = [];
-            const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceRange', 'query'];
-
+            // Atributos dinámicos
+            const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceMin', 'priceMax', 'query'];
             Object.keys(attributeFilters).forEach((key) => {
                 if (reservedKeys.includes(key)) return;
-                const rawVal = attributeFilters[key];
-                const values = Array.isArray(rawVal) ? rawVal : [rawVal];
+                const values = Array.isArray(attributeFilters[key]) ? attributeFilters[key] : [attributeFilters[key]];
                 if (values.length > 0) {
-                    attrConditions.push({
+                    filterConditions.push({
                         $or: [
                             { [`atributos.${key}`]: { $in: values } },
                             { variants: { $elemMatch: { [`atributos.${key}`]: { $in: values } } } }
@@ -2043,64 +2056,16 @@ export class ProductController {
                 }
             });
 
-            if (attrConditions.length > 0) matchStage.$and = attrConditions;
-
+            if (filterConditions.length > 0) matchStage.$and = filterConditions;
             pipeline.push({ $match: matchStage });
 
-            // =================================================================
-            // FASE 2: CAMPOS CALCULADOS PARA ORDENAMIENTO
-            // =================================================================
-            pipeline.push({
-                $addFields: {
-                    // Cálculo de descuento absoluto para el sort 'discount'
-                    discountAmount: {
-                        $cond: [
-                            { $and: [{ $gt: ["$precioComparativo", 0] }, { $gt: ["$precioComparativo", "$precio"] }] },
-                            { $subtract: ["$precioComparativo", "$precio"] },
-                            0
-                        ]
-                    },
-                    // Mantenemos el score de búsqueda si existe
-                    searchScore: { $meta: "searchScore" }
-                }
-            });
+            // 4. ORDENAMIENTO
+            let sortStage: any = { esDestacado: -1, createdAt: -1 };
+            if (sort === 'price-asc') sortStage = { precio: 1 };
+            else if (sort === 'price-desc') sortStage = { precio: -1 };
+            else if (query) sortStage = { score: { $meta: "searchScore" } };
 
-            // =================================================================
-            // FASE 3: DEFINICIÓN DE LÓGICA DE ORDENAMIENTO
-            // =================================================================
-            let sortStage: any = {};
-
-            switch (sort) {
-                case 'relevancia':
-                    // Si hay query usa score, si no, usa destacados
-                    sortStage = query ? { searchScore: -1 } : { esDestacado: -1, createdAt: -1 };
-                    break;
-                case 'recientes':
-                    sortStage = { createdAt: -1 };
-                    break;
-                case 'rating':
-                    sortStage = { rating: -1, numReviews: -1 };
-                    break;
-                case 'discount':
-                    sortStage = { discountAmount: -1 };
-                    break;
-                case 'price-asc':
-                    sortStage = { precio: 1 };
-                    break;
-                case 'price-desc':
-                    sortStage = { precio: -1 };
-                    break;
-                case 'name-asc':
-                    sortStage = { nombre: 1 };
-                    break;
-                default:
-                    // Orden por defecto: Destacados y luego más recientes
-                    sortStage = { esDestacado: -1, createdAt: -1 };
-            }
-
-            // =================================================================
-            // FASE 4: FACETAS
-            // =================================================================
+            // 5. FACETAS (Resultado final)
             pipeline.push({
                 $facet: {
                     products: [
@@ -2110,81 +2075,34 @@ export class ProductController {
                         { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
                         { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
                         { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
-                        { $lookup: { from: 'lines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
+                        { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
                         { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
-                        {
-                            $project: {
-                                nombre: 1, slug: 1, precio: 1, precioComparativo: 1,
-                                imagenes: 1, stock: 1, atributos: 1, variants: 1,
-                                brand: { nombre: 1, slug: 1 },
-                                line: { nombre: 1, slug: 1 },
-                                categoria: 1, esDestacado: 1, esNuevo: 1,
-                                rating: 1, numReviews: 1, discountAmount: 1
-                            }
-                        }
+                        { $project: { nombre: 1, slug: 1, precio: 1, precioComparativo: 1, imagenes: 1, stock: 1, atributos: 1, variants: 1, brand: 1, line: 1, categoria: 1, esDestacado: 1, esNuevo: 1 } }
                     ],
                     totalCount: [{ $count: 'count' }],
-                    brands: [
-                        { $group: { _id: "$brand" } },
-                        { $lookup: { from: "brands", localField: "_id", foreignField: "_id", as: "b" } },
-                        { $unwind: "$b" },
-                        { $project: { id: "$b._id", nombre: "$b.nombre", slug: "$b.slug" } },
-                        { $sort: { nombre: 1 } }
-                    ],
-                    lines: [
-                        { $match: { line: { $exists: true, $ne: null } } },
-                        { $group: { _id: "$line" } },
-                        { $addFields: { lObj: { $toObjectId: "$_id" } } },
-                        { $lookup: { from: "lines", localField: "lObj", foreignField: "_id", as: "l" } },
-                        { $unwind: "$l" },
-                        { $project: { id: "$l._id", nombre: "$l.nombre", slug: "$l.slug" } },
-                        { $sort: { nombre: 1 } }
-                    ],
-                    categories: [
-                        { $group: { _id: "$categoria" } },
-                        { $lookup: { from: "categories", localField: "_id", foreignField: "_id", as: "c" } },
-                        { $unwind: "$c" },
-                        { $project: { id: "$c._id", nombre: "$c.nombre", slug: "$c.slug" } },
-                        { $sort: { nombre: 1 } }
-                    ],
-                    atributos: [
-                        {
-                            $project: {
-                                allAttrs: {
-                                    $concatArrays: [
-                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
-                                        { $reduce: { input: { $ifNull: ["$variants", []] }, initialValue: [], in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] } } }
-                                    ]
-                                }
-                            }
-                        },
-                        { $unwind: "$allAttrs" },
-                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
-                        { $project: { name: "$_id", values: 1, _id: 0 } }
-                    ],
-                    price: [
-                        { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
-                    ]
+                    brands: CATALOG_FACET.brands,
+                    lines: CATALOG_FACET.lines,
+                    categories: CATALOG_FACET.categories,
+                    atributos: CATALOG_FACET.atributos,
+                    priceRangeFacet: CATALOG_FACET.priceRangeFacet
                 }
             });
 
-            const result = await Product.aggregate(pipeline);
-            const data = result[0];
-            const totalProducts = data.totalCount[0]?.count || 0;
+            const [data] = await Product.aggregate(pipeline);
 
             res.status(200).json({
-                products: data.products,
+                products: data.products || [],
                 pagination: {
                     currentPage: pageNum,
-                    totalPages: Math.ceil(totalProducts / limitNum) || 1,
-                    totalItems: totalProducts
+                    totalPages: Math.ceil((data.totalCount[0]?.count || 0) / limitNum) || 1,
+                    totalItems: data.totalCount[0]?.count || 0,
                 },
                 filters: {
                     brands: data.brands || [],
                     lines: data.lines || [],
                     categories: data.categories || [],
                     atributos: data.atributos || [],
-                    price: data.price || []
+                    price: data.priceRangeFacet || []
                 },
                 context: {
                     categoryName: context.category ? (context.category as any).nombre : null,
@@ -2200,7 +2118,6 @@ export class ProductController {
             res.status(500).json({ message: error.message });
         }
     }
-
     // CONTROLADOR DE NOVEDADES (New Arrivals)
     static async getNewArrivals(req: Request, res: Response) {
         try {
@@ -2385,7 +2302,7 @@ export class ProductController {
     static async getCatalogByCollectionSlug(req: Request, res: Response) {
         try {
             const { slug } = req.params;
-            const { page, limit, sort, priceRange, query, ...attributeFilters } = req.query as any;
+            const { slugs, page, limit, sort, priceMin, priceMax, query, ...attributeFilters } = req.query as any;
 
             const collection = await Collection.findOne({ slug, isActive: true });
             if (!collection) {
@@ -2420,8 +2337,9 @@ export class ProductController {
             const matchStage: any = { isActive: true, collections: collection._id };
 
             // Filtro de precio
-            if (priceRange) {
-                const [min, max] = priceRange.split('-').map(Number);
+            if (priceMin !== undefined || priceMax !== undefined) {
+                const min = Number(priceMin ?? 0);
+                const max = Number(priceMax ?? Infinity);
                 if (!isNaN(min) && !isNaN(max)) {
                     matchStage.$or = [
                         { precio: { $gte: min, $lte: max } },
