@@ -150,4 +150,27 @@ export class ProductService {
             .lean();
 
     }
+
+    /**
+ * Optimizado para IA: Devuelve solo los campos esenciales
+ * para que el chatbot pueda responder consultas de inventario o precio.
+ */
+async getProductsForAI(query: string) {
+    const filter: FilterQuery<any> = { isActive: true, deletedAt: null };
+
+    if (query) {
+        filter.$or = [
+            { nombre: { $regex: query, $options: 'i' } },
+            { sku: { $regex: query, $options: 'i' } },
+            { 'variants.nombre': { $regex: query, $options: 'i' } }
+        ];
+    }
+
+    // Proyección: Solo traemos lo que el usuario necesita ver
+    return await Product.find(filter)
+        .select('nombre precio stock variants.nombre variants.precio variants.stock categoria')
+        .populate('categoria', 'nombre')
+        .limit(10) // Limitamos a 10 para no sobrecargar el contexto de la IA
+        .lean();
+}
 }

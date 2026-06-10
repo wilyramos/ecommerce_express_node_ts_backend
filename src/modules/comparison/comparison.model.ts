@@ -1,28 +1,12 @@
-// backend/src/modules/comparison/comparison.model.ts
-import mongoose, { Schema, Document, PopulatedDoc, Types } from 'mongoose';
-import { IProduct } from '../../models/Product';
+// comparison.model.ts
 
-// 1. ESPECIFICACIONES: Limpias para alimentar directamente la Tabla Comparativa Visual
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
 export interface IComparisonSpec {
-    key: string;               // Ej: "Cámara Principal", "Batería"
-    values: string[];          // Ej: ["108 MP", "48 MP"]
-    category?: string;         // Ej: "Cámaras" (Para agrupar las filas de la tabla)
-    isKeyDifference?: boolean; // Si es true, resalta la fila con un fondo de color llamativo
-}
-
-// 2. PUNTUACIONES: Datos numéricos puros para generar los Gráficos Interactivos
-export interface IProductScore {
-    criterion: string;         // Ej: "Rendimiento", "Cámara", "Batería"
-    score: number;             // Escala 0-100 para renderizar las barras o el radar
-}
-
-// 3. ANÁLISIS EDITORIAL: Puntos directos y visuales por cada producto
-export interface IProductEditorial {
-    product: Types.ObjectId | PopulatedDoc<IProduct>;
-    winnerBadge?: string;      // Insignia visual llamativa. Ej: "Ganador Calidad/Precio" o "Más Potente"
-    pros: string[];            // Lista de viñetas cortas (SÍ leen viñetas)
-    contras: string[];         // Lista de viñetas cortas
-    scores: IProductScore[];   // Alimenta el gráfico interactivo de este producto
+    key: string;
+    values: string[];
+    scores: number[];
+    isKeyDifference?: boolean;
 }
 
 export interface IFAQItem {
@@ -30,93 +14,142 @@ export interface IFAQItem {
     respuesta: string;
 }
 
-export interface IComparisonCTA {
-    buttonText: string;
-    targetUrl?: string;
-    leadFormActive: boolean;   // Si abre el formulario directo para captar su correo/teléfono
-}
-
 export interface IComparison extends Document {
     slug: string;
     title: string;
-    metaTitle?: string;
     metaDescription?: string;
-
-    // Elementos principales de la pantalla
-    products: (Types.ObjectId | PopulatedDoc<IProduct>)[];
-    veredictoRapido?: string;  // El único bloque de texto corto arriba del todo (Ej: "Compra A si buscas X, compra B si buscas Y")
-
-    // Bloques estructurados (UI Visual)
+    products: Types.ObjectId[];
+    veredictoRapido: string;
     especificaciones: IComparisonSpec[];
-    analisisEditorial: IProductEditorial[];
-    ctaConfig?: IComparisonCTA;
-    faqItems?: IFAQItem[];
-
-    // Control Interno
+    faqItems: IFAQItem[];
     isActive: boolean;
     isFeatured?: boolean;
     viewCount?: number;
+    createdAt?: Date;
+    updatedAt?: Date;
     deletedAt?: Date | null;
 }
 
-// ==================== MONGOOSE SCHEMAS ====================
+// ── Sub-schemas ───────────────────────────────────────────
 
-const productScoreSchema = new Schema<IProductScore>({
-    criterion: { type: String, required: true, trim: true },
-    score: { type: Number, required: true, min: 0, max: 100 }
-}, { _id: false });
-
-const comparisonCTASchema = new Schema<IComparisonCTA>({
-    buttonText: { type: String, default: 'Solicitar Cotización Inmediata' },
-    targetUrl: { type: String, trim: true },
-    leadFormActive: { type: Boolean, default: true }
-}, { _id: false });
-
-const productEditorialSchema = new Schema<IProductEditorial>({
-    product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
-    winnerBadge: { type: String, trim: true, default: '' },
-    pros: [{ type: String, trim: true }],
-    contras: [{ type: String, trim: true }],
-    scores: { type: [productScoreSchema], default: [] }
-}, { _id: false });
-
-const comparisonSpecSchema = new Schema<IComparisonSpec>({
-    key: { type: String, required: true, trim: true },
-    values: [{ type: String, required: true }],
-    category: { type: String, trim: true, default: 'General' },
-    isKeyDifference: { type: Boolean, default: false }
-}, { _id: false });
-
-const faqSchema = new Schema<IFAQItem>({
-    pregunta: { type: String, required: true, trim: true },
-    respuesta: { type: String, required: true, trim: true }
-}, { _id: false });
-
-const comparisonSchema = new Schema<IComparison>({
-    slug: { type: String, trim: true, lowercase: true },
-    title: { type: String, required: true, trim: true },
-    metaTitle: { type: String, trim: true, maxlength: 60 },
-    metaDescription: { type: String, trim: true, maxlength: 160 },
-    products: {
-        type: [{ type: Schema.Types.ObjectId, ref: 'Product' }],
-        validate: [
-            (val: Types.ObjectId[]) => val.length >= 2,
-            'Se requieren al menos 2 productos para realizar una comparativa.'
-        ]
+const specSchema = new Schema<IComparisonSpec>(
+    {
+        key: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        values: {
+            type: [String],
+            required: true,
+            validate: [
+                (v: string[]) => v.length >= 2,
+                'Se necesita al menos un valor por producto.'
+            ]
+        },
+        scores: {
+            type: [{ type: Number, min: 0, max: 100 }],
+            required: true,
+            validate: [
+                (v: number[]) => v.length >= 2,
+                'Se necesita al menos un score por producto.'
+            ]
+        },
+        isKeyDifference: {
+            type: Boolean,
+            default: false
+        }
     },
-    veredictoRapido: { type: String, trim: true },
-    especificaciones: { type: [comparisonSpecSchema], default: [] },
-    analisisEditorial: { type: [productEditorialSchema], default: [] },
-    ctaConfig: { type: comparisonCTASchema, default: () => ({}) },
-    faqItems: { type: [faqSchema], default: [] },
-    isActive: { type: Boolean, default: true },
-    isFeatured: { type: Boolean, default: false },
-    viewCount: { type: Number, default: 0, min: 0 },
-    deletedAt: { type: Date, default: null }
-}, { timestamps: true });
+    { _id: false }
+);
 
-comparisonSchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+const faqSchema = new Schema<IFAQItem>(
+    {
+        pregunta:  { type: String, required: true, trim: true },
+        respuesta: { type: String, required: true, trim: true }
+    },
+    { _id: false }
+);
+
+// ── Schema principal ──────────────────────────────────────
+
+const comparisonSchema = new Schema<IComparison>(
+    {
+        slug: {
+            type: String,
+            required: true,
+            trim: true,
+            lowercase: true
+        },
+        title: {
+            type: String,
+            required: true,
+            trim: true,
+            minlength: 10,
+            maxlength: 100
+        },
+        metaDescription: {
+            type: String,
+            trim: true,
+            maxlength: 160
+        },
+        products: {
+            type: [{ type: Schema.Types.ObjectId, ref: 'Product' }],
+            validate: [
+                (v: Types.ObjectId[]) => v.length >= 2,
+                'Se requieren al menos 2 productos.'
+            ]
+        },
+        veredictoRapido: {
+            type: String,
+            required: true,
+            trim: true,
+            minlength: 20,
+            maxlength: 300
+        },
+        especificaciones: {
+            type: [specSchema],
+            default: []
+        },
+        faqItems: {
+            type: [faqSchema],
+            default: []
+        },
+        isActive: {
+            type: Boolean,
+            default: true
+        },
+        isFeatured: {
+            type: Boolean,
+            default: false
+        },
+        viewCount: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+        deletedAt: {
+            type: Date,
+            default: null
+        }
+    },
+    { timestamps: true }
+);
+
+// ── Índices ───────────────────────────────────────────────
+
+// Slug único respetando soft delete
+comparisonSchema.index(
+    { slug: 1 },
+    { unique: true, partialFilterExpression: { deletedAt: null } }
+);
+
+// Feed principal: activas, destacadas primero, más recientes
+comparisonSchema.index({ isActive: 1, isFeatured: -1, createdAt: -1 });
+
+// Mapeo inverso: comparativas que incluyen un producto
 comparisonSchema.index({ products: 1 });
-comparisonSchema.index({ isActive: 1, isFeatured: -1 });
+
+// ── Modelo ────────────────────────────────────────────────
 
 export default mongoose.model<IComparison>('Comparison', comparisonSchema);

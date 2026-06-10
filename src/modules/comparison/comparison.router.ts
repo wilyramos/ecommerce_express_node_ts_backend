@@ -1,19 +1,22 @@
+// comparison.router.ts
+
 import { Router } from 'express';
 import { ComparisonController } from './comparison.controller';
 import { authenticate, isAdminOrVendedor } from '../../middleware/auth';
 
 const router = Router();
 
-router.route('/')
-    .get(ComparisonController.getAll)
-    .post(ComparisonController.create);
+// ── Rutas públicas ────────────────────────────────────────
 
-router.get('/slug/:slug', ComparisonController.getBySlug);
-router.get('/product/:productId', ComparisonController.getRelatedToProduct);
+router.get('/',                          ComparisonController.getAll);
+router.get('/slug/:slug',                ComparisonController.getBySlug);
+router.get('/product/:productId',        ComparisonController.getRelatedToProduct);
 
-router.route('/:id')
-    .get(authenticate, isAdminOrVendedor, ComparisonController.getById)
-    .put(authenticate, isAdminOrVendedor, ComparisonController.update)
-    .delete(authenticate, isAdminOrVendedor, ComparisonController.delete);
+// ── Rutas protegidas ──────────────────────────────────────
+
+router.post(  '/',    authenticate, isAdminOrVendedor, ComparisonController.create);
+router.get(   '/:id', authenticate, isAdminOrVendedor, ComparisonController.getById);
+router.put(   '/:id', authenticate, isAdminOrVendedor, ComparisonController.update);
+router.delete('/:id', authenticate, isAdminOrVendedor, ComparisonController.delete);
 
 export default router;
