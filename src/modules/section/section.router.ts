@@ -1,4 +1,5 @@
 // File: backend/src/modules/section/section.routes.ts
+
 import { Router } from 'express';
 import { SectionController } from './section.controller';
 import { authenticate, isAdmin } from '../../middleware/auth';
