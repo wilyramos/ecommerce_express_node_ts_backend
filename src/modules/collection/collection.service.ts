@@ -145,7 +145,8 @@ export class CollectionService {
                 })
                     .sort({ updatedAt: -1 })
                     .limit(col.maxHomepageItems)
-                    .select('nombre slug precio precioComparativo imagenes stock')
+                    .select('nombre slug precio precioComparativo imagenes stock brand atributos')
+                    .populate('brand', 'nombre')
                     .lean()
             }))
         );

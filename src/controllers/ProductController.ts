@@ -2077,7 +2077,7 @@ export class ProductController {
                         { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
                         { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
                         { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
-                        { $project: { nombre: 1, slug: 1, precio: 1, precioComparativo: 1, imagenes: 1, stock: 1, atributos: 1, variants: 1, brand: 1, line: 1, categoria: 1, esDestacado: 1, esNuevo: 1 } }
+                        { $project: { nombre: 1, slug: 1, precio: 1, precioComparativo: 1, imagenes: 1, stock: 1, atributos: 1, variants: 1, brand: 1, line: 1, categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1 } }
                     ],
                     totalCount: [{ $count: 'count' }],
                     brands: CATALOG_FACET.brands,
