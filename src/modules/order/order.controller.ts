@@ -32,11 +32,17 @@ export const orderController = {
      * Crea una orden. Soporta invitado y usuario registrado.
      */
     async createOrder(req: Request, res: Response): Promise<void> {
-        if (!handleValidation(req, res)) return;
+    if (!handleValidation(req, res)) return;
+    try {
         const userId = (req as any).user?.id as string | undefined;
         const order = await orderService.createOrder({ ...req.body, userId });
         res.status(201).json({ ok: true, data: order });
-    },
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Error inesperado.';
+        // Errores de negocio (stock, variante) → 400, no 500
+        res.status(400).json({ ok: false, message });
+    }
+},
 
     /**
      * GET /orders/my
