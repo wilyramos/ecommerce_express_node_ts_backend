@@ -1,4 +1,3 @@
-// File: backend/src/server.ts
 import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
@@ -69,25 +68,10 @@ app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }))
 
-// CONFIGURACIÓN DE CORS OPTIMIZADA PARA PRODUCCIÓN Y ACCESO DIRECTO DESDE EL FRONTEND
-const allowedOrigins = process.env.FRONTEND_URL 
-    ? process.env.FRONTEND_URL.split(',') 
-    : ['https://www.gophone.pe', 'http://localhost:3000'];
-
 app.use(cors({
-    origin: (origin, callback) => {
-        // Permitir peticiones sin origen (como Server-to-Server, Postman o Apps móviles nativas)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error(`El origen ${origin} no está permitido por las políticas de CORS de la API`));
-        }
-    },
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true // Crucial: Permite que solicitudes directas vía XHR (como multimedia pesada) transmitan contexto de sesión
+    allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
 // ════════════════════════════════════════════════════════════════

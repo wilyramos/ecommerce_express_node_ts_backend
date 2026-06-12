@@ -11,6 +11,10 @@ router.post(
     MediaController.upload
 );
 
+router.post('/sign-upload', authorizeAdminOrVendedor, MediaController.signUpload);
+router.post('/register', authorizeAdminOrVendedor, MediaController.register);
+
+
 router.get(
     '/', 
     authorizeAdminOrVendedor,

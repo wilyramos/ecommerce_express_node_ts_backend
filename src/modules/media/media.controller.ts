@@ -11,7 +11,9 @@ import {
 } from './media.constants';
 import { Types } from 'mongoose';
 import fs from 'fs/promises';
-import { IMedia } from './media.model';
+import { IMedia, Media } from './media.model';
+import { uuid } from 'zod/v4/mini';
+import cloudinary from '../../config/cloudinary';
 
 const parseForm = (req: Request): Promise<{ fields: formidable.Fields; files: formidable.Files }> => {
   const form = formidable({
@@ -122,6 +124,65 @@ export class MediaController {
       const { page, limit } = validatePagination(req);
       const result = await MediaService.listByFolder(folder, page, limit);
       res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // media.controller.ts — nuevo método
+  static async signUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { folder } = req.body as { folder?: string };
+      const validFolder = validateFolder(folder);
+
+      const timestamp = Math.round(Date.now() / 1000);
+      const publicId = uuid();
+
+      const paramsToSign = {
+        folder: validFolder,
+        public_id: publicId,
+        timestamp,
+      };
+
+      const signature = cloudinary.utils.api_sign_request(
+        paramsToSign,
+        process.env.CLOUDINARY_API_SECRET!
+      );
+
+      res.json({
+        signature,
+        timestamp,
+        publicId,
+        folder: validFolder,
+        apiKey: process.env.CLOUDINARY_API_KEY,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // media.controller.ts — nuevo método
+  static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { secureUrl, publicId, format, bytes, width, height, duration, resourceType, folder } = req.body;
+
+      const uploadedBy = req.user?._id ? new Types.ObjectId(req.user._id as string) : undefined;
+
+      const newMedia = await Media.create({
+        secureUrl,
+        publicId,
+        format,
+        bytes,
+        width,
+        height,
+        duration,
+        resourceType: resourceType ?? 'video',
+        folder,
+        uploadedBy,
+      });
+
+      res.status(201).json({ success: true, data: newMedia });
     } catch (error) {
       next(error);
     }
