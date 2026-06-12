@@ -13,8 +13,6 @@ export type SliderTheme = 'dark' | 'light' | 'custom';
 export interface ISliderMedia {
     imageUrl?: string;
     videoUrl?: string;
-    videoPoster?: string;
-    altText?: string;
     objectFit?: 'contain' | 'cover' | 'fill';
 }
 
@@ -23,7 +21,6 @@ export interface ISliderPrice {
     compare?: number;
     label?: string;
     suffix?: string;
-    currency?: string;
 }
 
 export interface ISliderDesign {
@@ -41,8 +38,6 @@ export interface ISliderCountdown {
 }
 
 export interface ISliderBanner extends Document {
-    name: string;
-    tags?: string[];
     title?: string;
     subtitle?: string;
     description?: string;
@@ -61,17 +56,15 @@ export interface ISliderBanner extends Document {
     };
 }
 
-// ── Sub-schemas con _id: false ────────────────────────────────────────────────
+// ── Sub-schemas ───────────────────────────────────────────────────────────────
 
 const sliderMediaSchema = new Schema<ISliderMedia>(
     {
-        imageUrl:    { type: String, trim: true },
-        videoUrl:    { type: String, trim: true },
-        videoPoster: { type: String, trim: true },
-        altText:     { type: String, trim: true },
-        objectFit:   {
-            type:    String,
-            enum:    ['contain', 'cover', 'fill'],
+        imageUrl: { type: String, trim: true },
+        videoUrl: { type: String, trim: true },
+        objectFit: {
+            type: String,
+            enum: ['contain', 'cover', 'fill'],
             default: 'cover',
         },
     },
@@ -80,11 +73,10 @@ const sliderMediaSchema = new Schema<ISliderMedia>(
 
 const sliderPriceSchema = new Schema<ISliderPrice>(
     {
-        current:  { type: Number, min: 0 },
-        compare:  { type: Number, min: 0 },
-        label:    { type: String, trim: true },
-        suffix:   { type: String, trim: true },
-        currency: { type: String, default: 'S/' },
+        current: { type: Number, min: 0 },
+        compare: { type: Number, min: 0 },
+        label: { type: String, trim: true },
+        suffix: { type: String, trim: true },
     },
     { _id: false }
 );
@@ -92,23 +84,23 @@ const sliderPriceSchema = new Schema<ISliderPrice>(
 const sliderDesignSchema = new Schema<ISliderDesign>(
     {
         layout: {
-            type:     String,
-            enum:     ['image-only', 'default', 'media-left', 'background-media'],
-            default:  'default',
+            type: String,
+            enum: ['image-only', 'default', 'media-left', 'background-media'],
+            default: 'default',
             required: true,
         },
-        theme:       { type: String, enum: ['dark', 'light', 'custom'], default: 'dark' },
-        bgColor:     { type: String },
+        theme: { type: String, enum: ['dark', 'light', 'custom'], default: 'dark' },
+        bgColor: { type: String },
         accentColor: { type: String },
-        textColor:   { type: String },
+        textColor: { type: String },
     },
-    { _id: false }   // ← clave: evita el _id que rompe el schema de Zod
+    { _id: false }
 );
 
 const sliderCountdownSchema = new Schema<ISliderCountdown>(
     {
-        endsAt:   { type: Date },
-        label:    { type: String, trim: true },
+        endsAt: { type: Date },
+        label: { type: String, trim: true },
         showDays: { type: Boolean, default: true },
     },
     { _id: false }
@@ -117,7 +109,7 @@ const sliderCountdownSchema = new Schema<ISliderCountdown>(
 const sliderScheduleSchema = new Schema(
     {
         startsAt: { type: Date },
-        endsAt:   { type: Date },
+        endsAt: { type: Date },
     },
     { _id: false }
 );
@@ -126,29 +118,26 @@ const sliderScheduleSchema = new Schema(
 
 const sliderBannerSchema = new Schema<ISliderBanner>(
     {
-        name:        { type: String, required: true, trim: true },
-        tags:        [{ type: String, trim: true }],
-        title:       { type: String, trim: true },
-        subtitle:    { type: String, trim: true },
+        title: { type: String, trim: true },
+        subtitle: { type: String, trim: true },
         description: { type: String, trim: true },
-        terms:       { type: String, trim: true },
+        terms: { type: String, trim: true },
 
-        price:    { type: sliderPriceSchema },
-        destUrl:  { type: String, trim: true },
+        price: { type: sliderPriceSchema },
+        destUrl: { type: String, trim: true },
         openInNewTab: { type: Boolean, default: false },
-        media:    { type: sliderMediaSchema },
-        design:   { type: sliderDesignSchema, default: () => ({ layout: 'default', theme: 'dark' }) },
-        countdown:{ type: sliderCountdownSchema },
+        media: { type: sliderMediaSchema },
+        design: { type: sliderDesignSchema, default: () => ({ layout: 'default', theme: 'dark' }) },
+        countdown: { type: sliderCountdownSchema },
         schedule: { type: sliderScheduleSchema },
 
         isActive: { type: Boolean, default: true },
-        order:    { type: Number, default: 0 },
+        order: { type: Number, default: 0 },
     },
     { timestamps: true }
 );
 
 sliderBannerSchema.index({ isActive: 1, order: 1 });
 sliderBannerSchema.index({ 'schedule.startsAt': 1, 'schedule.endsAt': 1 });
-sliderBannerSchema.index({ tags: 1 });
 
 export default mongoose.model<ISliderBanner>('SliderBanner', sliderBannerSchema);
