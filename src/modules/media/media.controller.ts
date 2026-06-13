@@ -130,44 +130,51 @@ export class MediaController {
   }
 
   // media.controller.ts — nuevo método
-  static async signUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
+static async signUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { folder } = req.body as { folder?: string };
-      const validFolder = validateFolder(folder);
+        console.log('Received sign-upload request with body:', req.body);
+        const { folder } = req.body as { folder?: string };
+        const validFolder = validateFolder(folder);
 
-      const timestamp = Math.round(Date.now() / 1000);
-      const publicId = uuid();
+        const timestamp = Math.round(Date.now() / 1000);
+        // public_id ya incluye el folder — Cloudinary lo trata como la ruta completa
+        const publicId = `${validFolder}/${crypto.randomUUID()}`;
 
-      const paramsToSign = {
-        folder: validFolder,
-        public_id: publicId,
-        timestamp,
-      };
+        console.log('Signing upload with:', { publicId, timestamp, folder: validFolder });
+        const paramsToSign = {
+            public_id: publicId,
+            timestamp,
+        };
 
-      const signature = cloudinary.utils.api_sign_request(
-        paramsToSign,
-        process.env.CLOUDINARY_API_SECRET!
-      );
+        console.log('Params to sign:', paramsToSign);
 
-      res.json({
-        signature,
-        timestamp,
-        publicId,
-        folder: validFolder,
-        apiKey: process.env.CLOUDINARY_API_KEY,
-        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-      });
+        const signature = cloudinary.utils.api_sign_request(
+            paramsToSign,
+            process.env.CLOUDINARY_API_SECRET!
+        );
+        
+        console.log('Generated signature:', signature);
+
+        res.json({
+            signature,
+            timestamp,
+            publicId,   // ej: "banners/uuid"
+            apiKey: process.env.CLOUDINARY_API_KEY,
+            cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        });
     } catch (error) {
-      next(error);
+        next(error);
     }
-  }
+}
 
   // media.controller.ts — nuevo método
   static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { secureUrl, publicId, format, bytes, width, height, duration, resourceType, folder } = req.body;
+      console.log('Registering media with data:', req.body);
 
       const uploadedBy = req.user?._id ? new Types.ObjectId(req.user._id as string) : undefined;
+      console.log('Uploaded by user ID:', uploadedBy);
 
       const newMedia = await Media.create({
         secureUrl,
@@ -181,9 +188,11 @@ export class MediaController {
         folder,
         uploadedBy,
       });
+      console.log('New media registered:', newMedia);
 
       res.status(201).json({ success: true, data: newMedia });
     } catch (error) {
+      console.error('Error registering media:', error);
       next(error);
     }
   }
