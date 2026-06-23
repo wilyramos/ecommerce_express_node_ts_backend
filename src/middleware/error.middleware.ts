@@ -1,42 +1,29 @@
-//File: src/middleware/error.middleware.ts
-
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/AppError';
+import { ApiResponse } from '../utils/ApiResponse';
 
 export const globalErrorHandler = (
-    err: any,
+    error: unknown,
     req: Request,
     res: Response,
     next: NextFunction
-) => {
-    err.statusCode = err.statusCode || 500;
-    err.status = err.status || 'error';
-
-    // En desarrollo queremos ver todo el stack trace
-    if (process.env.NODE_ENV === 'development') {
-        res.status(err.statusCode).json({
-            status: err.status,
-            error: err,
-            message: err.message,
-            stack: err.stack
-        });
-    } 
-    // En producción no queremos filtrar detalles técnicos al usuario
-    else {
-        // Errores conocidos (AppError)
-        if (err.isOperational) {
-            res.status(err.statusCode).json({
-                status: err.status,
-                message: err.message
-            });
-        } 
-        // Errores desconocidos o de programación (Bugs, fallos de BD, etc.)
-        else {
-            console.error('ERROR 💥:', err); // Log para nosotros
-            res.status(500).json({
-                status: 'error',
-                message: 'Algo salió muy mal en el servidor'
-            });
-        }
+): void => {
+    // Si el error es una instancia controlada de nuestra aplicación
+    if (error instanceof AppError) {
+        ApiResponse.error(res, error.statusCode, error.message);
+        return;
     }
+
+    // Si es un error nativo de base de datos o de Javascript no controlado
+    const errorMessage = error instanceof Error ? error.message : 'Error interno del servidor';
+
+    // Loguear solo en entorno de desarrollo/producción adecuadamente
+    console.error(`[ERROR CRÍTICO]: ${errorMessage}`, error);
+
+    ApiResponse.error(
+        res,
+        500,
+        'Ocurrió un error inesperado en el servidor.',
+        process.env.NODE_ENV === 'development' ? { error: errorMessage } : undefined
+    );
 };

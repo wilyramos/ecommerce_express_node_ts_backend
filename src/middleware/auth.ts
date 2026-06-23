@@ -1,66 +1,52 @@
-//File: backend/src/middleware/auth.ts
-
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
+import { AppError } from '../utils/AppError';
 
-// añadiendo user al Request de express
 declare global {
     namespace Express {
         interface Request {
-            user?: IUser
+            user?: IUser;
         }
     }
-} // para que typescript no se queje de que no existe user en Request
+}
 
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
-    const bearer = req.headers.authorization // Bearer token
-    if(!bearer) {
-        res.status(401).json({message : 'No autorizado'})
-        return
+export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const bearer = req.headers.authorization;
+    if (!bearer || !bearer.startsWith('Bearer ')) {
+        return next(new AppError('No autorizado: Token no provisto o formato inválido.', 401));
     }
 
-    const [, token] = bearer.split(' ')
-    
+    const token = bearer.split(' ')[1];
+
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        
-        if(typeof decoded === 'object' && decoded.id) {
-            const user = await User.findById(decoded.id).select('-password')
-            if(!user) {
-                res.status(401).json({message : 'No autorizado'})
-                return
+        const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+
+        if (typeof decoded === 'object' && decoded.id) {
+            const user = await User.findById(decoded.id).select('-password').lean();
+            if (!user) {
+                return next(new AppError('No autorizado: El usuario ya no existe.', 401));
             }
-            req.user = user
-            next()
+            req.user = user as IUser;
+            return next();
         }
+
+        return next(new AppError('No autorizado: Token inválido.', 401));
     } catch (error) {
-        console.error('Error al verificar el token:', error);
-        res.status(500).json({message: 'Token No Válido'})
+        return next(new AppError('No autorizado: Sesión expirada o token corrupto.', 401));
     }
-}
+};
 
-export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
-    if(req.user && req.user.rol === 'administrador') {
-        next()
-    } else {
-        res.status(403).json({message: 'No autorizado'})
-        return;
-    }
-}
+export const restrictToRoles = (...roles: string[]) => {
+    return (req: Request, res: Response, next: NextFunction): void => {
+        if (!req.user || !roles.includes(req.user.rol)) {
+            return next(new AppError('Acceso denegado: Permisos insuficientes para realizar esta acción.', 403));
+        }
+        next();
+    };
+};
 
-export const isVendedor = (req: Request, res: Response, next: NextFunction) => {
-    if(req.user && req.user.rol === 'vendedor') {
-        next()
-    } else {
-        res.status(403).json({message: 'No autorizado'})
-    }
-}
-
-export const isAdminOrVendedor = (req: Request, res: Response, next: NextFunction) => {
-    if(req.user && (req.user.rol === 'administrador' || req.user.rol === 'vendedor')) {
-        next()
-    } else {
-        res.status(403).json({message: 'No autorizado'})
-    }
-}
+// Helpers limpios usando la función genérica
+export const isAdmin = restrictToRoles('administrador');
+export const isVendedor = restrictToRoles('vendedor');
+export const isAdminOrVendedor = restrictToRoles('administrador', 'vendedor');
