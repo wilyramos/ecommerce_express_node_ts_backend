@@ -416,6 +416,7 @@ export class ProductController {
                 limit = "10",
                 nombre,
                 sku,
+                barcode,
                 precioSort,
                 stockSort,
                 isActive,
@@ -430,24 +431,62 @@ export class ProductController {
             const pageSize = Math.max(parseInt(limit) || 10, 1);
             const skip = (currentPage - 1) * pageSize;
 
-            const filter: Record<string, any> = {};
+            // Inicializar filtro excluyendo productos eliminados lógicamente
+            const filter: Record<string, any> = {
+                $or: [
+                    { deletedAt: null },
+                    { deletedAt: { $exists: false } }
+                ]
+            };
 
-            // Búsqueda global
+            // 1. BÚSQUEDA GLOBAL (Query text)
             if (query) {
                 const searchRegex = new RegExp(query.trim(), "i");
-                filter.$or = [
-                    { nombre: { $regex: searchRegex } },
-                    { descripcion: { $regex: searchRegex } },
-                    { sku: { $regex: searchRegex } },
-                    { barcode: { $regex: searchRegex } },
+                filter.$and = filter.$and || [];
+                filter.$and.push({
+                    $or: [
+                        { nombre: { $regex: searchRegex } },
+                        { descripcion: { $regex: searchRegex } },
+                        { sku: { $regex: searchRegex } },
+                        { barcode: { $regex: searchRegex } },
+                        { "variants.sku": { $regex: searchRegex } },
+                        { "variants.barcode": { $regex: searchRegex } }
+                    ]
+                });
+            }
 
+            // 2. FILTROS ESPECÍFICOS (Soporta Producto Base + Variantes)
+            if (nombre) {
+                filter.nombre = { $regex: new RegExp(nombre.trim(), "i") };
+            }
+
+            if (sku) {
+                const skuRegex = new RegExp(sku.trim(), "i");
+                filter.$or = [
+                    { sku: { $regex: skuRegex } },
+                    { "variants.sku": { $regex: skuRegex } }
                 ];
             }
 
-            // Filtros específicos
-            if (nombre) filter.nombre = { $regex: new RegExp(nombre, "i") };
-            if (sku) filter.sku = { $regex: new RegExp(sku, "i") };
+            if (barcode) {
+                const barcodeRegex = new RegExp(barcode.trim(), "i");
+                // Si ya existe una condición $or por el SKU, agrupamos usando $and
+                const barcodeQuery = {
+                    $or: [
+                        { barcode: { $regex: barcodeRegex } },
+                        { "variants.barcode": { $regex: barcodeRegex } }
+                    ]
+                };
 
+                if (filter.$or) {
+                    filter.$and = filter.$and || [];
+                    filter.$and.push(barcodeQuery);
+                } else {
+                    filter.$or = barcodeQuery.$or;
+                }
+            }
+
+            // 3. FILTROS DE ESTADO Y BOOLEANOS
             if (isActive === "true" || isActive === "false") {
                 filter.isActive = isActive === "true";
             }
@@ -459,14 +498,16 @@ export class ProductController {
             if (esDestacado === "true" || esDestacado === "false") {
                 filter.esDestacado = esDestacado === "true";
             }
+
             if (brand) {
                 filter.brand = brand;
             }
 
-            console.log('Category filter value:', category);
-            if (category) filter.categoria = new mongoose.Types.ObjectId(category);
+            if (category && mongoose.Types.ObjectId.isValid(category)) {
+                filter.categoria = new mongoose.Types.ObjectId(category);
+            }
 
-            // Ordenamiento
+            // 4. CONFIGURACIÓN DEL ORDENAMIENTO (Sort)
             const sort: Record<string, 1 | -1> = {};
 
             if (precioSort === "asc" || precioSort === "desc") {
@@ -477,18 +518,17 @@ export class ProductController {
                 sort.stock = stockSort === "asc" ? 1 : -1;
             }
 
-            // Si no hay sort elegido, ordenar por fecha de actualización
             if (Object.keys(sort).length === 0) {
                 sort.updatedAt = -1;
             }
 
+            // 5. EJECUCIÓN PARALELA EN BASE DE DATOS
             const [products, totalProducts] = await Promise.all([
                 Product.find(filter)
                     .skip(skip)
                     .limit(pageSize)
                     .sort(sort)
                     .populate("brand", "nombre slug")
-                    // .populate("categoria", "nombre slug")
                     .populate("line", "nombre slug"),
 
                 Product.countDocuments(filter),
@@ -502,7 +542,7 @@ export class ProductController {
             });
 
         } catch (error) {
-            console.error(error);
+            console.error("Error en getProducts:", error);
             res.status(500).json({ message: "Error fetching products" });
         }
     }

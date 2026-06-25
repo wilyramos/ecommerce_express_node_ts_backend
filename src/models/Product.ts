@@ -14,7 +14,7 @@ interface ISpecification {
 
 export interface IVariant {
     _id?: Types.ObjectId;
-    variantId?: string;         // PRD-000001-V01
+    variantId?: string;
     nombre?: string;
     precio?: number;
     precioComparativo?: number;
