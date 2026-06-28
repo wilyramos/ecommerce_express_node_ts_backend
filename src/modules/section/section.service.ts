@@ -170,34 +170,33 @@ export class SectionService {
         return updatedSection;
     }
 
-    private sanitizeAndValidateBlocks(type: string | undefined, blocks: ISectionBlock[] | undefined): void {
-        console.log("-> Dentro de sanitizeAndValidateBlocks. Bloques recibidos:", blocks?.length || 0);
-        if (!blocks || !Array.isArray(blocks)) return;
 
-        if (blocks.length > 8) {
-            console.log("❌ Error: Exceso de bloques detectado en service:", blocks.length);
-            throw new AppError('Operación denegada. La sección no puede contener más de 8 bloques de contenido.', 400);
-        }
+    // Modificar exclusivamente el método sanitizeAndValidateBlocks dentro de la clase SectionService:
+private sanitizeAndValidateBlocks(type: string | undefined, blocks: ISectionBlock[] | undefined): void {
+    if (!blocks || !Array.isArray(blocks)) return;
 
-        for (const [index, block] of blocks.entries()) {
-            const rawProductId = block.productId as unknown as string | undefined;
-
-            if (rawProductId === "" || (typeof rawProductId === "string" && rawProductId.trim() === "")) {
-                delete block.productId;
-            } else if (block.productId && !Types.ObjectId.isValid(block.productId.toString())) {
-                console.log(`❌ Error: El bloque #${index + 1} posee un productId inválido:`, block.productId);
-                throw new AppError(`El bloque #${index + 1} posee un identificador de producto inválido para la base de datos.`, 400);
-            }
-
-            if (type === 'product_grid' && !block.productId && !block.imageUrl) {
-                throw new AppError(`El bloque #${index + 1} de la cuadrícula requiere un ID de producto o una imagen por lo menos.`, 400);
-            }
-            if (type === 'featured_collections' && !block.imageUrl) {
-                throw new AppError(`El bloque #${index + 1} de la grilla de imágenes requiere subir una miniatura válida.`, 400);
-            }
-        }
-        console.log("-> sanitizeAndValidateBlocks completado con éxito.");
+    if (blocks.length > 8) {
+        throw new AppError('Operación denegada. La sección no puede contener más de 8 bloques de contenido.', 400);
     }
+
+    for (const [index, block] of blocks.entries()) {
+        const rawProductId = block.productId as unknown as string | undefined;
+
+        if (rawProductId === "" || (typeof rawProductId === "string" && rawProductId.trim() === "")) {
+            delete block.productId;
+        } else if (block.productId && !Types.ObjectId.isValid(block.productId.toString())) {
+            throw new AppError(`El bloque #${index + 1} posee un identificador de producto inválido para la base de datos.`, 400);
+        }
+
+        // Validación polimórfica adaptada para admitir videos en lugar de imágenes obligatorias
+        if (type === 'product_grid' && !block.productId && !block.imageUrl && !block.videoUrl) {
+            throw new AppError(`El bloque #${index + 1} de la cuadrícula requiere un ID de producto, una imagen o un video por lo menos.`, 400);
+        }
+        if (type === 'featured_collections' && !block.imageUrl && !block.videoUrl) {
+            throw new AppError(`El bloque #${index + 1} de la grilla requiere subir al menos una miniatura o un recurso de video válido.`, 400);
+        }
+    }
+}
 
     /**
      * Remueve de forma definitiva un registro de sección de la base de datos.

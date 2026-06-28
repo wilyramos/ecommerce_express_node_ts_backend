@@ -1,26 +1,27 @@
-// File: backend/src/modules/section/section.model.ts
-
 import { Schema, model, Document, Types } from 'mongoose';
 
 export type SectionType = 'featured_collections' | 'product_grid' | 'rich_text';
+export type VideoAspectRatio = '9:16' | '1:1' | '16:9';
 
 export interface ISectionBlock {
     title?: string;
     subtitle?: string;
     imageUrl?: string;
-    linkTo?: string;            // Ruta interna en Next.js 15 (ej: "/category/electronica")
-    productId?: Types.ObjectId; // Referencia directa para 'product_grid'
+    videoUrl?: string; // Ruta/URL directa de almacenamiento de video
+    aspectRatio: VideoAspectRatio; // Formato de visualización del bloque
+    linkTo?: string;            
+    productId?: Types.ObjectId; 
 }
 
 export interface ISection extends Document {
-    title: string;              // Nombre administrativo interno (ej: "Categorías Populares Verano")
-    slug: string;               // Key única para Next.js (ej: "home-categories-grid")
+    title: string;              
+    slug: string;               
     type: SectionType;
     order: number;
     isActive: boolean;
     settings: {
-        bodyText?: string;        // Usado en 'rich_text' para descripciones largas o HTML
-        gridColumns?: number;     // Control estructural en Next.js (ej: 2, 3, 4 columnas)
+        bodyText?: string;        
+        gridColumns?: number;     
     };
     blocks: ISectionBlock[];
     createdAt: Date;
@@ -46,6 +47,12 @@ const SectionSchema = new Schema<ISection>({
             title: { type: String, trim: true },
             subtitle: { type: String, trim: true },
             imageUrl: { type: String },
+            videoUrl: { type: String, default: "" },
+            aspectRatio: { 
+                type: String, 
+                enum: ['9:16', '1:1', '16:9'], 
+                default: '16:9' 
+            },
             linkTo: { type: String },
             productId: { type: Schema.Types.ObjectId, ref: 'Product' }
         }],
@@ -58,7 +65,6 @@ const SectionSchema = new Schema<ISection>({
     }
 }, { timestamps: true });
 
-// Índice compuesto para optimizar las consultas del Home de manera instantánea
 SectionSchema.index({ isActive: 1, order: 1 });
 
 export const Section = model<ISection>('Section', SectionSchema);
