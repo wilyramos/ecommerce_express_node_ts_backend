@@ -1,3 +1,5 @@
+// File: backend/src/controllers/ProductController.ts
+
 import { Request, Response } from 'express';
 import Category from '../models/Category';
 import Product, { type IProduct, type IVariant } from '../models/Product';
@@ -193,6 +195,16 @@ export class ProductController {
                     ? preparedVariants.reduce((sum, v) => sum + (v.stock || 0), 0)
                     : stock;
 
+            // Mapear de manera estricta y segura las especificaciones con sus nuevas propiedades dinámicas de íconos
+            const preparedSpecifications = especificaciones
+                ? especificaciones.map((spec: any) => ({
+                    key: spec.key,
+                    value: spec.value,
+                    icon: spec.icon || null,
+                    isFeatured: spec.isFeatured === true || spec.isFeatured === 'true'
+                }))
+                : [];
+
             const newProduct = {
                 nombre,
                 slug,
@@ -207,7 +219,7 @@ export class ProductController {
                 barcode,
                 isActive,
                 atributos,
-                especificaciones,
+                especificaciones: preparedSpecifications,
                 brand,
                 diasEnvio: dias,
                 variants: preparedVariants,
@@ -393,7 +405,16 @@ export class ProductController {
             if (barcode) existingProduct.barcode = barcode;
             if (brand) existingProduct.brand = brand;
             if (atributos) existingProduct.atributos = atributos;
-            if (especificaciones) existingProduct.especificaciones = especificaciones;
+
+            // Mapeo e inyección limpia de los nuevos campos de especificaciones durante la actualización
+            if (especificaciones) {
+                existingProduct.especificaciones = especificaciones.map((spec: any) => ({
+                    key: spec.key,
+                    value: spec.value,
+                    icon: spec.icon || null,
+                    isFeatured: spec.isFeatured === true || spec.isFeatured === 'true'
+                }));
+            }
 
             existingProduct.diasEnvio = dias;
             existingProduct.isActive = isActive ?? existingProduct.isActive;
@@ -1802,12 +1823,12 @@ export class ProductController {
                 $expr: { $gt: ["$precioComparativo", "$precio"] }
             };
 
-            // Aplicar filtros de contexto (Si el usuario filtra "Apple" dentro de la página de ofertas)
+            // Apply contextual filters
             if (context.category) matchStage.categoria = context.category._id;
             if (context.brand) matchStage.brand = context.brand._id;
             if (context.line) matchStage.line = context.line._id;
 
-            // Filtro de Rango de Precio
+            // Price filter
             if (priceRange) {
                 const [min, max] = priceRange.split('-').map(Number);
                 if (!isNaN(min) && !isNaN(max)) {
@@ -1822,7 +1843,7 @@ export class ProductController {
                 }
             }
 
-            // Filtros de Atributos Dinámicos
+            // Dynamic Attribute Filters
             const attrConditions: any[] = [];
             const reservedKeys = ['limit', 'slugs', 'page', 'sort', 'priceRange', 'query'];
 

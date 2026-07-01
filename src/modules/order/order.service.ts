@@ -139,12 +139,11 @@ export const orderService = {
         }
 
         // Lógica interna de costos logísticos locales
-        const shippingCost = subtotal > 200 ? 0 : 0;
+        const shippingCost = subtotal < 49 ? 10 : 0;
         const totalPrice = subtotal + shippingCost;
 
         // Transformación matemática: Culqi no acepta flotantes en el "amount" (Ej: S/. 150.50 -> 15050)
         const amountInCents = Math.round(totalPrice * 100);
-
         // ════════════════════════════════════════════════════════════════
         // CONEXIÓN CON LA API DE ÓRDENES DE CULQI (Habilitador Multipago)
         // ════════════════════════════════════════════════════════════════

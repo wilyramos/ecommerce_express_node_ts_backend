@@ -10,6 +10,8 @@ import { IProductLine } from './ProductLine';
 interface ISpecification {
     key: string;
     value: string;
+    icon?: string;        // Almacena la URL desnormalizada (Icon.iconUrl) para evitar populates
+    isFeatured?: boolean; // Controla si se destaca visualmente en la zona de compra
 }
 
 export interface IVariant {
@@ -71,6 +73,8 @@ const specificationSchema = new Schema<ISpecification>(
     {
         key: { type: String, required: true, trim: true },
         value: { type: String, required: true, trim: true },
+        icon: { type: String, trim: true, default: null },
+        isFeatured: { type: Boolean, default: false }
     },
     { _id: false }
 );
@@ -104,8 +108,6 @@ const productSchema = new Schema<IProduct>(
             unique: true,
             sparse: true,
             trim: true,
-            // Se genera en el service con generateProductId()
-            // Formato: PRD-000001
         },
         nombre: { type: String, required: true, trim: true },
         slug: { type: String, trim: true, unique: true, required: true },
@@ -117,8 +119,8 @@ const productSchema = new Schema<IProduct>(
 
         imagenes: { type: [String], default: [] },
 
-        categoria: { type: Types.ObjectId, ref: 'Category', required: true },
-        brand: { type: Types.ObjectId, ref: 'Brand' },
+        categoria: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
+        brand: { type: Schema.Types.ObjectId, ref: 'Brand' },
         line: { type: Schema.Types.ObjectId, ref: 'ProductLine', index: true },
 
         stock: { type: Number, min: 0, default: 0 },
@@ -178,6 +180,9 @@ productSchema.index({ categoria: 1 });
 productSchema.index({ brand: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ isActive: 1, deletedAt: 1, createdAt: -1 });
+
+// Índice para consultas de especificaciones destacadas e íconos rápidos en tienda
+productSchema.index({ 'especificaciones.icon': 1, 'especificaciones.isFeatured': 1 });
 
 // Colecciones (best_sellers, new_arrivals, featured, on_sale)
 productSchema.index({ collections: 1, isActive: 1, deletedAt: 1 });

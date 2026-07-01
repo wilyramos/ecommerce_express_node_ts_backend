@@ -31,6 +31,7 @@ import webhookRouterV2 from './modules/webhook/webhook.router'
 import sectionRouter from './modules/section/section.router'
 import advertisementRouter from './modules/advertisement/advertisement.routes'
 import pageRouter from './modules/page/page.routes'
+import iconRouter from './modules/icon/icon.routes'
 
 import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
@@ -104,7 +105,7 @@ app.use('/api/media', mediaRouter)
 app.use('/api/claims', claimRouter)
 app.use('/api/advertisements', advertisementRouter)
 app.use('/api/pages', pageRouter)
-
+app.use('/api/icons', iconRouter)
 // ════════════════════════════════════════════════════════════════
 // 4. RUTAS VERSION 1 / LEGADO
 // ════════════════════════════════════════════════════════════════

@@ -12,6 +12,7 @@ export type SliderTheme = 'dark' | 'light' | 'custom';
 
 export interface ISliderMedia {
     imageUrl?: string;
+    mobileImageUrl?: string; 
     videoUrl?: string;
     objectFit?: 'contain' | 'cover' | 'fill';
 }
@@ -61,6 +62,7 @@ export interface ISliderBanner extends Document {
 const sliderMediaSchema = new Schema<ISliderMedia>(
     {
         imageUrl: { type: String, trim: true },
+        mobileImageUrl: { type: String, trim: true },
         videoUrl: { type: String, trim: true },
         objectFit: {
             type: String,

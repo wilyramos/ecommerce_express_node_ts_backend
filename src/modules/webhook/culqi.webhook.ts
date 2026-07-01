@@ -24,13 +24,13 @@ interface CulqiChargeObject {
         code: string;
         userMessage?: string;
     };
-    metadata?: { order_id?: string; [key: string]: unknown };
+    metadata?: { order_id?: string;[key: string]: unknown };
 }
 
 interface CulqiOrderObject {
     id: string;
     state: string; // "paid" | "expired" | "deleted" | "pending"
-    metadata?: { order_id?: string; [key: string]: unknown };
+    metadata?: { order_id?: string;[key: string]: unknown };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

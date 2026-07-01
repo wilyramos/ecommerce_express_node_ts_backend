@@ -59,6 +59,10 @@ export class SliderBannerService {
                 throw new AppError('La fecha del countdown debe ser futura', 400);
             }
         }
+
+        if (data.media?.mobileImageUrl && !data.media?.imageUrl) {
+        throw new AppError('Debes proporcionar una imagen principal si incluyes una móvil', 400);
+    }
     }
 
     private sanitize(data: Record<string, any>): Record<string, any> {
