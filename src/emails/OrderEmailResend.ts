@@ -28,7 +28,7 @@ export class OrderEmail {
           <tr>
             <td style="padding:14px 0; border-bottom:1px solid #efefef; vertical-align:middle;">
               <img
-                src="${item.imagen || "https://gophone.pe/logo.png"}"
+                src="${item.imagen || "https://gophone.pe/logogophone.png"}"
                 alt="${item.nombre}"
                 style="width:48px; height:48px; object-fit:cover; border-radius:6px; display:block; background-color:#f5f5f5;"
               />

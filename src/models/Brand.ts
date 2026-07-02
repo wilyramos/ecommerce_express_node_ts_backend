@@ -1,4 +1,4 @@
-//File: backend/src/models/Brand.ts
+// File: backend/src/models/Brand.ts
 
 import mongoose, { Schema, Document } from "mongoose";
 
@@ -8,6 +8,8 @@ export interface IBrand extends Document {
     descripcion?: string;
     logo?: string;
     isActive: boolean;
+    createdAt: Date; // Añadido para el tipado estricto del backend
+    updatedAt: Date; // Añadido para el tipado estricto del backend
 }
 
 export const brandSchema = new Schema<IBrand>(
@@ -19,7 +21,7 @@ export const brandSchema = new Schema<IBrand>(
         isActive: { type: Boolean, default: true },
     },
     {
-        timestamps: true,
+        timestamps: true, // Esto genera automáticamente createdAt y updatedAt
     }
 );
 

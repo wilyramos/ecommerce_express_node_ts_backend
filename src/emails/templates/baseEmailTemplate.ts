@@ -31,7 +31,7 @@ export function baseEmailTemplate({ title, content }: EmailTemplateParams): stri
             <tr>
               <td style="padding-bottom: 40px;">
                 <img
-                  src="https://www.gophone.pe/logo.png"
+                  src="https://www.gophone.pe/logogophone.png"
                   alt="GoPhone"
                   style="height:32px; width:auto; display:block;"
                 />
@@ -86,13 +86,12 @@ export function baseEmailTemplate({ title, content }: EmailTemplateParams): stri
                         GoPhone.pe
                       </p>
                       <p style="margin:4px 0 0; font-size:12px; color:#9a9a9a;">
-                        Tu tienda de tecnología
+                        Calidad a tu alcance.
                       </p>
                     </td>
                     <td align="right" style="vertical-align:middle;">
                       <p style="margin:0; font-size:11px; color:#b0b0b0; line-height:1.6; text-align:right;">
                         © ${new Date().getFullYear()} Gophone.pe<br/>
-                        No respondas a este correo.
                       </p>
                     </td>
                   </tr>
