@@ -25,7 +25,7 @@ export class OrderEmail {
         return {
           subject: `Pedido #${orderNumber} entregado — GoPhone`,
           title: "¡Pedido entregado con éxito!",
-          body: "El courier nos ha confirmado la entrega de tu pedido. ¡Esperamos que disfrutes de tu nueva adquisición técnica!"
+          body: "Informamos que tu pedido ha sido entregado correctamente. Esperamos que disfrutes de tu compra y quedamos atentos a cualquier consulta."
         };
       case 'canceled':
         return {
