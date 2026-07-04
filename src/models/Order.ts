@@ -62,14 +62,18 @@ export interface IPaymentInfo {
 export interface IStatusHistory {
     status: OrderStatus;
     changedAt: Date;
+    actionBy?: Types.ObjectId | string; // ID del Admin/Vendedor/Cliente que cambió el estado
+    reason?: string;                    // Motivo del cambio o comentario de auditoría
+}
+
+export interface IDeviceInfo {
+    ipAddress?: string;
+    userAgent?: string;
 }
 
 // Interfaz del Documento Core
 export interface IOrder extends Document {
     orderNumber: string;
-    // ════════════════════════════════════════════════════════════════
-    // MODIFICACIÓN 1: Tipado del ID de orden generado por servidores de Culqi
-    // ════════════════════════════════════════════════════════════════
     culqiOrderId?: string; 
     user?: Types.ObjectId | IUser;
     customerProfile: ICustomerProfile;
@@ -81,9 +85,18 @@ export interface IOrder extends Document {
     status: OrderStatus;
     statusHistory: IStatusHistory[];
     shippingAddress: IShippingAddress;
+    shippingMethod?: string;             // Ej: 'Olva Express', 'Contraentrega', 'Recojo en Tienda'
+    estimatedDeliveryDate?: Date;        // Fecha estimada de entrega para el cliente
     payment?: IPaymentInfo;
     trackingNumber?: string;
     notes?: string;
+    
+    // Campos rápidos de auditoría para cancelaciones
+    canceledAt?: Date;
+    canceledBy?: Types.ObjectId | string;
+    cancelReason?: string;
+    
+    deviceInfo?: IDeviceInfo;            // Auditoría técnica de origen de compra
     createdAt: Date;
     updatedAt: Date;
 }
@@ -130,15 +143,19 @@ const paymentSchema = new Schema<IPaymentInfo>({
 
 const statusHistorySchema = new Schema<IStatusHistory>({
     status: { type: String, enum: Object.values(OrderStatus), required: true },
-    changedAt: { type: Date, default: Date.now }
+    changedAt: { type: Date, default: Date.now },
+    actionBy: { type: Schema.Types.Mixed }, // Soporta String o ObjectId de manera flexible sin romper docs antiguos
+    reason: { type: String, trim: true }
+}, { _id: false });
+
+const deviceInfoSchema = new Schema<IDeviceInfo>({
+    ipAddress: { type: String },
+    userAgent: { type: String }
 }, { _id: false });
 
 // Schema principal de la orden
 const orderSchema = new Schema<IOrder>({
     orderNumber: { type: String, unique: true, required: true },
-    // ════════════════════════════════════════════════════════════════
-    // MODIFICACIÓN 2: Almacén físico en la colección para token ord_...
-    // ════════════════════════════════════════════════════════════════
     culqiOrderId: { type: String, trim: true, required: false },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: false },
     customerProfile: { type: customerProfileSchema, required: true },
@@ -150,9 +167,18 @@ const orderSchema = new Schema<IOrder>({
     status: { type: String, enum: Object.values(OrderStatus), default: OrderStatus.AWAITING_PAYMENT },
     statusHistory: { type: [statusHistorySchema], default: [] },
     shippingAddress: { type: shippingAddressSchema, required: true },
+    shippingMethod: { type: String, trim: true },
+    estimatedDeliveryDate: { type: Date },
     payment: { type: paymentSchema, required: false },
     trackingNumber: { type: String, trim: true },
-    notes: { type: String, trim: true, maxlength: 300 }
+    notes: { type: String, trim: true, maxlength: 300 },
+    
+    // Auditoría de Cancelación directa
+    canceledAt: { type: Date },
+    canceledBy: { type: Schema.Types.Mixed },
+    cancelReason: { type: String, trim: true },
+    
+    deviceInfo: { type: deviceInfoSchema, required: false }
 }, { timestamps: true });
 
 // ÍNDICES OPTIMIZADOS PARA PRODUCCIÓN
@@ -162,8 +188,8 @@ orderSchema.index({ 'payment.transactionId': 1 }, { sparse: true });
 orderSchema.index({ trackingNumber: 1 }, { sparse: true }); 
 orderSchema.index({ 'customerProfile.email': 1 }); 
 orderSchema.index({ orderNumber: 1 }); 
-// Indexar el ID de Culqi agiliza búsquedas asíncronas en futuras conciliaciones
 orderSchema.index({ culqiOrderId: 1 }, { sparse: true }); 
+orderSchema.index({ createdAt: -1 }); // Agrega este índice si haces consultas recurrentes ordenadas por fecha más reciente
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 

@@ -6,7 +6,7 @@ import { orderService } from './order.service';
 import { OrderStatus } from '../../models/Order';
 import { AppError } from '../../utils/AppError';
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function sendSuccess(res: Response, data: unknown, meta?: unknown): void {
     res.status(200).json({ ok: true, data, ...(meta && { meta }) });
@@ -32,17 +32,27 @@ export const orderController = {
      * Crea una orden. Soporta invitado y usuario registrado.
      */
     async createOrder(req: Request, res: Response): Promise<void> {
-    if (!handleValidation(req, res)) return;
-    try {
-        const userId = (req as any).user?.id as string | undefined;
-        const order = await orderService.createOrder({ ...req.body, userId });
-        res.status(201).json({ ok: true, data: order });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : 'Error inesperado.';
-        // Errores de negocio (stock, variante) → 400, no 500
-        res.status(400).json({ ok: false, message });
-    }
-},
+        if (!handleValidation(req, res)) return;
+        try {
+            const userId = (req as any).user?.id as string | undefined;
+            
+            // Captura de datos técnicos de auditoría
+            const deviceInfo = {
+                ipAddress: req.ip || req.socket.remoteAddress,
+                userAgent: req.headers['user-agent']
+            };
+
+            const order = await orderService.createOrder({ 
+                ...req.body, 
+                userId,
+                deviceInfo 
+            });
+            res.status(201).json({ ok: true, data: order });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Error inesperado.';
+            res.status(400).json({ ok: false, message });
+        }
+    },
 
     /**
      * GET /orders/my
@@ -120,6 +130,7 @@ export const orderController = {
     async cancelOrder(req: Request, res: Response): Promise<void> {
         const userId = (req as any).user?.id;
         const role = (req as any).user?.rol;
+        const { reason } = req.body;
 
         const existing = await orderService.getOrderById(req.params.id);
         if (!existing) throw new AppError('Orden no encontrada.', 404);
@@ -129,7 +140,8 @@ export const orderController = {
         }
 
         try {
-            const order = await orderService.cancelOrder(req.params.id);
+            const executor = role === 'administrador' ? `admin_${userId}` : userId;
+            const order = await orderService.cancelOrder(req.params.id, executor, reason);
             sendSuccess(res, order);
         } catch (error: any) {
             throw new AppError(error.message, 400);
@@ -140,8 +152,6 @@ export const orderController = {
 
     /**
      * GET /orders/admin/all
-     * Listado completo con filtros: status, paymentStatus, email, userId,
-     * orderNumber, from, to, page, limit.
      */
     async getAllOrders(req: Request, res: Response): Promise<void> {
         const { status, paymentStatus, email, userId, orderNumber, page, limit, from, to } =
@@ -175,7 +185,10 @@ export const orderController = {
      */
     async updateOrderStatus(req: Request, res: Response): Promise<void> {
         if (!handleValidation(req, res)) return;
-        const order = await orderService.updateOrderStatus(req.params.id, req.body.status);
+        const adminId = (req as any).user?.id;
+        const { status, reason } = req.body;
+
+        const order = await orderService.updateOrderStatus(req.params.id, status, `admin_${adminId}`, reason);
         if (!order) throw new AppError('Orden no encontrada.', 404);
         sendSuccess(res, order);
     },
@@ -186,18 +199,23 @@ export const orderController = {
      */
     async assignTracking(req: Request, res: Response): Promise<void> {
         if (!handleValidation(req, res)) return;
-        const order = await orderService.assignTracking(req.params.id, req.body.trackingNumber);
+        const adminId = (req as any).user?.id;
+        const { trackingNumber } = req.body;
+
+        const order = await orderService.assignTracking(req.params.id, trackingNumber, `admin_${adminId}`);
         if (!order) throw new AppError('Orden no encontrada.', 404);
         sendSuccess(res, order);
     },
 
     /**
      * PATCH /orders/admin/:id/refund
-     * Marca la orden como reembolsada (requiere gestión manual en la pasarela).
+     * Marca la orden como reembolsada.
      */
     async refundOrder(req: Request, res: Response): Promise<void> {
+        const adminId = (req as any).user?.id;
+        const { reason } = req.body;
         try {
-            const order = await orderService.refundOrder(req.params.id);
+            const order = await orderService.refundOrder(req.params.id, `admin_${adminId}`, reason);
             if (!order) throw new AppError('Orden no encontrada.', 404);
             sendSuccess(res, order);
         } catch (error: any) {
@@ -207,7 +225,6 @@ export const orderController = {
 
     /**
      * PATCH /orders/admin/:id/notes
-     * Agrega o actualiza una nota interna sobre la orden.
      */
     async updateNote(req: Request, res: Response): Promise<void> {
         if (!handleValidation(req, res)) return;
@@ -218,8 +235,6 @@ export const orderController = {
 
     /**
      * GET /orders/admin/stats
-     * Estadísticas globales: total de órdenes, ingresos, distribución por estado.
-     * Acepta query params: from, to (fechas ISO).
      */
     async getStats(req: Request, res: Response): Promise<void> {
         const { from, to } = req.query;
@@ -234,8 +249,6 @@ export const orderController = {
 
     /**
      * POST /orders/webhooks/mercadopago
-     * Receptor de notificaciones de MercadoPago (ruta legacy en order.router).
-     * El webhook real está en webhook.router.ts — este es solo un fallback.
      */
     async mercadoPagoWebhook(req: Request, res: Response): Promise<void> {
         const { type, data } = req.body;

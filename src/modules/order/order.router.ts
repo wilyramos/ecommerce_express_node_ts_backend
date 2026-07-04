@@ -40,9 +40,10 @@ const validateCreateOrder = [
     body('items.*.quantity').isInt({ gt: 0 }).withMessage('La cantidad debe ser mayor a 0'),
     body('shippingAddress').isObject().withMessage('La dirección de envío es requerida'),
     body('shippingAddress.departamento').notEmpty().withMessage('Departamento requerido'),
-    body('shippingAddress.provincia').notEmpty().withMessage('Provincia requerida'),
+    body('shippingAddress.provincia').notEmpty().withMessage('Provincia requerido'),
     body('shippingAddress.distrito').notEmpty().withMessage('Distrito requerido'),
     body('shippingAddress.direccion').notEmpty().withMessage('Dirección requerida'),
+    body('shippingMethod').optional().isString().trim(),
 ];
 
 const validateStatusUpdate = [
@@ -57,6 +58,7 @@ const validateStatusUpdate = [
             'paid_but_out_of_stock',
         ])
         .withMessage('Estado inválido'),
+    body('reason').optional().isString().trim().isLength({ max: 200 }).withMessage('El motivo no puede exceder 200 caracteres')
 ];
 
 const validateTrackingUpdate = [
@@ -72,33 +74,38 @@ const validateNoteUpdate = [
         .isLength({ max: 300 }).withMessage('La nota no puede superar los 300 caracteres'),
 ];
 
+const validateCancelOrder = [
+    validateMongoId,
+    body('reason').optional().isString().trim().isLength({ max: 200 }).withMessage('El motivo no puede exceder 200 caracteres')
+];
+
+const validateRefundOrder = [
+    validateMongoId,
+    body('reason').optional().isString().trim().isLength({ max: 200 }).withMessage('El motivo del reembolso no puede exceder los 200 caracteres')
+];
+
 // ════════════════════════════════════════════════════════════════════════════════
-// WEBHOOKS — sin JWT, van primero para evitar conflictos de parsing
+// WEBHOOKS — sin JWT
 // ════════════════════════════════════════════════════════════════════════════════
 
 router.post('/webhooks/mercadopago', orderController.mercadoPagoWebhook);
 
 // ════════════════════════════════════════════════════════════════════════════════
 // RUTAS ESTÁTICAS PÚBLICAS
-// Todas las rutas con segmentos fijos deben ir ANTES de cualquier /:id o /:param
 // ════════════════════════════════════════════════════════════════════════════════
 
 /**
  * GET /orders/number/:orderNumber/status
- * Polling ligero para el checkout. Sin autenticación.
- * IMPORTANTE: debe ir antes de /number/:orderNumber
  */
 router.get('/number/:orderNumber/status', orderController.getOrderStatusByNumber);
 
 /**
  * GET /orders/number/:orderNumber
- * Consulta pública completa de una orden por su número comercial.
  */
 router.get('/number/:orderNumber', optionalAuthenticate, orderController.getOrderByNumber);
 
 /**
  * GET /orders/guest?email=...
- * Historial de órdenes de invitado por correo.
  */
 router.get(
     '/guest',
@@ -108,32 +115,25 @@ router.get(
 
 /**
  * GET /orders/my
- * Historial de órdenes del usuario autenticado.
  */
 router.get('/my', authenticate, orderController.getMyOrders);
 
 // ════════════════════════════════════════════════════════════════════════════════
-// RUTAS ADMIN — antes de /:id
+// RUTAS ADMIN
 // ════════════════════════════════════════════════════════════════════════════════
 
 /**
  * GET /orders/admin/all
- * Listado de todas las órdenes con filtros.
- * Query params: status, paymentStatus, email, userId, orderNumber, from, to, page, limit
  */
 router.get('/admin/all', authenticate, isAdminOrVendedor, orderController.getAllOrders);
 
 /**
  * GET /orders/admin/stats
- * Estadísticas globales de órdenes.
- * Query params: from, to (fechas ISO opcionales)
  */
 router.get('/admin/stats', authenticate, isAdmin, orderController.getStats);
 
 /**
  * PATCH /orders/admin/:id/status
- * Cambio manual del estado logístico de una orden.
- * Body: { status: OrderStatus }
  */
 router.patch(
     '/admin/:id/status',
@@ -145,8 +145,6 @@ router.patch(
 
 /**
  * PATCH /orders/admin/:id/tracking
- * Asigna número de tracking y marca la orden como SHIPPED.
- * Body: { trackingNumber: string }
  */
 router.patch(
     '/admin/:id/tracking',
@@ -158,21 +156,17 @@ router.patch(
 
 /**
  * PATCH /orders/admin/:id/refund
- * Marca la orden como reembolsada.
- * Requiere gestión manual del reembolso en la pasarela de pago.
  */
 router.patch(
     '/admin/:id/refund',
     authenticate,
     isAdmin,
-    [validateMongoId],
+    validateRefundOrder,
     orderController.refundOrder
 );
 
 /**
  * PATCH /orders/admin/:id/notes
- * Agrega o actualiza nota interna de gestión sobre la orden.
- * Body: { notes: string }
  */
 router.patch(
     '/admin/:id/notes',
@@ -183,29 +177,26 @@ router.patch(
 );
 
 // ════════════════════════════════════════════════════════════════════════════════
-// RUTAS CON PARÁMETRO DINÁMICO — siempre al final
+// RUTAS CON PARÁMETRO DINÁMICO
 // ════════════════════════════════════════════════════════════════════════════════
 
 /**
  * POST /orders
- * Crear una orden nueva. Soporta invitado y usuario registrado.
  */
 router.post('/', optionalAuthenticate, validateCreateOrder, orderController.createOrder);
 
 /**
  * PATCH /orders/:id/cancel
- * Cancelar una orden. El cliente solo puede cancelar la suya; admin puede cualquiera.
  */
 router.patch(
     '/:id/cancel',
     authenticate,
-    [validateMongoId],
+    validateCancelOrder,
     orderController.cancelOrder
 );
 
 /**
  * GET /orders/:id
- * Detalle de una orden por ObjectId. Solo el propietario o admin.
  */
 router.get(
     '/:id',
