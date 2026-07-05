@@ -36,7 +36,6 @@ export const orderController = {
         try {
             const userId = (req as any).user?.id as string | undefined;
             
-            // Captura de datos técnicos de auditoría
             const deviceInfo = {
                 ipAddress: req.ip || req.socket.remoteAddress,
                 userAgent: req.headers['user-agent']
@@ -125,7 +124,7 @@ export const orderController = {
 
     /**
      * PATCH /orders/:id/cancel
-     * Cancelación de orden por el propio cliente o admin.
+     * Cancelación de orden por el propio cliente o admin de forma atómica.
      */
     async cancelOrder(req: Request, res: Response): Promise<void> {
         const userId = (req as any).user?.id;
@@ -181,35 +180,40 @@ export const orderController = {
 
     /**
      * PATCH /orders/admin/:id/status
-     * Cambia el estado logístico de una orden.
      */
     async updateOrderStatus(req: Request, res: Response): Promise<void> {
         if (!handleValidation(req, res)) return;
         const adminId = (req as any).user?.id;
         const { status, reason } = req.body;
 
-        const order = await orderService.updateOrderStatus(req.params.id, status, `admin_${adminId}`, reason);
-        if (!order) throw new AppError('Orden no encontrada.', 404);
-        sendSuccess(res, order);
+        try {
+            const order = await orderService.updateOrderStatus(req.params.id, status, `admin_${adminId}`, reason);
+            if (!order) throw new AppError('Orden no encontrada.', 404);
+            sendSuccess(res, order);
+        } catch (error: any) {
+            throw new AppError(error.message, 400);
+        }
     },
 
     /**
      * PATCH /orders/admin/:id/tracking
-     * Asigna número de tracking y marca la orden como enviada.
      */
     async assignTracking(req: Request, res: Response): Promise<void> {
         if (!handleValidation(req, res)) return;
         const adminId = (req as any).user?.id;
         const { trackingNumber } = req.body;
 
-        const order = await orderService.assignTracking(req.params.id, trackingNumber, `admin_${adminId}`);
-        if (!order) throw new AppError('Orden no encontrada.', 404);
-        sendSuccess(res, order);
+        try {
+            const order = await orderService.assignTracking(req.params.id, trackingNumber, `admin_${adminId}`);
+            if (!order) throw new AppError('Orden no encontrada.', 404);
+            sendSuccess(res, order);
+        } catch (error: any) {
+            throw new AppError(error.message, 400);
+        }
     },
 
     /**
      * PATCH /orders/admin/:id/refund
-     * Marca la orden como reembolsada.
      */
     async refundOrder(req: Request, res: Response): Promise<void> {
         const adminId = (req as any).user?.id;

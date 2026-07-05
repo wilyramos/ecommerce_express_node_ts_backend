@@ -1,10 +1,12 @@
 // File: backend/src/modules/order/order.service.ts
 
-import { FilterQuery, Types, UpdateQuery } from 'mongoose';
+import mongoose, { FilterQuery, Types, UpdateQuery } from 'mongoose';
 import Order, { IOrder, IOrderItem, OrderStatus, PaymentStatus } from '../../models/Order';
 import Product from '../../models/Product';
 import { generateSecureOrderNumber } from '../../utils/orderNumber-helper';
 import { OrderEmail } from '../../emails/OrderEmailResend';
+
+// ── DTOs ─────────────────────────────────────────────────────────────────────
 
 export interface CreateOrderDTO {
     userId?: string;
@@ -58,10 +60,12 @@ export interface OrderStats {
     byPaymentStatus: Record<string, number>;
 }
 
+// ── Servicio ──────────────────────────────────────────────────────────────────
+
 export const orderService = {
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. Crear orden
+    // 1. Crear orden (Inicializa en Espera de Pago, sin alterar stock ni enviar correo)
     // ─────────────────────────────────────────────────────────────────────────
     async createOrder(dto: CreateOrderDTO): Promise<IOrder> {
         const orderNumber = generateSecureOrderNumber();
@@ -135,7 +139,7 @@ export const orderService = {
         const shippingCost = subtotal < 49 ? 10 : 0;
         const totalPrice = subtotal + shippingCost;
         const amountInCents = Math.round(totalPrice * 100);
-        
+
         let culqiOrderId: string | undefined = undefined;
 
         try {
@@ -161,7 +165,7 @@ export const orderService = {
                 })
             });
 
-            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string; [key: string]: unknown };
+            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string;[key: string]: unknown };
 
             if (culqiResponse.ok && culqiOrderData.id) {
                 culqiOrderId = culqiOrderData.id;
@@ -173,7 +177,7 @@ export const orderService = {
         const estimatedDeliveryDate = new Date();
         estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 3);
 
-        const createdOrder = await Order.create({
+        return Order.create({
             orderNumber,
             culqiOrderId,
             user: dto.userId ? new Types.ObjectId(dto.userId) : undefined,
@@ -188,26 +192,14 @@ export const orderService = {
             estimatedDeliveryDate,
             notes: dto.notes,
             status: OrderStatus.AWAITING_PAYMENT,
-            statusHistory: [{ 
-                status: OrderStatus.AWAITING_PAYMENT, 
+            statusHistory: [{
+                status: OrderStatus.AWAITING_PAYMENT,
                 changedAt: new Date(),
                 actionBy: dto.userId ?? 'system_guest',
                 reason: 'Orden inicializada en checkout'
             }],
             deviceInfo: dto.deviceInfo
         });
-
-        // Email Inicial de creación/recibo de pedido
-        OrderEmail.sendOrderConfirmationEmail({
-            email: createdOrder.customerProfile.email,
-            name: createdOrder.customerProfile.nombre,
-            orderId: createdOrder.orderNumber,
-            totalPrice: createdOrder.totalPrice,
-            shippingMethod: `${createdOrder.shippingAddress.direccion}, ${createdOrder.shippingAddress.distrito}`,
-            items: createdOrder.items
-        }).catch(err => console.error("Error email de confirmación:", err));
-
-        return createdOrder;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -218,14 +210,14 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. Obtener orden por número comercial
+    // 3. Obtener orden por número comercial (ORD-...)
     // ─────────────────────────────────────────────────────────────────────────
     async getOrderByNumber(orderNumber: string): Promise<IOrder | null> {
         return Order.findOne({ orderNumber }).populate('user', 'nombre apellidos email').lean();
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4. Historial por usuario registrado
+    // 4. Historial paginado de un usuario registrado
     // ─────────────────────────────────────────────────────────────────────────
     async getOrdersByUser(userId: string, page = 1, limit = 10): Promise<{ orders: IOrder[]; total: number }> {
         const skip = (page - 1) * limit;
@@ -238,7 +230,7 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. Historial por email invitado
+    // 5. Historial paginado de invitado por email
     // ─────────────────────────────────────────────────────────────────────────
     async getOrdersByEmail(email: string, page = 1, limit = 10): Promise<{ orders: IOrder[]; total: number }> {
         const skip = (page - 1) * limit;
@@ -251,7 +243,7 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 6. Listado admin global
+    // 6. Listado admin con filtros y rangos de fecha
     // ─────────────────────────────────────────────────────────────────────────
     async getAllOrders(filters: OrderFilters): Promise<{ orders: IOrder[]; total: number }> {
         const { status, paymentStatus, email, userId, orderNumber, page = 1, limit = 20, from, to } = filters;
@@ -283,75 +275,140 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. Actualizar estado logístico manual
+    // 7. Actualizar estado logístico manual (Idempotente con control de stock fuera de línea)
     // ─────────────────────────────────────────────────────────────────────────
     async updateOrderStatus(orderId: string, newStatus: OrderStatus, actionBy?: string, reason?: string): Promise<IOrder | null> {
-        const order = await Order.findByIdAndUpdate(
-            orderId,
-            {
-                status: newStatus,
-                $push: { 
-                    statusHistory: { 
-                        status: newStatus, 
-                        changedAt: new Date(),
-                        actionBy: actionBy ?? 'system',
-                        reason: reason ?? 'Cambio de estado administrativo'
-                    } 
-                },
-            },
-            { new: true }
-        );
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-        if (order) {
+        try {
+            const order = await Order.findById(orderId).session(session);
+            if (!order) {
+                await session.abortTransaction();
+                session.endSession();
+                return null;
+            }
+
+            if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELED) {
+                throw new Error(`Operación denegada. La orden ya está en un estado terminal: ${order.status}`);
+            }
+
+            // Evaluar si ya se procesó stock dinámico anteriormente
+            const yaTeniaStockDescontado = order.statusHistory.some(
+                (h) => h.status === OrderStatus.PROCESSING ||
+                    h.status === OrderStatus.SHIPPED ||
+                    h.status === OrderStatus.DELIVERED ||
+                    h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
+            );
+
+            const nuevoEstadoRequiereStock =
+                newStatus === OrderStatus.PROCESSING ||
+                newStatus === OrderStatus.SHIPPED ||
+                newStatus === OrderStatus.DELIVERED;
+
+            // Descuento de stock en base de datos para flujos manuales de administración (Efectivo/Transferencia)
+            if (nuevoEstadoRequiereStock && !yaTeniaStockDescontado) {
+                for (const item of order.items) {
+                    const productId = (item.productId as any)?._id ?? item.productId;
+
+                    if (item.variantId) {
+                        const prodData = await Product.findById(productId).session(session);
+                        const variant = prodData?.variants?.find(v => v._id?.toString() === item.variantId?.toString());
+
+                        if (!variant || variant.stock < item.quantity) {
+                            throw new Error(`Stock insuficiente en almacén para la variante de: ${item.nombre}`);
+                        }
+
+                        await Product.updateOne(
+                            { _id: productId, 'variants._id': item.variantId },
+                            { $inc: { 'variants.$.stock': -item.quantity } }
+                        ).session(session);
+
+                        const updatedProd = await Product.findById(productId).session(session);
+                        if (updatedProd && updatedProd.variants) {
+                            updatedProd.stock = updatedProd.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+                            await updatedProd.save({ session });
+                        }
+                    } else {
+                        const prodData = await Product.findById(productId).session(session);
+                        if (!prodData || (prodData.stock ?? 0) < item.quantity) {
+                            throw new Error(`Stock insuficiente en almacén para el producto: ${item.nombre}`);
+                        }
+
+                        await Product.updateOne(
+                            { _id: productId },
+                            { $inc: { stock: -item.quantity } }
+                        ).session(session);
+                    }
+                }
+
+                // Forzar estado aprobado financiero por validación offline del administrador
+                if (!order.payment) {
+                    order.payment = {
+                        provider: 'manual_admin',
+                        method: 'offline_verificado',
+                        status: PaymentStatus.APPROVED,
+                        rawResponse: { aprobadoPor: actionBy, motivo: reason }
+                    };
+                } else {
+                    order.payment.status = PaymentStatus.APPROVED;
+                }
+            }
+
+            order.status = newStatus;
+            order.statusHistory.push({
+                status: newStatus,
+                changedAt: new Date(),
+                actionBy: actionBy ?? 'system',
+                reason: reason ?? 'Cambio de estado administrativo'
+            });
+
+            await order.save({ session });
+            await session.commitTransaction();
+            session.endSession();
+
             OrderEmail.sendOrderStatusUpdateEmail({
                 email: order.customerProfile.email,
                 name: order.customerProfile.nombre,
                 orderNumber: order.orderNumber,
                 status: newStatus
             }).catch(err => console.error("Error enviando email de estado:", err));
-        }
 
-        return order;
+            return order;
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. Asignar tracking de paquetería
+    // 8. Asignar tracking de paquetería (Hereda la lógica de descuento si viene directo)
     // ─────────────────────────────────────────────────────────────────────────
     async assignTracking(orderId: string, trackingNumber: string, actionBy?: string): Promise<IOrder | null> {
-        const order = await Order.findByIdAndUpdate(
+        // Delega la actualización a updateOrderStatus para reutilizar de forma segura la lógica transaccional de stock
+        return this.updateOrderStatus(
             orderId,
-            {
-                trackingNumber,
-                status: OrderStatus.SHIPPED,
-                $push: { 
-                    statusHistory: { 
-                        status: OrderStatus.SHIPPED, 
-                        changedAt: new Date(),
-                        actionBy: actionBy ?? 'system',
-                        reason: `Asignación de número de guía tracking: ${trackingNumber}`
-                    } 
-                },
-            },
-            { new: true }
-        );
-
-        if (order) {
-            OrderEmail.sendOrderStatusUpdateEmail({
-                email: order.customerProfile.email,
-                name: order.customerProfile.nombre,
-                orderNumber: order.orderNumber,
-                status: OrderStatus.SHIPPED,
-                trackingNumber
-            }).catch(err => console.error("Error enviando email de tracking:", err));
-        }
-
-        return order;
+            OrderStatus.SHIPPED,
+            actionBy,
+            `Asignación automática de tracking por despacho de guía comercial: ${trackingNumber}`
+        ).then(async (order) => {
+            if (order) {
+                // Actualización complementaria de la guía sin romper la sesión transaccional previa
+                return Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } }, { new: true });
+            }
+            return null;
+        });
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 9. Actualizar estado de pago (Webhooks)
+    // 9. Actualizar estado de pago (Webhooks de Pasarelas)
     // ─────────────────────────────────────────────────────────────────────────
-    async updatePayment(orderId: string, paymentData: { provider: string; method?: string; transactionId: string; status: PaymentStatus; rawResponse?: unknown }): Promise<IOrder | null> {
+    async updatePayment(
+        orderId: string,
+        paymentData: { provider: string; method?: string; transactionId: string; status: PaymentStatus; rawResponse?: unknown }
+    ): Promise<IOrder | null> {
+        // Nota: El descuento físico de stock por webhooks automatizados ya ocurre de forma atómica dentro de culqi.webhook.ts
         const newOrderStatus =
             paymentData.status === PaymentStatus.APPROVED
                 ? OrderStatus.PROCESSING
@@ -364,8 +421,8 @@ export const orderService = {
         if (newOrderStatus) {
             update.$set = { ...update.$set, status: newOrderStatus };
             update.$push = {
-                statusHistory: { 
-                    status: newOrderStatus, 
+                statusHistory: {
+                    status: newOrderStatus,
                     changedAt: new Date(),
                     actionBy: `webhook_${paymentData.provider}`,
                     reason: `Confirmación automatizada de pago: ${paymentData.status}`
@@ -388,115 +445,167 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 10. Cancelación atómica con restitución de stock
+    // 10. Cancelación atómica con restitución condicional de stock
     // ─────────────────────────────────────────────────────────────────────────
     async cancelOrder(orderId: string, actionBy?: string, reason?: string): Promise<IOrder | null> {
-        const executor = actionBy ?? 'system_request';
-        const cancelReasonStr = reason ?? 'Cancelación solicitada por el usuario o timeout de pago';
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-        const order = await Order.findOneAndUpdate(
-            {
+        try {
+            const executor = actionBy ?? 'system_request';
+            const cancelReasonStr = reason ?? 'Cancelación solicitada por el usuario o administración';
+
+            const order = await Order.findOne({
                 _id: orderId,
                 status: { $nin: [OrderStatus.DELIVERED, OrderStatus.CANCELED] },
-            },
-            {
-                status: OrderStatus.CANCELED,
-                canceledAt: new Date(),
-                canceledBy: executor,
-                cancelReason: cancelReasonStr,
-                $push: { 
-                    statusHistory: { 
-                        status: OrderStatus.CANCELED, 
-                        changedAt: new Date(),
-                        actionBy: executor,
-                        reason: cancelReasonStr
-                    } 
-                },
-            },
-            { new: true }
-        );
+            }).session(session);
 
-        if (!order) {
-            const exists = await Order.findById(orderId);
-            if (!exists) return null;
-            throw new Error('La orden no se puede cancelar en su estado logístico actual.');
-        }
+            if (!order) {
+                throw new Error('La orden no se puede cancelar en su estado logístico actual o ya se encuentra cerrada.');
+            }
 
-        const teniaStockDescontado = order.statusHistory.some(
-            (h) => h.status === OrderStatus.PROCESSING || h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
-        );
+            // Determinar de forma certera si la orden pasó por una etapa donde SE DESCONTÓ stock
+            const teniaStockDescontado = order.statusHistory.some(
+                (h) => h.status === OrderStatus.PROCESSING ||
+                    h.status === OrderStatus.SHIPPED ||
+                    h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
+            );
 
-        if (teniaStockDescontado) {
-            for (const item of order.items) {
-                if (item.variantId) {
-                    await Product.updateOne(
-                        { _id: item.productId, 'variants._id': item.variantId },
-                        { $inc: { 'variants.$.stock': item.quantity } }
-                    );
-                } else {
-                    await Product.updateOne({ _id: item.productId }, { $inc: { stock: item.quantity } });
+            // Restituir stock únicamente si existió un descuento previo válido
+            if (teniaStockDescontado) {
+                for (const item of order.items) {
+                    const productId = (item.productId as any)?._id ?? item.productId;
+                    if (item.variantId) {
+                        await Product.updateOne(
+                            { _id: productId, 'variants._id': item.variantId },
+                            { $inc: { 'variants.$.stock': item.quantity } }
+                        ).session(session);
+
+                        const updatedProd = await Product.findById(productId).session(session);
+                        if (updatedProd && updatedProd.variants) {
+                            updatedProd.stock = updatedProd.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+                            await updatedProd.save({ session });
+                        }
+                    } else {
+                        await Product.updateOne(
+                            { _id: productId },
+                            { $inc: { stock: item.quantity } }
+                        ).session(session);
+                    }
                 }
             }
+
+            // Persistencia física del estado terminal CANCELED
+            order.status = OrderStatus.CANCELED;
+            order.canceledAt = new Date();
+            order.canceledBy = executor;
+            order.cancelReason = cancelReasonStr;
+            order.statusHistory.push({
+                status: OrderStatus.CANCELED,
+                changedAt: new Date(),
+                actionBy: executor,
+                reason: cancelReasonStr
+            });
+
+            await order.save({ session });
+            await session.commitTransaction();
+            session.endSession();
+
+            OrderEmail.sendOrderStatusUpdateEmail({
+                email: order.customerProfile.email,
+                name: order.customerProfile.nombre,
+                orderNumber: order.orderNumber,
+                status: OrderStatus.CANCELED
+            }).catch(err => console.error("Error enviando email de cancelación:", err));
+
+            return order;
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
         }
-
-        OrderEmail.sendOrderStatusUpdateEmail({
-            email: order.customerProfile.email,
-            name: order.customerProfile.nombre,
-            orderNumber: order.orderNumber,
-            status: OrderStatus.CANCELED
-        }).catch(err => console.error("Error enviando email de cancelación:", err));
-
-        return order;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 11. Marcar orden como reembolsada
+    // 11. Reembolso con Transacción Atómica y Restitución de Stock
     // ─────────────────────────────────────────────────────────────────────────
     async refundOrder(orderId: string, actionBy?: string, reason?: string): Promise<IOrder | null> {
-        const order = await Order.findById(orderId);
-        if (!order) return null;
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-        if (order.payment?.status !== PaymentStatus.APPROVED) {
-            throw new Error('Solo se pueden reembolsar órdenes con pago aprobado.');
-        }
+        try {
+            const order = await Order.findById(orderId).session(session);
+            if (!order) {
+                await session.abortTransaction();
+                session.endSession();
+                return null;
+            }
 
-        if (order.status === OrderStatus.DELIVERED) {
-            throw new Error('No se puede reembolsar una orden ya entregada desde este panel.');
-        }
+            if (order.payment?.status !== PaymentStatus.APPROVED) {
+                throw new Error('Solo se pueden reembolsar órdenes que tengan un pago previamente aprobado.');
+            }
 
-        const executor = actionBy ?? 'admin_system';
-        const refundReason = reason ?? 'Reembolso manual aprobado por administración';
+            if (order.status === OrderStatus.DELIVERED) {
+                throw new Error('No se puede reembolsar automáticamente una orden ya entregada.');
+            }
 
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
-            {
-                $set: { 'payment.status': PaymentStatus.REFUNDED },
+            if (order.status === OrderStatus.CANCELED) {
+                throw new Error('La orden ya ha sido cancelada previamente.');
+            }
+
+            const executor = actionBy ?? 'admin_system';
+            const refundReason = reason ?? 'Reembolso manual aprobado por administración';
+
+            for (const item of order.items) {
+                const productId = (item.productId as any)?._id ?? item.productId;
+                if (item.variantId) {
+                    await Product.updateOne(
+                        { _id: productId, 'variants._id': item.variantId },
+                        { $inc: { 'variants.$.stock': item.quantity } }
+                    ).session(session);
+
+                    const updatedProd = await Product.findById(productId).session(session);
+                    if (updatedProd && updatedProd.variants) {
+                        updatedProd.stock = updatedProd.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+                        await updatedProd.save({ session });
+                    }
+                } else {
+                    await Product.updateOne(
+                        { _id: productId },
+                        { $inc: { stock: item.quantity } }
+                    ).session(session);
+                }
+            }
+
+            order.status = OrderStatus.CANCELED;
+            if (order.payment) order.payment.status = PaymentStatus.REFUNDED;
+            order.canceledAt = new Date();
+            order.canceledBy = executor;
+            order.cancelReason = `Reembolso aprobado: ${refundReason}`;
+            order.statusHistory.push({
                 status: OrderStatus.CANCELED,
-                canceledAt: new Date(),
-                canceledBy: executor,
-                cancelReason: `Reembolso: ${refundReason}`,
-                $push: { 
-                    statusHistory: { 
-                        status: OrderStatus.CANCELED, 
-                        changedAt: new Date(),
-                        actionBy: executor,
-                        reason: `Orden cancelada debido a reembolso financiero. Motivo: ${refundReason}`
-                    } 
-                },
-            },
-            { new: true }
-        );
+                changedAt: new Date(),
+                actionBy: executor,
+                reason: `Orden revertida por reembolso financiero. Motivo: ${refundReason}`
+            });
 
-        if (updatedOrder) {
+            await order.save({ session });
+            await session.commitTransaction();
+            session.endSession();
+
             OrderEmail.sendOrderStatusUpdateEmail({
-                email: updatedOrder.customerProfile.email,
-                name: updatedOrder.customerProfile.nombre,
-                orderNumber: updatedOrder.orderNumber,
+                email: order.customerProfile.email,
+                name: order.customerProfile.nombre,
+                orderNumber: order.orderNumber,
                 status: OrderStatus.CANCELED
             }).catch(err => console.error("Error enviando email de reembolso:", err));
-        }
 
-        return updatedOrder;
+            return order;
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -514,14 +623,14 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 14. Estado ligero para polling
+    // 14. Estado ligero para polling de pasarela
     // ─────────────────────────────────────────────────────────────────────────
     async getOrderStatusByNumber(orderNumber: string): Promise<Pick<IOrder, 'status' | 'payment'> | null> {
         return Order.findOne({ orderNumber }).select('status payment.status').lean();
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 15. Estadísticas globales
+    // 15. Estadísticas globales de órdenes
     // ─────────────────────────────────────────────────────────────────────────
     async getStats(from?: string, to?: string): Promise<OrderStats> {
         const dateFilter: FilterQuery<IOrder> = {};
