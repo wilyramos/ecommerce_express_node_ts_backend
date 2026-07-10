@@ -87,6 +87,49 @@ const CATALOG_FACET = {
 };
 
 export class ProductController {
+
+    private static processProductImages(rawProducts: any[], activeFilters: Record<string, any>): any[] {
+        return rawProducts.map((product: any) => {
+            // Si no hay filtros activos o el producto no tiene variantes, retornar tal cual
+            if (!activeFilters || Object.keys(activeFilters).length === 0 || !product.variants || product.variants.length === 0) {
+                return product;
+            }
+
+            // Buscar una variante que coincida con al menos uno de los atributos filtrados
+            const matchedVariant = product.variants.find((variant: any) => {
+                if (!variant.atributos) return false;
+
+                return Object.keys(activeFilters).some((filterKey) => {
+                    const variantAttrValue = variant.atributos instanceof Map
+                        ? variant.atributos.get(filterKey)
+                        : variant.atributos[filterKey];
+
+                    const queryValues = Array.isArray(activeFilters[filterKey])
+                        ? activeFilters[filterKey]
+                        : [activeFilters[filterKey]];
+
+                    return variantAttrValue && queryValues.includes(variantAttrValue);
+                });
+            });
+
+            // Si encontramos una variante con imágenes específicas, las ponemos al principio
+            if (matchedVariant && matchedVariant.imagenes && matchedVariant.imagenes.length > 0) {
+                const mainImages = product.imagenes || [];
+                const variantImages = matchedVariant.imagenes;
+                // Evitar duplicados si la imagen de la variante ya estaba en las principales
+                const uniqueMainImages = mainImages.filter((img: string) => !variantImages.includes(img));
+
+                return {
+                    ...product,
+                    imagenes: [...variantImages, ...uniqueMainImages],
+                    matchedVariantId: matchedVariant._id
+                };
+            }
+
+            return product;
+        });
+    }
+
     static async createProduct(req: Request, res: Response) {
         try {
             const {
@@ -1009,9 +1052,6 @@ export class ProductController {
 
         }
     }
-
-
-
 
 
     static async deleteProduct(req: Request, res: Response) {
@@ -2096,7 +2136,7 @@ export class ProductController {
                     filterConditions.push({
                         $or: [
                             { precio: { $gte: min, $lte: max } },
-                            { variants: { $elemMatch: { precio: { $gte: min, $lte: max } } } }
+                            { "variants.precio": { $gte: min, $lte: max } }
                         ]
                     });
                 }
@@ -2126,33 +2166,54 @@ export class ProductController {
             else if (sort === 'price-desc') sortStage = { precio: -1 };
             else if (query) sortStage = { score: { $meta: "searchScore" } };
 
-            // 5. FACETAS (Resultado final)
-            pipeline.push({
-                $facet: {
-                    products: [
-                        { $sort: sortStage },
-                        { $skip: skip },
-                        { $limit: limitNum },
-                        { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
-                        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-                        { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
-                        { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
-                        { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
-                        { $project: { nombre: 1, slug: 1, precio: 1, precioComparativo: 1, imagenes: 1, stock: 1, atributos: 1, variants: 1, brand: 1, line: 1, categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1 } }
-                    ],
-                    totalCount: [{ $count: 'count' }],
-                    brands: CATALOG_FACET.brands,
-                    lines: CATALOG_FACET.lines,
-                    categories: CATALOG_FACET.categories,
-                    atributos: CATALOG_FACET.atributos,
-                    priceRangeFacet: CATALOG_FACET.priceRangeFacet
-                }
-            });
+            // 5. FACETAS DINÁMICAS (IMPLEMENTACIÓN DE OPCIÓN A)
+            const facetPipelines: Record<string, any> = {
+                products: [
+                    { $sort: sortStage },
+                    { $skip: skip },
+                    { $limit: limitNum },
+                    { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
+                    { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+                    { $addFields: { lineObjectId: { $toObjectId: "$line" } } },
+                    { $lookup: { from: 'productlines', localField: 'lineObjectId', foreignField: '_id', as: 'line' } },
+                    { $unwind: { path: '$line', preserveNullAndEmptyArrays: true } },
+                    { $project: { nombre: 1, slug: 1, precio: 1, precioComparativo: 1, imagenes: 1, stock: 1, atributos: 1, variants: 1, brand: 1, line: 1, categoria: 1, esDestacado: 1, esNuevo: 1, createdAt: 1 } }
+                ],
+                totalCount: [{ $count: 'count' }],
+                brands: CATALOG_FACET.brands,
+                lines: CATALOG_FACET.lines,
+                categories: CATALOG_FACET.categories,
+                priceRangeFacet: CATALOG_FACET.priceRangeFacet
+            };
+
+            // Solo procesamos y calculamos la faceta de atributos si el usuario está dentro de una categoría
+            if (context.category) {
+                facetPipelines.atributos = CATALOG_FACET.atributos;
+            } else {
+                facetPipelines.atributos = [
+                    { $limit: 1 },
+                    { $project: { _id: 0, name: { $literal: [] }, values: { $literal: [] } } },
+                    { $match: { name: { $ne: [] } } }
+                ];
+            }
+
+            pipeline.push({ $facet: facetPipelines });
 
             const [data] = await Product.aggregate(pipeline);
 
+            // 6. DETECCIÓN DE FILTROS SELECCIONADOS PARA CAMBIAR LA IMAGEN
+            const dynamicFilters: Record<string, any> = {};
+            Object.keys(attributeFilters).forEach(key => {
+                if (!reservedKeys.includes(key)) {
+                    dynamicFilters[key] = attributeFilters[key];
+                }
+            });
+
+            // Aplicamos el procesador de imágenes dinámicas por variante filtrada
+            const finalProducts = ProductController.processProductImages(data.products || [], dynamicFilters);
+
             res.status(200).json({
-                products: data.products || [],
+                products: finalProducts,
                 pagination: {
                     currentPage: pageNum,
                     totalPages: Math.ceil((data.totalCount[0]?.count || 0) / limitNum) || 1,
