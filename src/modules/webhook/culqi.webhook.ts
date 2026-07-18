@@ -24,13 +24,13 @@ interface CulqiChargeObject {
         code: string;
         userMessage?: string;
     };
-    metadata?: { order_id?: string;[key: string]: unknown };
+    metadata?: { order_id?: string; [key: string]: unknown };
 }
 
 interface CulqiOrderObject {
     id: string;
     state: string; // "paid" | "expired" | "deleted" | "pending"
-    metadata?: { order_id?: string;[key: string]: unknown };
+    metadata?: { order_id?: string; [key: string]: unknown };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ async function processApprovedOrder(
         console.log(`🔄 [Culqi] Procesando orden aprobada: ${orderId} | tx: ${transactionId}`);
 
         const order = await Order.findById(orderId)
-            .populate<{ user: { email: string; nombre: string } }>('user', 'email nombre')
+            .populate<{ user: { email: string; nombre: string; telefono?: string } }>('user', 'email nombre telefono')
             .session(session);
 
         if (!order) {
@@ -247,20 +247,45 @@ async function processApprovedOrder(
 
         // ── Correo de confirmación (fuera de la transacción) ──────────────────
         const user = order.user as any;
-        const emailTarget = user?.email ?? order.customerProfile.email;
-        const nameTarget = user?.nombre ?? order.customerProfile.nombre;
+        const emailTarget = user?.email ?? order.customerProfile?.email;
+        const nameTarget = user?.nombre ?? order.customerProfile?.nombre;
+        const phoneTarget = user?.telefono ?? order.customerProfile?.telefono;
 
         if (emailTarget) {
-            OrderEmail.sendOrderConfirmationEmail({
-                email: emailTarget,
-                name: nameTarget,
-                orderId: order.orderNumber,
-                totalPrice: order.totalPrice,
-                shippingMethod: order.shippingAddress?.direccion ?? provider,
-                items: order.items.map((item: any) => item.toObject()),
-            }).catch((err) =>
-                console.error(`⚠️ [Culqi] Error enviando email de confirmación:`, err)
-            );
+            // Mapeamos los ítems a objetos puros de JS
+            const itemsList = order.items.map((item: any) => item.toObject());
+            const shippingInfo = order.shippingAddress?.direccion ?? provider;
+
+            Promise.allSettled([
+                // 1. Notificación al Cliente (Confirmación estándar)
+                OrderEmail.sendOrderConfirmationEmail({
+                    email: emailTarget,
+                    name: nameTarget,
+                    orderId: order.orderNumber,
+                    totalPrice: order.totalPrice,
+                    shippingMethod: shippingInfo,
+                    items: itemsList,
+                }),
+
+                // 2. Notificación a Administradores (Estilo Shopify Operaciones)
+                OrderEmail.sendAdminOrderNotificationEmail({
+                    customerName: nameTarget,
+                    customerEmail: emailTarget,
+                    customerPhone: phoneTarget,
+                    orderId: order.orderNumber,
+                    totalPrice: order.totalPrice,
+                    shippingMethod: shippingInfo,
+                    items: itemsList,
+                })
+            ]).then((results) => {
+                results.forEach((result, idx) => {
+                    if (result.status === 'rejected') {
+                        console.error(`⚠️ [Culqi Email] Error en el flujo de correo [${idx === 0 ? 'Cliente' : 'Admin'}]:`, result.reason);
+                    } else {
+                        console.log(`✉️ [Culqi Email] Envío completado con éxito para: ${idx === 0 ? 'Cliente' : 'Admins'}`);
+                    }
+                });
+            });
         }
 
         console.log(`✅ [Culqi] Orden ${orderId} procesada exitosamente`);

@@ -1,4 +1,4 @@
-//File: backend/src/models/User.ts
+// File: backend/src/models/User.ts
 
 import mongoose, { Schema, Document } from 'mongoose';
 
@@ -13,20 +13,19 @@ export interface IUser extends Document {
     password?: string;
     telefono?: string;
     rol?: UserRole;
-    googleId?: string; // Para autenticación con Google
-    // Nuevos campos para Soft Delete (Opcionales para no romper código existente)
+    googleId?: string;
     isActive?: boolean;
     deletedAt?: Date | null;
 }
 
 const userSchema = new Schema<IUser>({
-    nombre: { type: String, required: true },
-    apellidos: { type: String, required: false },
+    nombre: { type: String, required: true, trim: true },
+    apellidos: { type: String, required: false, trim: true },
     tipoDocumento: { type: String, enum: ['DNI', 'RUC', 'CE'], required: false },
-    numeroDocumento: { type: String, required: false },
-    email: { type: String, required: true, unique: true, lowercase: true},
+    numeroDocumento: { type: String, required: false, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, select: false },
-    telefono: { type: String, required: false },
+    telefono: { type: String, required: false, trim: true },
     rol: {
         type: String,
         enum: ['cliente', 'administrador', 'vendedor'],
@@ -35,7 +34,7 @@ const userSchema = new Schema<IUser>({
     googleId: { type: String, required: false, unique: true, sparse: true }, // <- sparse evita conflictos si es null
     
     // ==========================================
-    // NUEVOS CAMPOS CONFIGURADOS SEGUROS
+    // CAMPOS DE ESTADO Y SEGURIDAD (Soft Delete)
     // ==========================================
     isActive: { 
         type: Boolean, 
@@ -48,16 +47,15 @@ const userSchema = new Schema<IUser>({
         default: null 
     }
 }, { 
-    timestamps: true // timestamps agrega automáticamente createdAt y updatedAt
+    timestamps: true // Agrega automáticamente createdAt y updatedAt
 });
 
-// ==========================================
-// ÍNDICES CRÍTICOS PARA PRODUCCIÓN
-// ==========================================
-// Optimiza el rendimiento de getAllUsers y getAllClients que filtran por rol
+userSchema.index({ rol: 1, isActive: 1 });
+
+// Optimiza el rendimiento de getAllUsers y getAllClients que filtran por rol y ordenan por fecha
 userSchema.index({ rol: 1, createdAt: -1 });
 
-// Permite buscar por documento eficientemente si se usa en los filtros
+// Permite buscar por documento eficientemente si se usa en los filtros de paneles
 userSchema.index({ numeroDocumento: 1 }, { sparse: true });
 
 const User = mongoose.model<IUser>("User", userSchema);

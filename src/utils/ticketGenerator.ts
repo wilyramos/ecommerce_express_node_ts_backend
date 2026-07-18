@@ -1,20 +1,54 @@
+// File: backend/src/utils/ticketGenerator.ts
+
 import PDFDocument from 'pdfkit';
 
 const COMPANY = {
-    nombre: "GOPHONE",
+    nombre: "GOPHONE.PE",
     ruc: "10725169715",
-    direccion: "Jr. Bernardo O'Higgins 120",
-    city: "San vicente de Cañete, Lima - Perú",
+    city: "San Vicente de Cañete, Lima - Perú",
     telefono: "925054636",
 };
 
-export const generateSaleTicket = (sale: any): Promise<Buffer> => {
+/**
+ * Descarga el logo oficial en memoria antes de compilar el PDF
+ */
+async function fetchLogoBuffer(url: string): Promise<Buffer | null> {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } catch (error) {
+        console.error("⚠️ No se pudo cargar el logo remoto para el ticket:", error);
+        return null;
+    }
+}
+
+export const generateSaleTicket = async (sale: any): Promise<Buffer> => {
+    const logoBuffer = await fetchLogoBuffer("https://www.gophone.pe/logogophone.png");
+
     return new Promise((resolve, reject) => {
         const isQuote = sale.status === 'QUOTE';
+        const contentWidth = 196; // Ancho útil para papel de 80mm
+        const startX = 15;
         
-        // Tamaño típico de ticket de 80mm (226pt)
+        // ─── CÁLCULO PRECISO DE ALTURA DINÁMICA ───
+        // Inicializamos una instancia temporal ligera solo para medir textos largos
+        const measurementDoc = new PDFDocument({ size: [226, 800] });
+        let estimatedHeight = 250; // Base fija aproximada (Cabecera + Totales + Footer)
+
+        sale.items.forEach((item: any) => {
+            const name = item.product?.nombre ? item.product.nombre.trim() : 'PRODUCTO';
+            // Medimos exactamente cuántas líneas tomará el nombre en un ancho de 114px
+            const nameHeight = measurementDoc.font('Helvetica-Bold').fontSize(8).heightOfString(name, { width: 114 });
+            estimatedHeight += nameHeight + 10; // Alto del nombre + margen / variante
+        });
+        measurementDoc.end();
+
+        const finalHeight = Math.max(estimatedHeight, 380);
+
         const doc = new PDFDocument({ 
-            size: [226, 800], 
+            size: [226, finalHeight], 
             margin: 0 
         });
         
@@ -23,138 +57,160 @@ export const generateSaleTicket = (sale: any): Promise<Buffer> => {
         doc.on('end', () => resolve(Buffer.concat(buffers)));
         doc.on('error', reject);
 
-        const contentWidth = 200; 
-        const startX = 13;
-        let currentY = 15;
+        // Control estricto de Y para evitar colisiones
+        let currentY = 20;
 
-        const drawLine = (y: number) => {
-            doc.moveTo(startX, y).lineTo(startX + contentWidth, y).lineWidth(0.5).strokeColor('#000000').stroke();
+        const drawLine = (y: number, color = '#e5e7eb', thickness = 0.5) => {
+            doc.moveTo(startX, y).lineTo(startX + contentWidth, y).lineWidth(thickness).strokeColor(color).stroke();
         };
 
         const formatPrice = (amount: number) => `S/ ${amount.toFixed(2)}`;
 
-        // --- ENCABEZADO ---
-        doc.font('Helvetica-Bold').fontSize(14).text(COMPANY.nombre, startX, currentY, { align: 'center', width: contentWidth });
-        currentY += 16;
-        doc.font('Helvetica').fontSize(8)
-           .text(`RUC: ${COMPANY.ruc}`, { align: 'center', width: contentWidth })
-           .text(COMPANY.direccion, { align: 'center', width: contentWidth })
-           .text(COMPANY.city, { align: 'center', width: contentWidth });
-        currentY += 35;
+        // ─── 1. LOGO OFICIAL ───
+        if (logoBuffer) {
+            try {
+                const logoWidth = 110;
+                const logoX = startX + (contentWidth - logoWidth) / 2;
+                doc.image(logoBuffer, logoX, currentY, { width: logoWidth });
+                currentY += 35; 
+            } catch (e) {
+                doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(COMPANY.nombre, startX, currentY, { align: 'center', width: contentWidth });
+                currentY += 16;
+            }
+        } else {
+            doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(COMPANY.nombre, startX, currentY, { align: 'center', width: contentWidth });
+            currentY += 16;
+        }
 
-        // --- TÍTULO ---
-        const title = isQuote ? 'PROFORMA DE VENTA' : 'NOTA DE VENTA';
-        doc.rect(startX, currentY - 2, contentWidth, 15).fill('#eeeeee');
-        doc.fillColor('#000000').font('Helvetica-Bold').fontSize(10).text(title, startX, currentY, { align: 'center', width: contentWidth });
-        currentY += 20;
+        // ─── 2. DETALLES DE LA EMPRESA ───
+        currentY += 5;
+        doc.font('Helvetica').fontSize(7.5).fillColor('#8e8e93')
+           .text(`RUC: ${COMPANY.ruc}`, startX, currentY, { align: 'center', width: contentWidth });
+        currentY += 10;
+        doc.text(COMPANY.city, startX, currentY, { align: 'center', width: contentWidth });
+        currentY += 18;
+
+        // ─── 3. TÍTULO DEL COMPROBANTE ───
+        const title = isQuote ? 'PROFORMA DE VENTA' : 'COMPROBANTE DE VENTA';
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#000000').text(title, startX, currentY, { align: 'center', width: contentWidth });
+        currentY += 14;
         
-        // --- INFO TRANSACCIÓN ---
-        doc.font('Helvetica-Bold').fontSize(8);
-        const labelCol = startX;
-        const valueCol = startX + 80;
+        drawLine(currentY, '#e5e7eb', 0.5);
+        currentY += 8;
 
-        const addInfoRow = (label: string, value: string, color = '#000000') => {
-            doc.font('Helvetica-Bold').fillColor('#000000').text(label, labelCol, currentY);
-            doc.font('Helvetica').fillColor(color).text(value, valueCol, currentY);
+        // ─── 4. DATOS DE LA TRANSACCIÓN ───
+        const labelCol = startX;
+        const valueCol = startX + 75;
+
+        const addInfoRow = (label: string, value: string, isHighlight = false) => {
+            doc.font('Helvetica').fontSize(7.5).fillColor('#8e8e93').text(label, labelCol, currentY);
+            doc.font(isHighlight ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).fillColor('#000000').text(value, valueCol, currentY, { width: contentWidth - 75, align: 'right' });
             currentY += 11;
         };
 
         if (isQuote) {
-            addInfoRow('ID PROFORMA:', sale._id.toString().slice(-8).toUpperCase());
+            addInfoRow('Referencia:', sale._id.toString().slice(-8).toUpperCase());
         } else {
-            addInfoRow('N° COMPROBANTE:', sale.receiptNumber || '---');
+            addInfoRow('Número:', sale.receiptNumber || '---', true);
         }
 
-        addInfoRow('FECHA EMISIÓN:', new Date(sale.createdAt).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }));
+        addInfoRow('Fecha:', new Date(sale.createdAt).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }));
 
         if (isQuote && sale.quoteExpirationDate) {
-            addInfoRow('VÁLIDO HASTA:', new Date(sale.quoteExpirationDate).toLocaleDateString('es-PE'), '#d97706');
+            addInfoRow('Validez hasta:', new Date(sale.quoteExpirationDate).toLocaleDateString('es-PE'));
         }
 
-        if (sale.employee) {
-            // addInfoRow('ATENDIDO POR:', sale.employee.nombre.toUpperCase());
+        if (sale.customerSnapshot?.nombre) {
+            // Si el nombre del cliente es extremadamente largo, dejamos que adecúe su espacio vertical
+            doc.font('Helvetica').fontSize(7.5).fillColor('#8e8e93').text('Cliente:', labelCol, currentY);
+            doc.font('Helvetica').fontSize(7.5).fillColor('#000000').text(sale.customerSnapshot.nombre.toUpperCase(), valueCol, currentY, { width: contentWidth - 75, align: 'right' });
+            currentY += doc.heightOfString(sale.customerSnapshot.nombre.toUpperCase(), { width: contentWidth - 75 }) + 2;
+
+            if (sale.customerSnapshot.numeroDocumento) {
+                addInfoRow('Documento:', sale.customerSnapshot.numeroDocumento);
+            }
         }
 
-        currentY += 5;
+        currentY += 4;
+        drawLine(currentY, '#000000', 0.6);
+        currentY += 8;
 
-        // --- TABLA DE ITEMS ---
-        drawLine(currentY);
-        currentY += 5;
-        doc.font('Helvetica-Bold').fontSize(7).text('CANT.', startX, currentY);
-        doc.text('DESCRIPCIÓN', startX + 30, currentY);
-        doc.text('TOTAL', startX, currentY, { align: 'right', width: contentWidth });
-        currentY += 10;
-        drawLine(currentY);
-        currentY += 7;
-
+        // ─── 5. SECCIÓN DE ARTÍCULOS (Alineación a prueba de nombres largos) ───
         sale.items.forEach((item: any) => {
-            const name = item.product?.nombre.toUpperCase() || 'PRODUCTO';
+            const name = item.product?.nombre ? item.product.nombre.trim() : 'PRODUCTO';
             const totalItem = item.price * item.quantity;
             
-            doc.font('Helvetica-Bold').fontSize(8).text(`${item.quantity}`, startX, currentY);
+            const nameX = startX + 22;
+            const nameWidth = 114;
             
-            const nameX = startX + 30;
-            const nameWidth = 110;
+            // 1. Renderizar la cantidad fija a la izquierda
+            doc.font('Helvetica').fontSize(8).fillColor('#8e8e93').text(`${item.quantity}x`, startX, currentY);
+            
+            // 2. Renderizar el precio fijo a la extrema derecha alineado con la primera línea del artículo
+            doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000').text(formatPrice(totalItem), startX + 130, currentY, { align: 'right', width: contentWidth - 130 });
+            
+            // 3. Renderizar el nombre del producto en medio (con ancho limitado)
+            doc.text(name, nameX, currentY, { width: nameWidth, lineGap: 1 });
+            
+            // 4. Calcular el alto real que ocupó ese bloque de texto en el PDF
             const nameHeight = doc.heightOfString(name, { width: nameWidth });
-            
-            doc.text(name, nameX, currentY, { width: nameWidth });
-            doc.text(formatPrice(totalItem), startX, currentY, { align: 'right', width: contentWidth });
-            
             currentY += nameHeight + 2;
 
-            // Variantes
+            // Renderizar la variante si existe, justo debajo del espacio que dejó el nombre
             if (item.variantId && item.product?.variants) {
                 const variant = item.product.variants.find((v: any) => v._id.toString() === item.variantId.toString());
                 if (variant) {
-                    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#4b5563').text(`VAR: ${variant.nombre.toUpperCase()}`, nameX, currentY);
+                    doc.font('Helvetica-Oblique').fontSize(7).fillColor('#8e8e93').text(`Variante: ${variant.nombre}`, nameX, currentY);
                     currentY += 9;
                 }
             }
-            doc.fillColor('#000000');
-            currentY += 3;
+            currentY += 4; // Margen de separación entre productos
         });
 
-        currentY += 5;
-        drawLine(currentY);
+        currentY += 2;
+        drawLine(currentY, '#e5e7eb', 0.5);
         currentY += 8;
 
-        // --- RESUMEN DE TOTALES ---
+        // ─── 6. RESUMEN DE TOTALES ───
         const total = sale.totalPrice;
         const subtotal = total / 1.18;
         const igv = total - subtotal;
 
         const addTotalRow = (label: string, value: string, isMain = false) => {
-            doc.font(isMain ? 'Helvetica-Bold' : 'Helvetica').fontSize(isMain ? 10 : 8);
-            doc.text(label, startX + 60, currentY, { align: 'right', width: 70 });
-            doc.text(value, startX + 130, currentY, { align: 'right', width: 70 });
-            currentY += isMain ? 15 : 11;
+            doc.font(isMain ? 'Helvetica-Bold' : 'Helvetica').fontSize(isMain ? 9 : 7.5).fillColor('#000000');
+            if (!isMain) doc.fillColor('#8e8e93');
+            
+            doc.text(label, startX + 40, currentY, { align: 'right', width: 80 });
+            doc.text(value, startX + 126, currentY, { align: 'right', width: 70 });
+            currentY += isMain ? 12 : 10;
         };
 
         addTotalRow('Subtotal:', formatPrice(subtotal));
         addTotalRow('IGV (18%):', formatPrice(igv));
-        currentY += 2;
-        addTotalRow('TOTAL A PAGAR:', formatPrice(total), true);
+        currentY += 3;
+        addTotalRow('TOTAL NETO:', formatPrice(total), true);
 
-        currentY += 15;
+        currentY += 10;
+        drawLine(currentY, '#000000', 0.6);
+        currentY += 10;
 
-        // --- PIE DE PÁGINA ---
-        doc.font('Helvetica-Bold').fontSize(8).text(
-            isQuote ? 'ESTE DOCUMENTO ES UNA PROFORMA' : '¡GRACIAS POR SU COMPRA!', 
+        // ─── 7. PIE DE PÁGINA ───
+        doc.font('Helvetica-Bold').fontSize(7).fillColor('#000000').text(
+            isQuote ? 'ESTE DOCUMENTO ES UNA PROFORMA' : 'GRACIAS POR TU VISITA', 
             startX, currentY, { align: 'center', width: contentWidth }
         );
-        currentY += 12;
+        currentY += 10;
         
-        doc.font('Helvetica').fontSize(7).fillColor('#4b5563');
+        doc.font('Helvetica').fontSize(6).fillColor('#8e8e93');
         if (isQuote) {
-            doc.text('* Precios sujetos a cambios sin previo aviso.', { align: 'center', width: contentWidth });
-            doc.text('* Stock no garantizado hasta la compra.', { align: 'center', width: contentWidth });
+            doc.text('Los precios pueden variar de acuerdo a la disponibilidad de stock.', { align: 'center', width: contentWidth });
         } else {
-            doc.text('Este ticket no es válido para fines tributarios.', { align: 'center', width: contentWidth });
-            doc.text('Conserve su ticket para cambios o garantías.', { align: 'center', width: contentWidth });
+            doc.text('Este documento no posee validez tributaria.', { align: 'center', width: contentWidth });
+            doc.text('Conserva este comprobante para validar la garantía.', { align: 'center', width: contentWidth });
         }
         
-        currentY += 15;
-        doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000').text('www.gophone.pe', { align: 'center', width: contentWidth });
+        currentY += 12;
+        doc.font('Helvetica-Bold').fontSize(7).fillColor('#000000').text('WWW.GOPHONE.PE', { align: 'center', width: contentWidth });
 
         doc.end();
     });

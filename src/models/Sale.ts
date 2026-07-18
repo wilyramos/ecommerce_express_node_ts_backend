@@ -219,14 +219,18 @@ saleSchema.pre<ISale>("save", async function (next) {
             prefix = this.receiptType[0];   // T, B o F
         }
 
-        // 2. Incrementar el contador en la colección Counter
+        // 2. Incrementar el contador. Si no existe, inicializa 'seq' en 1000 de forma segura.
         const counter = await Counter.findOneAndUpdate(
             { name: counterName },
             { $inc: { seq: 1 } },
-            { new: true, upsert: true }
+            { 
+                new: true, 
+                upsert: true,
+                setOnInsert: { seq: 1000 } // <- Si el documento se crea por primera vez, empieza en 1000
+            }
         );
 
-        // 3. Formato: P001-00000001, B001-00000001, etc.
+        // 3. Formato premium: P001-00001001, T001-00001001, etc.
         this.receiptNumber = `${prefix}001-${counter.seq.toString().padStart(8, "0")}`;
 
         next();

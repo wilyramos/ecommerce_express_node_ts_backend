@@ -165,7 +165,7 @@ export const orderService = {
                 })
             });
 
-            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string;[key: string]: unknown };
+            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string; [key: string]: unknown };
 
             if (culqiResponse.ok && culqiOrderData.id) {
                 culqiOrderId = culqiOrderData.id;
@@ -206,14 +206,14 @@ export const orderService = {
     // 2. Obtener orden por ObjectId
     // ─────────────────────────────────────────────────────────────────────────
     async getOrderById(orderId: string): Promise<IOrder | null> {
-        return Order.findById(orderId).populate('user', 'nombre apellidos email').lean();
+        return Order.findById(orderId).populate('user', 'nombre apellidos email telefono').lean();
     },
 
     // ─────────────────────────────────────────────────────────────────────────
     // 3. Obtener orden por número comercial (ORD-...)
     // ─────────────────────────────────────────────────────────────────────────
     async getOrderByNumber(orderNumber: string): Promise<IOrder | null> {
-        return Order.findOne({ orderNumber }).populate('user', 'nombre apellidos email').lean();
+        return Order.findOne({ orderNumber }).populate('user', 'nombre apellidos email telefono').lean();
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ export const orderService = {
         }
 
         const [orders, total] = await Promise.all([
-            Order.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('user', 'nombre apellidos email').lean(),
+            Order.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('user', 'nombre apellidos email telefono').lean(),
             Order.countDocuments(query),
         ]);
 
@@ -293,7 +293,6 @@ export const orderService = {
                 throw new Error(`Operación denegada. La orden ya está en un estado terminal: ${order.status}`);
             }
 
-            // Evaluar si ya se procesó stock dinámico anteriormente
             const yaTeniaStockDescontado = order.statusHistory.some(
                 (h) => h.status === OrderStatus.PROCESSING ||
                     h.status === OrderStatus.SHIPPED ||
@@ -306,7 +305,8 @@ export const orderService = {
                 newStatus === OrderStatus.SHIPPED ||
                 newStatus === OrderStatus.DELIVERED;
 
-            // Descuento de stock en base de datos para flujos manuales de administración (Efectivo/Transferencia)
+            let fueAprobadoManualmenteAhora = false;
+
             if (nuevoEstadoRequiereStock && !yaTeniaStockDescontado) {
                 for (const item of order.items) {
                     const productId = (item.productId as any)?._id ?? item.productId;
@@ -342,7 +342,6 @@ export const orderService = {
                     }
                 }
 
-                // Forzar estado aprobado financiero por validación offline del administrador
                 if (!order.payment) {
                     order.payment = {
                         provider: 'manual_admin',
@@ -353,6 +352,9 @@ export const orderService = {
                 } else {
                     order.payment.status = PaymentStatus.APPROVED;
                 }
+                
+                // Marcamos bandera para disparar flujo estilo Shopify al Admin también
+                fueAprobadoManualmenteAhora = true;
             }
 
             order.status = newStatus;
@@ -367,12 +369,45 @@ export const orderService = {
             await session.commitTransaction();
             session.endSession();
 
-            OrderEmail.sendOrderStatusUpdateEmail({
-                email: order.customerProfile.email,
-                name: order.customerProfile.nombre,
-                orderNumber: order.orderNumber,
-                status: newStatus
-            }).catch(err => console.error("Error enviando email de estado:", err));
+            // ── Flujo asíncrono seguro de correos (Fuera de la transacción) ──
+            const itemsList = order.items.map((item: any) => item.toObject());
+            const shippingInfo = order.shippingAddress?.direccion ?? order.shippingMethod ?? 'Delivery';
+
+            const emailPromises: Promise<any>[] = [
+                // Notificación obligatoria al cliente con su resumen completo de ítems
+                OrderEmail.sendOrderStatusUpdateEmail({
+                    email: order.customerProfile.email,
+                    name: order.customerProfile.nombre,
+                    orderNumber: order.orderNumber,
+                    status: newStatus,
+                    totalPrice: order.totalPrice,
+                    items: itemsList,
+                    trackingNumber: order.trackingNumber
+                })
+            ];
+
+            // Si pasa a PROCESSING de manera manual, enviamos copia operativa a administradores
+            if (fueAprobadoManualmenteAhora && newStatus === OrderStatus.PROCESSING) {
+                emailPromises.push(
+                    OrderEmail.sendAdminOrderNotificationEmail({
+                        customerName: `${order.customerProfile.nombre} ${order.customerProfile.apellidos}`.trim(),
+                        customerEmail: order.customerProfile.email,
+                        customerPhone: order.customerProfile.telefono,
+                        orderId: order.orderNumber,
+                        totalPrice: order.totalPrice,
+                        shippingMethod: shippingInfo,
+                        items: itemsList
+                    })
+                );
+            }
+
+            Promise.allSettled(emailPromises).then((results) => {
+                results.forEach((res, idx) => {
+                    if (res.status === 'rejected') {
+                        console.error(`⚠️ [Order Service] Fallo en envío de correo [${idx === 0 ? 'Cliente' : 'Admin'}]:`, res.reason);
+                    }
+                });
+            });
 
             return order;
         } catch (error) {
@@ -383,32 +418,27 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. Asignar tracking de paquetería (Hereda la lógica de descuento si viene directo)
+    // 8. Asignar tracking de paquetería (Hereda la lógica de despacho)
     // ─────────────────────────────────────────────────────────────────────────
     async assignTracking(orderId: string, trackingNumber: string, actionBy?: string): Promise<IOrder | null> {
-        // Delega la actualización a updateOrderStatus para reutilizar de forma segura la lógica transaccional de stock
+        // Guardamos el tracking number primero para garantizar su inyección limpia en el flujo del HTML
+        await Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } });
+        
         return this.updateOrderStatus(
             orderId,
             OrderStatus.SHIPPED,
             actionBy,
             `Asignación automática de tracking por despacho de guía comercial: ${trackingNumber}`
-        ).then(async (order) => {
-            if (order) {
-                // Actualización complementaria de la guía sin romper la sesión transaccional previa
-                return Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } }, { new: true });
-            }
-            return null;
-        });
+        );
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 9. Actualizar estado de pago (Webhooks de Pasarelas)
+    // 9. Actualizar estado de pago (Webhooks de Pasarelas alternativas)
     // ─────────────────────────────────────────────────────────────────────────
     async updatePayment(
         orderId: string,
         paymentData: { provider: string; method?: string; transactionId: string; status: PaymentStatus; rawResponse?: unknown }
     ): Promise<IOrder | null> {
-        // Nota: El descuento físico de stock por webhooks automatizados ya ocurre de forma atómica dentro de culqi.webhook.ts
         const newOrderStatus =
             paymentData.status === PaymentStatus.APPROVED
                 ? OrderStatus.PROCESSING
@@ -433,11 +463,16 @@ export const orderService = {
         const order = await Order.findByIdAndUpdate(orderId, update, { new: true });
 
         if (order && newOrderStatus) {
+            const itemsList = order.items.map((item: any) => item.toObject());
+
             OrderEmail.sendOrderStatusUpdateEmail({
                 email: order.customerProfile.email,
                 name: order.customerProfile.nombre,
                 orderNumber: order.orderNumber,
-                status: newOrderStatus
+                status: newOrderStatus,
+                totalPrice: order.totalPrice,
+                items: itemsList,
+                trackingNumber: order.trackingNumber
             }).catch(err => console.error("Error enviando email por pago:", err));
         }
 
@@ -464,14 +499,12 @@ export const orderService = {
                 throw new Error('La orden no se puede cancelar en su estado logístico actual o ya se encuentra cerrada.');
             }
 
-            // Determinar de forma certera si la orden pasó por una etapa donde SE DESCONTÓ stock
             const teniaStockDescontado = order.statusHistory.some(
                 (h) => h.status === OrderStatus.PROCESSING ||
                     h.status === OrderStatus.SHIPPED ||
                     h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
             );
 
-            // Restituir stock únicamente si existió un descuento previo válido
             if (teniaStockDescontado) {
                 for (const item of order.items) {
                     const productId = (item.productId as any)?._id ?? item.productId;
@@ -495,7 +528,6 @@ export const orderService = {
                 }
             }
 
-            // Persistencia física del estado terminal CANCELED
             order.status = OrderStatus.CANCELED;
             order.canceledAt = new Date();
             order.canceledBy = executor;
@@ -511,11 +543,15 @@ export const orderService = {
             await session.commitTransaction();
             session.endSession();
 
+            const itemsList = order.items.map((item: any) => item.toObject());
+
             OrderEmail.sendOrderStatusUpdateEmail({
                 email: order.customerProfile.email,
                 name: order.customerProfile.nombre,
                 orderNumber: order.orderNumber,
-                status: OrderStatus.CANCELED
+                status: OrderStatus.CANCELED,
+                totalPrice: order.totalPrice,
+                items: itemsList
             }).catch(err => console.error("Error enviando email de cancelación:", err));
 
             return order;
@@ -593,11 +629,15 @@ export const orderService = {
             await session.commitTransaction();
             session.endSession();
 
+            const itemsList = order.items.map((item: any) => item.toObject());
+
             OrderEmail.sendOrderStatusUpdateEmail({
                 email: order.customerProfile.email,
                 name: order.customerProfile.nombre,
                 orderNumber: order.orderNumber,
-                status: OrderStatus.CANCELED
+                status: OrderStatus.CANCELED,
+                totalPrice: order.totalPrice,
+                items: itemsList
             }).catch(err => console.error("Error enviando email de reembolso:", err));
 
             return order;

@@ -14,7 +14,7 @@ import userRouter from './routes/userRouter'
 import purchaseRouter from './routes/purchaseRouter'
 import brandRouter from './routes/brandRouter'
 
-//Cors
+// Cors
 import cors from 'cors'
 import { globalErrorHandler } from './middleware/error.middleware'
 import lineRouter from './routes/line.router'
@@ -26,8 +26,8 @@ import cashRouter from './modules/cash/cash.routes'
 import reportRouter from './modules/reports/report.routes'
 import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 import userRouterV2 from './modules/users/users.router'
-import orderRouterV2 from './modules/order/order.router' 
-import webhookRouterV2 from './modules/webhook/webhook.router' 
+import orderRouterV2 from './modules/order/order.router'
+import webhookRouterV2 from './modules/webhook/webhook.router'
 import sectionRouter from './modules/section/section.router'
 import advertisementRouter from './modules/advertisement/advertisement.routes'
 import pageRouter from './modules/page/page.routes'
@@ -65,15 +65,29 @@ connectDB()
 // ════════════════════════════════════════════════════════════════
 app.use(morgan('dev'))
 
-// El interceptor intercepta los bytes exactos antes de que se limpie el stream de la petición HTTP
 app.use(express.json());
-
 app.use(express.urlencoded({ extended: true }))
 
+// CONFIGURACIÓN DE CORS REFORZADA CON TU FRONTEND_URL
+const allowedOrigins = [
+    process.env.FRONTEND_URL,          // Tu URL de producción (Render o Vercel)
+    'http://localhost:3000'            // Tu entorno local de Next.js
+];
+
 app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => {
+        // Permitir peticiones sin origen (como llamadas del servidor de Next.js haciendo SSR o Postman)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por restricciones de CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true // Por si manejas cookies/sesiones en el futuro
 }))
 
 // ════════════════════════════════════════════════════════════════
@@ -96,7 +110,7 @@ app.use('/api/sales/v2', saleRouterV2)
 app.use('/api/cash/v2', cashRouter)
 app.use('/api/reports/v2', reportRouter)
 app.use('/api/users/v2', userRouterV2)
-app.use('/api/orders/v2', orderRouterV2) 
+app.use('/api/orders/v2', orderRouterV2)
 app.use('/api/slider-banners', sliderBannerRouter)
 app.use('/api/sections', sectionRouter)
 app.use('/api/collections', collectionRouter)
@@ -106,6 +120,7 @@ app.use('/api/claims', claimRouter)
 app.use('/api/advertisements', advertisementRouter)
 app.use('/api/pages', pageRouter)
 app.use('/api/icons', iconRouter)
+
 // ════════════════════════════════════════════════════════════════
 // 4. RUTAS VERSION 1 / LEGADO
 // ════════════════════════════════════════════════════════════════
