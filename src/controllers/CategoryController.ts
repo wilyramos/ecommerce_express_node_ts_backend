@@ -38,9 +38,11 @@ export class CategoryController {
 
     private static mapAttributes(attributes: any[]) {
         return attributes.map(a => ({
-            name: a.name.trim(),
-            values: a.values.map((v: string) => v.trim()),
-            isVariant: a.isVariant ?? false
+            name: a.name.trim().toLowerCase(),
+            values: a.values.map((v: string) => v.trim().toLowerCase()),
+            isVariant: a.isVariant ?? false,
+            icon: a.icon || null,
+            isFilterable: a.isFilterable !== false // Por defecto true, a menos que el admin diga false
         }));
     }
 

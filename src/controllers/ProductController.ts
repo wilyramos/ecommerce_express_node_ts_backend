@@ -54,6 +54,7 @@ const CATALOG_FACET = {
     atributos: [
         {
             $project: {
+                categoria: 1, // Necesario para el lookup de reglas
                 allAttrs: {
                     $concatArrays: [
                         { $objectToArray: { $ifNull: ["$atributos", {}] } },
@@ -69,17 +70,44 @@ const CATALOG_FACET = {
             }
         },
         { $unwind: "$allAttrs" },
-        // 1. Agrupar por la pareja {nombre del atributo, valor} para contar
+        { $match: { "allAttrs.v": { $nin: [null, ""] } } },
+        // --- MATCH PARA EVALUAR isFilterable ---
+        {
+            $lookup: {
+                from: "categories",
+                localField: "categoria",
+                foreignField: "_id",
+                as: "catInfo"
+            }
+        },
+        { $unwind: { path: "$catInfo", preserveNullAndEmptyArrays: true } },
+        {
+            $addFields: {
+                matchedAttrRule: {
+                    $filter: {
+                        input: { $ifNull: ["$catInfo.attributes", []] },
+                        as: "rule",
+                        cond: { $eq: [{ $toLower: "$$rule.name" }, { $toLower: "$allAttrs.k" }] }
+                    }
+                }
+            }
+        },
+        { $unwind: { path: "$matchedAttrRule", preserveNullAndEmptyArrays: true } },
+        {
+            $match: {
+                "matchedAttrRule.isFilterable": { $ne: false } // Excluye si explícitamente se apagó
+            }
+        },
+        // --- FIN LÓGICA DE FILTRADO ---
         { $group: { _id: { k: "$allAttrs.k", v: "$allAttrs.v" }, count: { $sum: 1 } } },
-        // 2. Agrupar por nombre del atributo y pushear el objeto {value, count}
         {
             $group: {
                 _id: "$_id.k",
                 values: { $push: { value: "$_id.v", count: "$count" } }
             }
         },
-        // 3. Proyectar con el formato que espera tu Zod Schema
-        { $project: { name: "$_id", values: 1, _id: 0 } }
+        { $project: { name: "$_id", values: 1, _id: 0 } },
+        { $sort: { name: 1 } }
     ],
     priceRangeFacet: [
         { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
@@ -145,6 +173,7 @@ export class ProductController {
                 barcode,
                 isActive,
                 atributos,
+                atributosDetalle,
                 especificaciones,
                 brand,
                 diasEnvio,
@@ -190,6 +219,16 @@ export class ProductController {
             let resolvedCollectionIds: Types.ObjectId[] = [];
             if (collections && Array.isArray(collections) && collections.length > 0) {
                 resolvedCollectionIds = collections.map(id => new Types.ObjectId(id));
+            }
+            let preparedDetalle: any = {};
+            if (atributosDetalle && typeof atributosDetalle === 'object') {
+                Object.keys(atributosDetalle).forEach(key => {
+                    preparedDetalle[key] = {
+                        value: String(atributosDetalle[key].value).toLowerCase(),
+                        icon: atributosDetalle[key].icon || null,
+                        isFeatured: atributosDetalle[key].isFeatured === true || atributosDetalle[key].isFeatured === 'true'
+                    };
+                });
             }
 
             const dias = diasEnvio ? Number(diasEnvio) : 1;
@@ -262,6 +301,7 @@ export class ProductController {
                 barcode,
                 isActive,
                 atributos,
+                atributosDetalle: preparedDetalle,
                 especificaciones: preparedSpecifications,
                 brand,
                 diasEnvio: dias,
@@ -301,6 +341,7 @@ export class ProductController {
                 barcode,
                 isActive,
                 atributos,
+                atributosDetalle,
                 especificaciones,
                 brand,
                 diasEnvio,
@@ -449,6 +490,19 @@ export class ProductController {
             if (brand) existingProduct.brand = brand;
             if (atributos) existingProduct.atributos = atributos;
 
+            if (atributosDetalle && typeof atributosDetalle === 'object') {
+                const preparedDetalle: any = {};
+                Object.keys(atributosDetalle).forEach(key => {
+                    preparedDetalle[key] = {
+                        value: String(atributosDetalle[key].value).toLowerCase(),
+                        icon: atributosDetalle[key].icon || null,
+                        isFeatured: atributosDetalle[key].isFeatured === true || atributosDetalle[key].isFeatured === 'true'
+                    };
+                });
+                existingProduct.atributosDetalle = preparedDetalle;
+            } else if (req.body.hasOwnProperty('atributosDetalle')) {
+                existingProduct.atributosDetalle = {};
+            }
             // Mapeo e inyección limpia de los nuevos campos de especificaciones durante la actualización
             if (especificaciones) {
                 existingProduct.especificaciones = especificaciones.map((spec: any) => ({
@@ -1038,7 +1092,7 @@ export class ProductController {
         try {
             const { slug } = req.params;
             const product = await Product.findOne({ slug })
-                .populate('categoria', 'nombre slug')
+                .populate('categoria', 'nombre slug attributes')
                 .populate('brand', 'nombre slug')
                 .populate('line', 'nombre slug')
                 .populate('complementarios', 'nombre precio imagenes slug');
@@ -1299,7 +1353,7 @@ export class ProductController {
             const lineId = product.line as Types.ObjectId; // ID de la línea actual
 
             const selectedIds = new Set<string>([currentProductId.toString()]);
-            let recommendedProducts: IProduct[] = [];
+            let recommendedProducts: any[] = [];
 
             // =================================================================
             // 🥇 ESTRATEGIA 1: MISMA LÍNEA (La más relevante)
@@ -1683,45 +1737,7 @@ export class ProductController {
                             { $unwind: "$category" },
                             { $project: { id: "$category._id", nombre: "$category.nombre", slug: "$category.slug" } },
                         ],
-                        atributos: [
-                            {
-                                $project: {
-                                    combinedAtributos: {
-                                        $concatArrays: [
-                                            { $objectToArray: "$atributos" },
-                                            {
-                                                $reduce: {
-                                                    input: "$variants",
-                                                    initialValue: [],
-                                                    in: { $concatArrays: ["$$value", { $objectToArray: "$$this.atributos" }] }
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
-                            },
-                            { $unwind: { path: "$combinedAtributos", preserveNullAndEmptyArrays: true } },
-                            {
-                                $project: {
-                                    key: "$combinedAtributos.k",
-                                    value: "$combinedAtributos.v"
-                                }
-                            },
-                            { $match: { key: { $exists: true, $ne: "" } } },
-                            {
-                                $group: {
-                                    _id: "$key",
-                                    values: { $addToSet: "$value" }
-                                }
-                            },
-                            {
-                                $project: {
-                                    name: "$_id",
-                                    values: { $filter: { input: "$values", as: "v", cond: { $ne: ["$$v", null] } } },
-                                    _id: 0
-                                }
-                            }
-                        ],
+                        atributos: CATALOG_FACET.atributos,
                         price: [
                             {
                                 $group: {
@@ -1985,22 +2001,7 @@ export class ProductController {
                         { $project: { id: "$c._id", nombre: "$c.nombre", slug: "$c.slug" } },
                         { $sort: { nombre: 1 } }
                     ],
-                    atributos: [
-                        {
-                            $project: {
-                                allAttrs: {
-                                    $concatArrays: [
-                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
-                                        { $reduce: { input: { $ifNull: ["$variants", []] }, initialValue: [], in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] } } }
-                                    ]
-                                }
-                            }
-                        },
-                        { $unwind: "$allAttrs" },
-                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
-                        { $project: { name: "$_id", values: 1, _id: 0 } },
-                        { $sort: { name: 1 } }
-                    ],
+                    atributos: CATALOG_FACET.atributos,
                     price: [
                         { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
                     ]
@@ -2355,28 +2356,7 @@ export class ProductController {
                         { $project: { id: { $toString: "$c._id" }, nombre: "$c.nombre", slug: "$c.slug" } },
                         { $sort: { nombre: 1 } }
                     ],
-                    atributos: [
-                        {
-                            $project: {
-                                allAttrs: {
-                                    $concatArrays: [
-                                        { $objectToArray: { $ifNull: ["$atributos", {}] } },
-                                        {
-                                            $reduce: {
-                                                input: { $ifNull: ["$variants", []] },
-                                                initialValue: [],
-                                                in: { $concatArrays: ["$$value", { $objectToArray: { $ifNull: ["$$this.atributos", {}] } }] }
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        },
-                        { $unwind: "$allAttrs" },
-                        { $group: { _id: "$allAttrs.k", values: { $addToSet: "$allAttrs.v" } } },
-                        { $project: { name: "$_id", values: 1, _id: 0 } },
-                        { $sort: { name: 1 } }
-                    ],
+                    atributos: CATALOG_FACET.atributos,
                     priceRangeFacet: [
                         { $group: { _id: null, min: { $min: "$precio" }, max: { $max: "$precio" } } }
                     ]

@@ -14,6 +14,12 @@ interface ISpecification {
     isFeatured?: boolean; // Controla si se destaca visualmente en la zona de compra
 }
 
+export interface IProductAttributeDetail {
+    value: string;
+    icon?: string;         // Icono o imagen específica para el valor del atributo (ej: imagen de color, certificación, etc.)
+    isFeatured?: boolean;  // Controla si este atributo específico se destaca de forma independiente en el e-commerce
+}
+
 export interface IVariant {
     _id?: Types.ObjectId;
     variantId?: string;
@@ -44,7 +50,8 @@ export interface IProduct extends Document {
     sku?: string;
     barcode?: string;
     isActive: boolean;
-    atributos?: Record<string, string>;
+    atributos?: Record<string, string>; // Mapeo plano para búsquedas y filtros rápidos indexed
+    atributosDetalle?: Record<string, IProductAttributeDetail>;
     especificaciones?: ISpecification[];
     diasEnvio?: number;
     fechaDisponibilidad?: Date;
@@ -74,6 +81,15 @@ const specificationSchema = new Schema<ISpecification>(
         key: { type: String, required: true, trim: true },
         value: { type: String, required: true, trim: true },
         icon: { type: String, trim: true, default: null },
+        isFeatured: { type: Boolean, default: false }
+    },
+    { _id: false }
+);
+
+const productAttributeDetailSchema = new Schema<IProductAttributeDetail>(
+    {
+        value: { type: String, required: true, trim: true },
+        icon: { type: String, default: null, trim: true },
         isFeatured: { type: Boolean, default: false }
     },
     { _id: false }
@@ -134,6 +150,11 @@ const productSchema = new Schema<IProduct>(
             of: String,
             default: {},
         },
+        atributosDetalle: {
+            type: Map,
+            of: productAttributeDetailSchema,
+            default: {},
+        },
 
         especificaciones: { type: [specificationSchema], default: [] },
 
@@ -181,8 +202,9 @@ productSchema.index({ brand: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ isActive: 1, deletedAt: 1, createdAt: -1 });
 
-// Índice para consultas de especificaciones destacadas e íconos rápidos en tienda
+// Índices para consultas de especificaciones y detalles de atributos destacados
 productSchema.index({ 'especificaciones.icon': 1, 'especificaciones.isFeatured': 1 });
+productSchema.index({ 'atributosDetalle.$*.isFeatured': 1 });
 
 // Colecciones (best_sellers, new_arrivals, featured, on_sale)
 productSchema.index({ collections: 1, isActive: 1, deletedAt: 1 });

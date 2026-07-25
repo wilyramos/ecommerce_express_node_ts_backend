@@ -4,6 +4,8 @@ export interface ICategoryAttribute {
     name: string;
     values: string[];
     isVariant?: boolean;
+    icon?: string;          // Icono representativo del atributo (ej: url o identificador)
+    isFilterable?: boolean; // Controla si este atributo se expone como filtro en el catálogo
 }
 
 export interface ICategory extends Document {
@@ -38,9 +40,17 @@ const categoryAttributeSchema = new Schema<ICategoryAttribute>(
             type: Boolean,
             default: false
         },
+        icon: {
+            type: String,
+            default: null
+        },
+        isFilterable: {
+            type: Boolean,
+            default: true
+        }
     },
     { _id: false }
-);
+)
 
 const categorySchema = new Schema<ICategory>(
     {
