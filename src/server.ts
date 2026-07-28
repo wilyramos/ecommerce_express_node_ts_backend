@@ -1,3 +1,5 @@
+// File: backend/src/server.ts
+
 import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
@@ -39,21 +41,25 @@ import comparisonRouter from './modules/comparison/comparison.router'
 import mediaRouter from './modules/media/media.routes';
 import claimRouter from './modules/claim/claim.routes';
 
-// Importación del Seeder
+// Importación del Seeder y del Cron Job
 import { seedSystemCollections } from './seeds/systemCollections'
+import { initOrderCleanupJob } from './jobs/orderCleanup.job'
 
 dotenv.config()
 
 const app = express()
 
-// Ejecución controlada y asíncrona del seed tras conectar con éxito
+// Ejecución controlada y asíncrona tras conectar con éxito a la Base de Datos
 connectDB()
     .then(async () => {
         try {
             await seedSystemCollections();
             console.log('Colecciones del sistema verificadas/inicializadas correctamente.');
+            
+            // ── INICIALIZACIÓN DEL CRON JOB DE LIMPIEZA ──────────────────────
+            initOrderCleanupJob();
         } catch (seedError) {
-            console.error('Error ejecutando el seed de colecciones:', seedError);
+            console.error('Error ejecutando tareas de inicio (seeds/cron):', seedError);
         }
     })
     .catch((dbError) => {
@@ -76,7 +82,6 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permitir peticiones sin origen (como llamadas del servidor de Next.js haciendo SSR o Postman)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {
@@ -87,7 +92,7 @@ app.use(cors({
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true // Por si manejas cookies/sesiones en el futuro
+    credentials: true
 }))
 
 // ════════════════════════════════════════════════════════════════

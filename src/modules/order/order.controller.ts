@@ -35,16 +35,16 @@ export const orderController = {
         if (!handleValidation(req, res)) return;
         try {
             const userId = (req as any).user?.id as string | undefined;
-            
+
             const deviceInfo = {
                 ipAddress: req.ip || req.socket.remoteAddress,
                 userAgent: req.headers['user-agent']
             };
 
-            const order = await orderService.createOrder({ 
-                ...req.body, 
+            const order = await orderService.createOrder({
+                ...req.body,
                 userId,
-                deviceInfo 
+                deviceInfo
             });
             res.status(201).json({ ok: true, data: order });
         } catch (err) {
@@ -239,13 +239,14 @@ export const orderController = {
 
     /**
      * GET /orders/admin/stats
+     * Estadísticas rápidas
      */
     async getStats(req: Request, res: Response): Promise<void> {
         const { from, to } = req.query;
-        const stats = await orderService.getStats(
-            from as string | undefined,
-            to as string | undefined
-        );
+        const stats = await orderService.getStats({
+            from: from as string | undefined,
+            to: to as string | undefined,
+        });
         sendSuccess(res, stats);
     },
 
@@ -269,4 +270,16 @@ export const orderController = {
         });
         res.sendStatus(200);
     },
+
+    /**
+     * POST /orders/admin/cleanup-expired
+     * Ejecuta la cancelación masiva de órdenes sin pago de forma manual.
+     */
+    async triggerCleanup(req: Request, res: Response): Promise<void> {
+        const { hours } = req.body;
+        const hoursNum = Number(hours) || 24;
+
+        const result = await orderService.cancelExpiredOrders(hoursNum);
+        sendSuccess(res, result);
+    }
 };

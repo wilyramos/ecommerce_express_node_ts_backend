@@ -53,11 +53,13 @@ export interface OrderFilters {
     to?: string;
 }
 
+// Interfaz para coincidir exactamente con las métricas de Shopify
 export interface OrderStats {
-    totalOrders: number;
-    totalRevenue: number;
-    byStatus: Record<string, number>;
-    byPaymentStatus: Record<string, number>;
+    paidOrders: number;         // Órdenes pagadas con éxito
+    itemsDiscounted: number;    // Unidades descontadas del stock real
+    paidRevenue: number;        // Dinero total recaudado de pagos aprobados
+    pendingFulfillment: number; // Órdenes pagadas pendientes de embalaje/despacho
+    salesReversals: number;     // Dinero de ventas revertidas (reembolsos)
 }
 
 // ── Servicio ──────────────────────────────────────────────────────────────────
@@ -353,7 +355,6 @@ export const orderService = {
                     order.payment.status = PaymentStatus.APPROVED;
                 }
                 
-                // Marcamos bandera para disparar flujo estilo Shopify al Admin también
                 fueAprobadoManualmenteAhora = true;
             }
 
@@ -369,12 +370,11 @@ export const orderService = {
             await session.commitTransaction();
             session.endSession();
 
-            // ── Flujo asíncrono seguro de correos (Fuera de la transacción) ──
+            // ── Flujo asíncrono seguro de correos ──
             const itemsList = order.items.map((item: any) => item.toObject());
             const shippingInfo = order.shippingAddress?.direccion ?? order.shippingMethod ?? 'Delivery';
 
             const emailPromises: Promise<any>[] = [
-                // Notificación obligatoria al cliente con su resumen completo de ítems
                 OrderEmail.sendOrderStatusUpdateEmail({
                     email: order.customerProfile.email,
                     name: order.customerProfile.nombre,
@@ -386,7 +386,6 @@ export const orderService = {
                 })
             ];
 
-            // Si pasa a PROCESSING de manera manual, enviamos copia operativa a administradores
             if (fueAprobadoManualmenteAhora && newStatus === OrderStatus.PROCESSING) {
                 emailPromises.push(
                     OrderEmail.sendAdminOrderNotificationEmail({
@@ -404,7 +403,7 @@ export const orderService = {
             Promise.allSettled(emailPromises).then((results) => {
                 results.forEach((res, idx) => {
                     if (res.status === 'rejected') {
-                        console.error(`⚠️ [Order Service] Fallo en envío de correo [${idx === 0 ? 'Cliente' : 'Admin'}]:`, res.reason);
+                        console.error(`⚠️ Fallo en envío de correo [${idx === 0 ? 'Cliente' : 'Admin'}]:`, res.reason);
                     }
                 });
             });
@@ -418,10 +417,9 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. Asignar tracking de paquetería (Hereda la lógica de despacho)
+    // 8. Asignar tracking de paquetería
     // ─────────────────────────────────────────────────────────────────────────
     async assignTracking(orderId: string, trackingNumber: string, actionBy?: string): Promise<IOrder | null> {
-        // Guardamos el tracking number primero para garantizar su inyección limpia en el flujo del HTML
         await Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } });
         
         return this.updateOrderStatus(
@@ -433,7 +431,7 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 9. Actualizar estado de pago (Webhooks de Pasarelas alternativas)
+    // 9. Actualizar estado de pago
     // ─────────────────────────────────────────────────────────────────────────
     async updatePayment(
         orderId: string,
@@ -670,30 +668,132 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 15. Estadísticas globales de órdenes
-    // ─────────────────────────────────────────────────────────────────────────
-    async getStats(from?: string, to?: string): Promise<OrderStats> {
-        const dateFilter: FilterQuery<IOrder> = {};
-        if (from || to) {
-            dateFilter.createdAt = {};
-            if (from) dateFilter.createdAt.$gte = new Date(from);
-            if (to) {
-                const endDate = new Date(to);
+    // 15. Estadísticas globales de órdenes (Agregación eficiente en MongoDB)
+    
+    async getStats(filters: { from?: string; to?: string } = {}): Promise<OrderStats> {
+        const matchStage: FilterQuery<IOrder> = {};
+
+        if (filters.from || filters.to) {
+            matchStage.createdAt = {};
+            if (filters.from) matchStage.createdAt.$gte = new Date(filters.from);
+            if (filters.to) {
+                const endDate = new Date(filters.to);
                 endDate.setHours(23, 59, 59, 999);
-                dateFilter.createdAt.$lte = endDate;
+                matchStage.createdAt.$lte = endDate;
             }
         }
 
-        const [statusAgg, paymentAgg, revenueAgg] = await Promise.all([
-            Order.aggregate([{ $match: dateFilter }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-            Order.aggregate([{ $match: { ...dateFilter, 'payment.status': { $exists: true } } }, { $group: { _id: '$payment.status', count: { $sum: 1 } } }]),
-            Order.aggregate([{ $match: { ...dateFilter, 'payment.status': PaymentStatus.APPROVED } }, { $group: { _id: null, total: { $sum: '$totalPrice' } } }]),
+        const aggregation = await Order.aggregate([
+            { $match: matchStage },
+            {
+                $project: {
+                    status: 1,
+                    totalPrice: 1,
+                    paymentStatus: "$payment.status",
+                    totalItems: { $sum: "$items.quantity" },
+                    // Una orden está realmente pagada si payment.status es APPROVED 
+                    // o está en uno de los estados logísticos con stock descontado
+                    isPaid: {
+                        $or: [
+                            { $eq: ["$payment.status", PaymentStatus.APPROVED] },
+                            { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    // 1. Conteo de Órdenes Pagadas
+                    paidOrders: {
+                        $sum: { $cond: ["$isPaid", 1, 0] }
+                    },
+                    // 2. Unidades descontadas del stock
+                    itemsDiscounted: {
+                        $sum: { $cond: ["$isPaid", "$totalItems", 0] }
+                    },
+                    // 3. Ingresos reales recaudados
+                    paidRevenue: {
+                        $sum: { $cond: ["$isPaid", "$totalPrice", 0] }
+                    },
+                    // 4. Pendientes por empaquetar / despachar
+                    pendingFulfillment: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        "$isPaid",
+                                        { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    // 5. Reversiones por reembolso
+                    salesReversals: {
+                        $sum: {
+                            $cond: [{ $eq: ["$paymentStatus", PaymentStatus.REFUNDED] }, "$totalPrice", 0]
+                        }
+                    }
+                }
+            }
         ]);
 
-        const byStatus = Object.fromEntries(statusAgg.map((s) => [s._id, s.count]));
-        const byPaymentStatus = Object.fromEntries(paymentAgg.map((s) => [s._id, s.count]));
-        const totalRevenue = revenueAgg[0]?.total || 0;
-
-        return { totalOrders: statusAgg.reduce((sum, s) => sum + s.count, 0), totalRevenue, byStatus, byPaymentStatus };
+        return aggregation[0] ? {
+            paidOrders: aggregation[0].paidOrders || 0,
+            itemsDiscounted: aggregation[0].itemsDiscounted || 0,
+            paidRevenue: aggregation[0].paidRevenue || 0,
+            pendingFulfillment: aggregation[0].pendingFulfillment || 0,
+            salesReversals: aggregation[0].salesReversals || 0,
+        } : {
+            paidOrders: 0,
+            itemsDiscounted: 0,
+            paidRevenue: 0,
+            pendingFulfillment: 0,
+            salesReversals: 0,
+        };
     },
+    async cancelExpiredOrders(hoursThreshold = 24): Promise<{ canceledCount: number }> {
+        const thresholdDate = new Date();
+        thresholdDate.setHours(thresholdDate.getHours() - hoursThreshold);
+
+        // Buscamos órdenes que sigan en 'awaiting_payment' y superen el tiempo límite
+        const expiredOrders = await Order.find({
+            status: OrderStatus.AWAITING_PAYMENT,
+            createdAt: { $lt: thresholdDate }
+        }).select('_id orderNumber customerProfile');
+
+        if (expiredOrders.length === 0) {
+            return { canceledCount: 0 };
+        }
+
+        const expiredIds = expiredOrders.map(o => o._id);
+
+        // Actualizamos en lote todas las órdenes encontradas
+        const result = await Order.updateMany(
+            { _id: { $in: expiredIds } },
+            {
+                $set: {
+                    status: OrderStatus.CANCELED,
+                    canceledAt: new Date(),
+                    canceledBy: 'system_auto_expiration',
+                    cancelReason: `Expiración automática: Se superó la ventana de pago de ${hoursThreshold} horas.`
+                },
+                $push: {
+                    statusHistory: {
+                        status: OrderStatus.CANCELED,
+                        changedAt: new Date(),
+                        actionBy: 'system_cron',
+                        reason: `Orden cancelada automáticamente por falta de pago pasadas ${hoursThreshold}h.`
+                    }
+                }
+            }
+        );
+
+        console.log(`🧹 [Cron Order Cleanup] Se cancelaron automáticamente ${result.modifiedCount} órdenes no pagadas.`);
+
+        return { canceledCount: result.modifiedCount };
+    }
 };

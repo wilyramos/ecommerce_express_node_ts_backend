@@ -111,6 +111,7 @@ router.get('/my', authenticate, orderController.getMyOrders);
 
 router.get('/admin/all', authenticate, isAdminOrVendedor, orderController.getAllOrders);
 router.get('/admin/stats', authenticate, isAdmin, orderController.getStats);
+router.post('/admin/cleanup-expired', authenticate, isAdmin, orderController.triggerCleanup);
 
 router.patch(
     '/admin/:id/status',
