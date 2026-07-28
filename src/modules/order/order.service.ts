@@ -795,5 +795,12 @@ export const orderService = {
         console.log(`🧹 [Cron Order Cleanup] Se cancelaron automáticamente ${result.modifiedCount} órdenes no pagadas.`);
 
         return { canceledCount: result.modifiedCount };
+    },
+    // En backend/src/modules/order/order.service.ts
+
+    // Obtención de órdenes para emisión masiva de documentos PDF
+    async getOrdersByIds(orderIds: string[]): Promise<IOrder[]> {
+        return Order.find({ _id: { $in: orderIds } }).sort({ createdAt: -1 });
     }
+    
 };

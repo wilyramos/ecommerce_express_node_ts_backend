@@ -5,6 +5,8 @@ import { validationResult } from 'express-validator';
 import { orderService } from './order.service';
 import { OrderStatus } from '../../models/Order';
 import { AppError } from '../../utils/AppError';
+import { generateOrdersPDF, DocumentType, PageFormat } from '../../utils/packingSlipGenerator';
+import { generateShippingLabelsPDF } from '../../utils/shippingLabelGenerator';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -281,5 +283,43 @@ export const orderController = {
 
         const result = await orderService.cancelExpiredOrders(hoursNum);
         sendSuccess(res, result);
+    },
+
+    // En backend/src/modules/order/order.controller.ts
+
+    /**
+     * POST /orders/v2/admin/generate-pdf
+     * Emitir documentos PDF (Guía de Empaque o Nota de Venta) en A4 o Térmico 80mm
+     */
+    async generatePDF(req: Request, res: Response): Promise<void> {
+        const { orderIds, type = 'packing_slip', format = 'A4' } = req.body;
+
+        if (!Array.isArray(orderIds) || orderIds.length === 0) {
+            throw new AppError('Debe proporcionar al menos un ID de orden.', 400);
+        }
+
+        // Asegúrate de incluir 'shipping_label' en los tipos válidos
+        const validTypes: DocumentType[] = ['packing_slip', 'sale_note', 'shipping_label'];
+        const validFormats: PageFormat[] = ['A4', 'thermal_80mm'];
+
+        if (!validTypes.includes(type)) {
+            throw new AppError('Tipo de documento inválido.', 400);
+        }
+
+        if (!validFormats.includes(format)) {
+            throw new AppError('Formato de página inválido.', 400);
+        }
+
+        const orders = await orderService.getOrdersByIds(orderIds);
+        if (orders.length === 0) {
+            throw new AppError('No se encontraron órdenes para procesar.', 404);
+        }
+
+        if (type === 'shipping_label') {
+            await generateShippingLabelsPDF(orders, res);
+            return;
+        }
+
+        await generateOrdersPDF(orders, res, { type, format });
     }
 };

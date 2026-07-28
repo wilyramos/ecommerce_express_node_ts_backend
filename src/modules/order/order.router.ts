@@ -112,7 +112,9 @@ router.get('/my', authenticate, orderController.getMyOrders);
 router.get('/admin/all', authenticate, isAdminOrVendedor, orderController.getAllOrders);
 router.get('/admin/stats', authenticate, isAdmin, orderController.getStats);
 router.post('/admin/cleanup-expired', authenticate, isAdmin, orderController.triggerCleanup);
+// En backend/src/modules/order/order.router.ts
 
+router.post('/admin/generate-pdf', authenticate, isAdmin, orderController.generatePDF);
 router.patch(
     '/admin/:id/status',
     authenticate,
