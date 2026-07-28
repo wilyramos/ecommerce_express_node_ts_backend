@@ -5,6 +5,8 @@ import Order, { IOrder, IOrderItem, OrderStatus, PaymentStatus } from '../../mod
 import Product from '../../models/Product';
 import { generateSecureOrderNumber } from '../../utils/orderNumber-helper';
 import { OrderEmail } from '../../emails/OrderEmailResend';
+import { getPeruDateRange } from '../../utils/date-helper';
+import { sendOrderToNubefact, sendCreditNoteToNubefact, sendVoidToNubefact } from '../../utils/nubefact';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -167,7 +169,7 @@ export const orderService = {
                 })
             });
 
-            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string; [key: string]: unknown };
+            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string;[key: string]: unknown };
 
             if (culqiResponse.ok && culqiOrderData.id) {
                 culqiOrderId = culqiOrderData.id;
@@ -258,14 +260,9 @@ export const orderService = {
         if (userId) query.user = new Types.ObjectId(userId);
         if (orderNumber) query.orderNumber = { $regex: orderNumber, $options: 'i' };
 
+        // Aplicamos la conversión correcta ajustada a Perú UTC-5
         if (from || to) {
-            query.createdAt = {};
-            if (from) query.createdAt.$gte = new Date(from);
-            if (to) {
-                const endDate = new Date(to);
-                endDate.setHours(23, 59, 59, 999);
-                query.createdAt.$lte = endDate;
-            }
+            query.createdAt = getPeruDateRange(from, to);
         }
 
         const [orders, total] = await Promise.all([
@@ -276,8 +273,76 @@ export const orderService = {
         return { orders, total };
     },
 
+    async getStats(filters: { from?: string; to?: string } = {}): Promise<OrderStats> {
+        const matchStage: FilterQuery<IOrder> = {};
+
+        // Aplicamos la conversión correcta ajustada a Perú UTC-5
+        if (filters.from || filters.to) {
+            matchStage.createdAt = getPeruDateRange(filters.from, filters.to);
+        }
+
+        const aggregation = await Order.aggregate([
+            { $match: matchStage },
+            {
+                $project: {
+                    status: 1,
+                    totalPrice: 1,
+                    paymentStatus: "$payment.status",
+                    totalItems: { $sum: "$items.quantity" },
+                    isPaid: {
+                        $or: [
+                            { $eq: ["$payment.status", PaymentStatus.APPROVED] },
+                            { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    paidOrders: { $sum: { $cond: ["$isPaid", 1, 0] } },
+                    itemsDiscounted: { $sum: { $cond: ["$isPaid", "$totalItems", 0] } },
+                    paidRevenue: { $sum: { $cond: ["$isPaid", "$totalPrice", 0] } },
+                    pendingFulfillment: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        "$isPaid",
+                                        { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    salesReversals: {
+                        $sum: {
+                            $cond: [{ $eq: ["$paymentStatus", PaymentStatus.REFUNDED] }, "$totalPrice", 0]
+                        }
+                    }
+                }
+            }
+        ]);
+
+        return aggregation[0] ? {
+            paidOrders: aggregation[0].paidOrders || 0,
+            itemsDiscounted: aggregation[0].itemsDiscounted || 0,
+            paidRevenue: aggregation[0].paidRevenue || 0,
+            pendingFulfillment: aggregation[0].pendingFulfillment || 0,
+            salesReversals: aggregation[0].salesReversals || 0,
+        } : {
+            paidOrders: 0,
+            itemsDiscounted: 0,
+            paidRevenue: 0,
+            pendingFulfillment: 0,
+            salesReversals: 0,
+        };
+    },
+
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. Actualizar estado logístico manual (Idempotente con control de stock fuera de línea)
+    // 7. Actualizar estado logístico manual
     // ─────────────────────────────────────────────────────────────────────────
     async updateOrderStatus(orderId: string, newStatus: OrderStatus, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
@@ -354,7 +419,7 @@ export const orderService = {
                 } else {
                     order.payment.status = PaymentStatus.APPROVED;
                 }
-                
+
                 fueAprobadoManualmenteAhora = true;
             }
 
@@ -421,7 +486,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     async assignTracking(orderId: string, trackingNumber: string, actionBy?: string): Promise<IOrder | null> {
         await Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } });
-        
+
         return this.updateOrderStatus(
             orderId,
             OrderStatus.SHIPPED,
@@ -576,7 +641,7 @@ export const orderService = {
             }
 
             if (order.payment?.status !== PaymentStatus.APPROVED) {
-                throw new Error('Solo se pueden reembolsar órdenes que tengan un pago previamente aprobado.');
+                throw new Error('Solo se pueden reembolsar órdenes que tengan un pago previamente approved.');
             }
 
             if (order.status === OrderStatus.DELIVERED) {
@@ -668,98 +733,12 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 15. Estadísticas globales de órdenes (Agregación eficiente en MongoDB)
-    
-    async getStats(filters: { from?: string; to?: string } = {}): Promise<OrderStats> {
-        const matchStage: FilterQuery<IOrder> = {};
-
-        if (filters.from || filters.to) {
-            matchStage.createdAt = {};
-            if (filters.from) matchStage.createdAt.$gte = new Date(filters.from);
-            if (filters.to) {
-                const endDate = new Date(filters.to);
-                endDate.setHours(23, 59, 59, 999);
-                matchStage.createdAt.$lte = endDate;
-            }
-        }
-
-        const aggregation = await Order.aggregate([
-            { $match: matchStage },
-            {
-                $project: {
-                    status: 1,
-                    totalPrice: 1,
-                    paymentStatus: "$payment.status",
-                    totalItems: { $sum: "$items.quantity" },
-                    // Una orden está realmente pagada si payment.status es APPROVED 
-                    // o está en uno de los estados logísticos con stock descontado
-                    isPaid: {
-                        $or: [
-                            { $eq: ["$payment.status", PaymentStatus.APPROVED] },
-                            { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
-                        ]
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    // 1. Conteo de Órdenes Pagadas
-                    paidOrders: {
-                        $sum: { $cond: ["$isPaid", 1, 0] }
-                    },
-                    // 2. Unidades descontadas del stock
-                    itemsDiscounted: {
-                        $sum: { $cond: ["$isPaid", "$totalItems", 0] }
-                    },
-                    // 3. Ingresos reales recaudados
-                    paidRevenue: {
-                        $sum: { $cond: ["$isPaid", "$totalPrice", 0] }
-                    },
-                    // 4. Pendientes por empaquetar / despachar
-                    pendingFulfillment: {
-                        $sum: {
-                            $cond: [
-                                {
-                                    $and: [
-                                        "$isPaid",
-                                        { $in: ["$status", [OrderStatus.PROCESSING, OrderStatus.PAID_BUT_OUT_OF_STOCK]] }
-                                    ]
-                                },
-                                1,
-                                0
-                            ]
-                        }
-                    },
-                    // 5. Reversiones por reembolso
-                    salesReversals: {
-                        $sum: {
-                            $cond: [{ $eq: ["$paymentStatus", PaymentStatus.REFUNDED] }, "$totalPrice", 0]
-                        }
-                    }
-                }
-            }
-        ]);
-
-        return aggregation[0] ? {
-            paidOrders: aggregation[0].paidOrders || 0,
-            itemsDiscounted: aggregation[0].itemsDiscounted || 0,
-            paidRevenue: aggregation[0].paidRevenue || 0,
-            pendingFulfillment: aggregation[0].pendingFulfillment || 0,
-            salesReversals: aggregation[0].salesReversals || 0,
-        } : {
-            paidOrders: 0,
-            itemsDiscounted: 0,
-            paidRevenue: 0,
-            pendingFulfillment: 0,
-            salesReversals: 0,
-        };
-    },
+    // 15. Limpieza de órdenes expiradas
+    // ─────────────────────────────────────────────────────────────────────────
     async cancelExpiredOrders(hoursThreshold = 24): Promise<{ canceledCount: number }> {
         const thresholdDate = new Date();
         thresholdDate.setHours(thresholdDate.getHours() - hoursThreshold);
 
-        // Buscamos órdenes que sigan en 'awaiting_payment' y superen el tiempo límite
         const expiredOrders = await Order.find({
             status: OrderStatus.AWAITING_PAYMENT,
             createdAt: { $lt: thresholdDate }
@@ -771,7 +750,6 @@ export const orderService = {
 
         const expiredIds = expiredOrders.map(o => o._id);
 
-        // Actualizamos en lote todas las órdenes encontradas
         const result = await Order.updateMany(
             { _id: { $in: expiredIds } },
             {
@@ -796,11 +774,158 @@ export const orderService = {
 
         return { canceledCount: result.modifiedCount };
     },
-    // En backend/src/modules/order/order.service.ts
 
     // Obtención de órdenes para emisión masiva de documentos PDF
     async getOrdersByIds(orderIds: string[]): Promise<IOrder[]> {
         return Order.find({ _id: { $in: orderIds } }).sort({ createdAt: -1 });
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 16. Reenviar manualmente correo de confirmación de pedido al cliente
+    // ─────────────────────────────────────────────────────────────────────────
+    async resendOrderConfirmationEmail(orderId: string): Promise<{ success: boolean; message: string }> {
+        const order = await Order.findById(orderId).lean();
+        if (!order) {
+            throw new Error('Orden no encontrada.');
+        }
+
+        const itemsList = order.items.map((item: any) => ({
+            ...item,
+            variantAttributes: item.variantAttributes instanceof Map
+                ? Object.fromEntries(item.variantAttributes)
+                : item.variantAttributes
+        }));
+
+        const addressParts = [
+            order.shippingAddress?.direccion,
+            order.shippingAddress?.numero ? `N° ${order.shippingAddress.numero}` : '',
+            order.shippingAddress?.pisoDpto,
+            `(${order.shippingAddress?.distrito}, ${order.shippingAddress?.provincia} - ${order.shippingAddress?.departamento})`
+        ].filter(Boolean).join(' ');
+
+        const result = await OrderEmail.sendOrderConfirmationEmail({
+            email: order.customerProfile.email,
+            name: `${order.customerProfile.nombre} ${order.customerProfile.apellidos}`.trim(),
+            orderId: order.orderNumber,
+            totalPrice: order.totalPrice,
+            shippingMethod: addressParts || order.shippingMethod || 'Delivery Estándar',
+            items: itemsList
+        });
+
+        if (!result.success) {
+            throw new Error('No se pudo enviar el correo de confirmación. Revisa la configuración del proveedor de emails.');
+        }
+
+        return { success: true, message: 'Correo de confirmación reenviado con éxito.' };
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 17. Generar Boleta Electrónica en SUNAT mediante Nubefact
+    // ─────────────────────────────────────────────────────────────────────────
+    // File: backend/src/modules/order/order.service.ts (Adiciones clave para el servicio)
+
+
+    // Dentro del objeto orderService:
+
+    async generateBoleta(orderId: string, actionBy?: string): Promise<IOrder> {
+        const order = await Order.findById(orderId);
+        if (!order) throw new Error('Orden no encontrada.');
+
+        if (order.invoice?.numero) {
+            throw new Error(`La orden ya tiene la Boleta ${order.invoice.serie}-${order.invoice.numero} emitida.`);
+        }
+
+        const nubefactRes = await sendOrderToNubefact(order);
+
+        order.invoice = {
+            tipo: 'boleta',
+            serie: nubefactRes.serie,
+            numero: Number(nubefactRes.numero),
+            pdfUrl: nubefactRes.enlace_del_pdf || `${nubefactRes.enlace}.pdf`,
+            xmlUrl: nubefactRes.enlace_del_xml || `${nubefactRes.enlace}.xml`,
+            cdrUrl: nubefactRes.enlace_del_cdr || `${nubefactRes.enlace}.cdr`,
+            nubefactEnlace: nubefactRes.enlace,
+            sunatResponseCode: String(nubefactRes.sunat_responsecode ?? ''),
+            sunatDescription: nubefactRes.sunat_description || 'Aceptado por SUNAT',
+            generatedAt: new Date()
+        };
+
+        order.statusHistory.push({
+            status: order.status,
+            changedAt: new Date(),
+            actionBy: actionBy ?? 'admin',
+            reason: `Emisión de Boleta Electrónica (${nubefactRes.serie}-${nubefactRes.numero})`
+        });
+
+        await order.save();
+        return order;
+    },
+
+    async generateCreditNote(orderId: string, reason: string, actionBy?: string): Promise<IOrder> {
+        const order = await Order.findById(orderId);
+        if (!order) throw new Error('Orden no encontrada.');
+
+        if (order.creditNote?.numero) {
+            throw new Error(`Ya existe una Nota de Crédito emitida para esta orden: ${order.creditNote.serie}-${order.creditNote.numero}`);
+        }
+
+        const ncRes = await sendCreditNoteToNubefact(order, reason);
+
+        order.creditNote = {
+            tipo: 'nota_credito',
+            serie: ncRes.serie!,
+            numero: Number(ncRes.numero),
+            pdfUrl: ncRes.enlace_del_pdf || `${ncRes.enlace}.pdf`,
+            xmlUrl: ncRes.enlace_del_xml || `${ncRes.enlace}.xml`,
+            cdrUrl: ncRes.enlace_del_cdr || `${ncRes.enlace}.cdr`,
+            nubefactEnlace: ncRes.enlace,
+            sunatResponseCode: String(ncRes.sunat_responsecode ?? ''),
+            sunatDescription: ncRes.sunat_description || 'Nota de crédito aceptada por SUNAT',
+            generatedAt: new Date()
+        };
+
+        order.statusHistory.push({
+            status: order.status,
+            changedAt: new Date(),
+            actionBy: actionBy ?? 'admin',
+            reason: `Emisión de Nota de Crédito por Reembolso/Anulación (${ncRes.serie}-${ncRes.numero})`
+        });
+
+        await order.save();
+        return order;
+    },
+
+    async generateVoid(orderId: string, motivo: string, actionBy?: string): Promise<IOrder> {
+        const order = await Order.findById(orderId);
+        if (!order) throw new Error('Orden no encontrada.');
+
+        if (order.voidInfo?.numero) {
+            throw new Error('La anulación mediante Comunicación de Baja ya fue procesada.');
+        }
+
+        const voidRes = await sendVoidToNubefact(order, motivo);
+
+        order.voidInfo = {
+            tipo: 'anulacion',
+            serie: order.invoice?.serie || 'BBB1',
+            numero: order.invoice?.numero || 0,
+            pdfUrl: voidRes.enlace_del_pdf || null,
+            xmlUrl: voidRes.enlace_del_xml || null,
+            cdrUrl: voidRes.enlace_del_cdr || null,
+            nubefactEnlace: voidRes.enlace || null,
+            sunatTicketNumero: voidRes.sunat_ticket_numero || null,
+            sunatDescription: voidRes.sunat_description || 'Comunicación de baja enviada a SUNAT',
+            generatedAt: new Date()
+        };
+
+        order.statusHistory.push({
+            status: order.status,
+            changedAt: new Date(),
+            actionBy: actionBy ?? 'admin',
+            reason: `Comunicación de Baja enviada a SUNAT. Motivo: ${motivo}`
+        });
+
+        await order.save();
+        return order;
     }
-    
 };

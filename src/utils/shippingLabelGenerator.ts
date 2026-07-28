@@ -13,8 +13,8 @@ function sanitizeOrder(rawOrder: any): IOrder {
 }
 
 /**
- * Rótulo Adhesivo Limpio para Caja (10x15 cm)
- * Optimizado para admisión directa en Olva Courier y Shalom
+ * Rótulo Adhesivo Estándar para Caja (10x15 cm)
+ * Estructura simple, alineada y ordenada
  */
 export async function generateShippingLabelsPDF(
     ordersInput: IOrder[],
@@ -22,81 +22,147 @@ export async function generateShippingLabelsPDF(
 ): Promise<void> {
     const orders = ordersInput.map(sanitizeOrder);
 
-    const doc = new PDFDocument({ size: [288, 432], margin: 12 });
+    // Formato Estándar 10x15 cm (288 x 432 puntos a 72 DPI)
+    const doc = new PDFDocument({ size: [288, 432], margin: 0 });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="rotulos_caja_${Date.now()}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="rotulo_caja_${Date.now()}.pdf"`);
 
     doc.pipe(res);
+
+    const LEFT = 14;
+    const RIGHT_EDGE = 274;
+    const WIDTH = RIGHT_EDGE - LEFT;
 
     for (let index = 0; index < orders.length; index++) {
         const order = orders[index];
         if (!order) continue;
 
-        if (index > 0) {
-            doc.addPage();
-        }
+        if (index > 0) doc.addPage();
 
-        const qrDataUrl = await QRCode.toDataURL(order.orderNumber, { margin: 0, width: 70 });
+        const qrDataUrl = await QRCode.toDataURL(order.orderNumber, { margin: 0, width: 60 });
         const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
 
-        // 1. DESTINO EN CABECERA (GIGANTE)
-        const department = (order.shippingAddress?.departamento || '').toUpperCase();
-        const province = (order.shippingAddress?.provincia || '').toUpperCase();
-        const district = (order.shippingAddress?.distrito || '').toUpperCase();
+        let y = 14;
 
-        doc.rect(12, 12, 264, 46).fill('#000000');
-        doc.fillColor('#ffffff').fontSize(14).font('Helvetica-Bold');
-        doc.text(`${department} - ${province}`, 12, 20, { width: 264, align: 'center' });
-        doc.fontSize(12).font('Helvetica').text(district, 12, 38, { width: 264, align: 'center' });
+        // Borde exterior
+        doc.rect(LEFT - 1, 10, WIDTH + 2, 412).lineWidth(1).stroke('#000000');
 
-        // 2. DESTINATARIO
-        let currentY = 72;
-        doc.fillColor('#000000').fontSize(8).font('Helvetica-Bold').text('DESTINATARIO:', 14, currentY);
+        // ──────────────────────────────────────────────────────────
+        // DESTINATARIO - NOMBRE Y CONTACTO
+        // ──────────────────────────────────────────────────────────
+        doc.fillColor('#000000').fontSize(7).font('Helvetica-Bold')
+           .text('DESTINATARIO', LEFT, y);
+        y += 8;
 
-        currentY += 12;
         const fullName = `${order.customerProfile?.nombre || ''} ${order.customerProfile?.apellidos || ''}`.toUpperCase();
-        doc.fontSize(13).font('Helvetica-Bold').text(fullName, 14, currentY, { width: 260, height: 32, ellipsis: true });
+        doc.fillColor('#000000').fontSize(10.5).font('Helvetica-Bold')
+           .text(fullName, LEFT, y, { width: WIDTH, ellipsis: true });
+        y += 16;
 
-        currentY += 32;
         const docType = order.customerProfile?.tipoDocumento || 'DNI';
         const docNum = order.customerProfile?.numeroDocumento || '-------';
+        doc.fontSize(8).font('Helvetica-Bold')
+           .text(`${docType}:`, LEFT, y);
+        doc.font('Helvetica')
+           .text(docNum, LEFT + 32, y);
+        y += 9;
+
         const phone = order.customerProfile?.telefono || '-------';
+        doc.font('Helvetica-Bold').fontSize(8)
+           .text('TEL:', LEFT, y);
+        doc.font('Helvetica')
+           .text(phone, LEFT + 28, y);
+        y += 12;
 
-        doc.fontSize(11).font('Helvetica-Bold')
-           .text(`${docType}: `, 14, currentY, { continued: true })
-           .font('Helvetica').text(docNum)
-           .font('Helvetica-Bold').text(`   TEL: `, { continued: true })
-           .font('Helvetica').text(phone);
+        // Línea divisoria
+        doc.moveTo(LEFT, y).lineTo(RIGHT_EDGE, y).lineWidth(1).stroke('#000000');
+        y += 10;
 
-        // 3. DIRECCIÓN
-        currentY += 22;
-        doc.fontSize(8).font('Helvetica-Bold').text('DIRECCIÓN / AGENCIA:', 14, currentY);
+        // ──────────────────────────────────────────────────────────
+        // UBICACIÓN - DESGLOSADA
+        // ──────────────────────────────────────────────────────────
+        doc.fillColor('#000000').fontSize(7).font('Helvetica-Bold')
+           .text('DEPARTAMENTO:', LEFT, y);
+        const department = (order.shippingAddress?.departamento || 'N/A').toUpperCase();
+        doc.font('Helvetica').fontSize(9)
+           .text(department, LEFT + 65, y - 1);
+        y += 10;
 
-        currentY += 12;
-        const fullAddress = `${order.shippingAddress?.direccion || ''} ${order.shippingAddress?.numero ? `N° ${order.shippingAddress.numero}` : ''} ${order.shippingAddress?.pisoDpto || ''}`.trim();
-        doc.fontSize(10).font('Helvetica')
-           .text(fullAddress || 'RECOJO EN AGENCIA', 14, currentY, { width: 260, height: 36, ellipsis: true });
+        doc.font('Helvetica-Bold').fontSize(7)
+           .text('PROVINCIA:', LEFT, y);
+        const province = (order.shippingAddress?.provincia || 'N/A').toUpperCase();
+        doc.font('Helvetica').fontSize(9)
+           .text(province, LEFT + 65, y - 1);
+        y += 10;
 
-        currentY += 38;
+        doc.font('Helvetica-Bold').fontSize(7)
+           .text('DISTRITO:', LEFT, y);
+        const district = (order.shippingAddress?.distrito || 'N/A').toUpperCase();
+        doc.font('Helvetica').fontSize(9)
+           .text(district, LEFT + 65, y - 1);
+        y += 12;
+
+        // Línea divisoria
+        doc.moveTo(LEFT, y).lineTo(RIGHT_EDGE, y).lineWidth(1).stroke('#000000');
+        y += 10;
+
+        // ──────────────────────────────────────────────────────────
+        // DIRECCIÓN DETALLADA
+        // ──────────────────────────────────────────────────────────
+        doc.fontSize(7).font('Helvetica-Bold')
+           .text('VÍA:', LEFT, y);
+        const street = (order.shippingAddress?.direccion || 'N/A').toUpperCase();
+        doc.font('Helvetica').fontSize(8.5)
+           .text(street, LEFT + 28, y, { width: WIDTH - 28, ellipsis: true });
+        y += 10;
+
+        doc.font('Helvetica-Bold').fontSize(7)
+           .text('NRO:', LEFT, y);
+        const number = order.shippingAddress?.numero || '---';
+        doc.font('Helvetica').fontSize(8.5)
+           .text(number.toString(), LEFT + 28, y);
+        y += 9;
+
+        doc.font('Helvetica-Bold').fontSize(7)
+           .text('PISO/DPTO:', LEFT, y);
+        const apt = order.shippingAddress?.pisoDpto || '---';
+        doc.font('Helvetica').fontSize(8.5)
+           .text(apt, LEFT + 50, y);
+        y += 9;
+
         if (order.shippingAddress?.referencia) {
-            doc.fontSize(8.5).font('Helvetica-Oblique')
-               .text(`Ref: ${order.shippingAddress.referencia}`, 14, currentY, { width: 260, height: 24, ellipsis: true });
+            doc.font('Helvetica-Bold').fontSize(7)
+               .text('REFERENCIA:', LEFT, y);
+            doc.font('Helvetica-Oblique').fontSize(8)
+               .text(order.shippingAddress.referencia, LEFT + 55, y, { width: WIDTH - 55, ellipsis: true });
+            y += 10;
         }
 
-        // 4. PIE DE PÁGINA
-        const footerY = 340;
-        doc.moveTo(12, footerY).lineTo(276, footerY).lineWidth(1).stroke('#000000');
+        // Línea divisoria
+        y += 4;
+        doc.moveTo(LEFT, y).lineTo(RIGHT_EDGE, y).lineWidth(1).stroke('#000000');
 
-        doc.image(qrBuffer, 204, footerY + 10, { width: 60, height: 60 });
+        // ──────────────────────────────────────────────────────────
+        // FOOTER: Remitente + Frágil + QR
+        // ──────────────────────────────────────────────────────────
+        const footerY = 330;
+        doc.moveTo(LEFT, footerY).lineTo(RIGHT_EDGE, footerY).lineWidth(1).stroke('#000000');
 
-        doc.fontSize(8).font('Helvetica-Bold').text('REMITENTE:', 14, footerY + 10);
-        doc.fontSize(7.5).font('Helvetica')
-           .text('E-COMMERCE STORE', 14, footerY + 22)
-           .text('RUC: 20600000001', 14, footerY + 33)
-           .text('TEL: 900 000 000', 14, footerY + 44);
+        // Remitente izquierda
+        doc.fillColor('#000000').fontSize(6).font('Helvetica-Bold')
+           .text('REMITENTE:', LEFT, footerY + 8);
+        doc.fontSize(8.5).font('Helvetica-Bold')
+           .text('GOPHONE.PE', LEFT, footerY + 16);
+        doc.fontSize(7).font('Helvetica')
+           .text('TEL: 925 254 636', LEFT, footerY + 24);
 
-        doc.fontSize(8.5).font('Helvetica-Bold').text('FRÁGIL', 14, footerY + 58);
+        // Frágil
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000')
+           .text('FRÁGIL', LEFT, footerY + 42);
+
+        // QR derecha
+        doc.image(qrBuffer, RIGHT_EDGE - 64, footerY + 8, { width: 58, height: 58 });
     }
 
     doc.end();

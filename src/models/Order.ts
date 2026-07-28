@@ -1,8 +1,9 @@
+// File: backend/src/models/Order.ts
+
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { IUser } from './User';
 import { IProduct } from './Product';
 
-// Status Enums (Asegurar consistencia con los mapeos del frontend)
 export enum OrderStatus {
     AWAITING_PAYMENT = 'awaiting_payment',
     PROCESSING = 'processing',
@@ -19,7 +20,6 @@ export enum PaymentStatus {
     REFUNDED = 'refunded'
 }
 
-// Interfaces de Soporte
 export interface IShippingAddress {
     departamento: string;
     provincia: string;
@@ -62,8 +62,8 @@ export interface IPaymentInfo {
 export interface IStatusHistory {
     status: OrderStatus;
     changedAt: Date;
-    actionBy?: Types.ObjectId | string; // ID del Admin/Vendedor/Cliente que cambió el estado
-    reason?: string;                    // Motivo del cambio o comentario de auditoría
+    actionBy?: Types.ObjectId | string;
+    reason?: string;
 }
 
 export interface IDeviceInfo {
@@ -71,10 +71,23 @@ export interface IDeviceInfo {
     userAgent?: string;
 }
 
-// Interfaz del Documento Core
+export interface IInvoiceInfo {
+    tipo: 'boleta' | 'factura' | 'nota_credito' | 'anulacion';
+    serie: string;
+    numero: number;
+    pdfUrl?: string | null;
+    xmlUrl?: string | null;
+    cdrUrl?: string | null;
+    nubefactEnlace?: string | null;
+    sunatResponseCode?: string | null;
+    sunatDescription?: string | null;
+    sunatTicketNumero?: string | null;
+    generatedAt: Date;
+}
+
 export interface IOrder extends Document {
     orderNumber: string;
-    culqiOrderId?: string; 
+    culqiOrderId?: string;
     user?: Types.ObjectId | IUser;
     customerProfile: ICustomerProfile;
     items: IOrderItem[];
@@ -85,30 +98,29 @@ export interface IOrder extends Document {
     status: OrderStatus;
     statusHistory: IStatusHistory[];
     shippingAddress: IShippingAddress;
-    shippingMethod?: string;             // Ej: 'Olva Express', 'Contraentrega', 'Recojo en Tienda'
-    estimatedDeliveryDate?: Date;        // Fecha estimada de entrega para el cliente
+    shippingMethod?: string;
+    estimatedDeliveryDate?: Date;
     payment?: IPaymentInfo;
     trackingNumber?: string;
     notes?: string;
-    
-    // Campos rápidos de auditoría para cancelaciones
+    invoice?: IInvoiceInfo;
+    creditNote?: IInvoiceInfo;
+    voidInfo?: IInvoiceInfo;
     canceledAt?: Date;
     canceledBy?: Types.ObjectId | string;
     cancelReason?: string;
-    
-    deviceInfo?: IDeviceInfo;            // Auditoría técnica de origen de compra
+    deviceInfo?: IDeviceInfo;
     createdAt: Date;
     updatedAt: Date;
 }
 
-// Schemas de subdocumentos embebidos
 const shippingAddressSchema = new Schema<IShippingAddress>({
     departamento: { type: String, required: true },
     provincia: { type: String, required: true },
     distrito: { type: String, required: true },
     direccion: { type: String, required: true },
-    numero: { type: String },     
-    pisoDpto: { type: String },   
+    numero: { type: String },
+    pisoDpto: { type: String },
     referencia: { type: String }
 }, { _id: false });
 
@@ -117,7 +129,7 @@ const customerProfileSchema = new Schema<ICustomerProfile>({
     apellidos: { type: String, required: true, trim: true },
     email: { type: String, required: true, lowercase: true, trim: true },
     telefono: { type: String, required: true, trim: true },
-    tipoDocumento: { type: String, enum: ['DNI', 'RUC', 'CE'] }, 
+    tipoDocumento: { type: String, enum: ['DNI', 'RUC', 'CE'] },
     numeroDocumento: { type: String }
 }, { _id: false });
 
@@ -129,8 +141,8 @@ const orderItemSchema = new Schema<IOrderItem>({
     price: { type: Number, required: true },
     nombre: { type: String, required: true },
     imagen: { type: String },
-    sku: { type: String },     
-    barcode: { type: String }  
+    sku: { type: String },
+    barcode: { type: String }
 }, { _id: false });
 
 const paymentSchema = new Schema<IPaymentInfo>({
@@ -144,7 +156,7 @@ const paymentSchema = new Schema<IPaymentInfo>({
 const statusHistorySchema = new Schema<IStatusHistory>({
     status: { type: String, enum: Object.values(OrderStatus), required: true },
     changedAt: { type: Date, default: Date.now },
-    actionBy: { type: Schema.Types.Mixed }, // Soporta String o ObjectId de manera flexible sin romper docs antiguos
+    actionBy: { type: Schema.Types.Mixed },
     reason: { type: String, trim: true }
 }, { _id: false });
 
@@ -153,7 +165,20 @@ const deviceInfoSchema = new Schema<IDeviceInfo>({
     userAgent: { type: String }
 }, { _id: false });
 
-// Schema principal de la orden
+const invoiceSchema = new Schema<IInvoiceInfo>({
+    tipo: { type: String, enum: ['boleta', 'factura', 'nota_credito', 'anulacion'], required: true },
+    serie: { type: String, required: true, trim: true },
+    numero: { type: Number, required: true },
+    pdfUrl: { type: String, trim: true, default: null },
+    xmlUrl: { type: String, trim: true, default: null },
+    cdrUrl: { type: String, trim: true, default: null },
+    nubefactEnlace: { type: String, trim: true, default: null },
+    sunatResponseCode: { type: String, trim: true, default: null },
+    sunatDescription: { type: String, trim: true, default: null },
+    sunatTicketNumero: { type: String, trim: true, default: null },
+    generatedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const orderSchema = new Schema<IOrder>({
     orderNumber: { type: String, unique: true, required: true },
     culqiOrderId: { type: String, trim: true, required: false },
@@ -172,24 +197,24 @@ const orderSchema = new Schema<IOrder>({
     payment: { type: paymentSchema, required: false },
     trackingNumber: { type: String, trim: true },
     notes: { type: String, trim: true, maxlength: 300 },
-    
-    // Auditoría de Cancelación directa
+    invoice: { type: invoiceSchema, required: false },
+    creditNote: { type: invoiceSchema, required: false },
+    voidInfo: { type: invoiceSchema, required: false },
     canceledAt: { type: Date },
     canceledBy: { type: Schema.Types.Mixed },
     cancelReason: { type: String, trim: true },
-    
     deviceInfo: { type: deviceInfoSchema, required: false }
 }, { timestamps: true });
 
-// ÍNDICES OPTIMIZADOS PARA PRODUCCIÓN
-orderSchema.index({ user: 1 }, { sparse: true }); 
+orderSchema.index({ user: 1 }, { sparse: true });
 orderSchema.index({ status: 1 });
 orderSchema.index({ 'payment.transactionId': 1 }, { sparse: true });
-orderSchema.index({ trackingNumber: 1 }, { sparse: true }); 
-orderSchema.index({ 'customerProfile.email': 1 }); 
-orderSchema.index({ orderNumber: 1 }); 
-orderSchema.index({ culqiOrderId: 1 }, { sparse: true }); 
-orderSchema.index({ createdAt: -1 }); // Agrega este índice si haces consultas recurrentes ordenadas por fecha más reciente
+orderSchema.index({ trackingNumber: 1 }, { sparse: true });
+orderSchema.index({ 'customerProfile.email': 1 });
+orderSchema.index({ orderNumber: 1 });
+orderSchema.index({ culqiOrderId: 1 }, { sparse: true });
+orderSchema.index({ 'invoice.serie': 1, 'invoice.numero': 1 }, { sparse: true });
+orderSchema.index({ createdAt: -1 });
 
 const Order = mongoose.model<IOrder>('Order', orderSchema);
 

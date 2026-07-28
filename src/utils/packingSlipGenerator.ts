@@ -13,6 +13,23 @@ interface PDFGeneratorOptions {
     format: PageFormat;
 }
 
+const LOGO_URL = 'https://www.gophone.pe/logogophone.png';
+
+/**
+ * Descarga una imagen desde una URL y devuelve un Buffer de Node.js
+ */
+async function fetchLogoBuffer(url: string): Promise<Buffer | null> {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } catch (error) {
+        console.error('⚠️ No se pudo cargar el logo para el PDF:', error);
+        return null;
+    }
+}
+
 /**
  * Helper para convertir variantAttributes (Map de Mongoose u Objeto) a un string limpio "Atributo: Valor"
  */
@@ -58,12 +75,15 @@ export async function generateOrdersPDF(
     const isThermal = options.format === 'thermal_80mm';
     const orders = ordersInput.map(sanitizeOrder);
 
+    // Descargar el logo una sola vez para todas las páginas de este documento
+    const logoBuffer = await fetchLogoBuffer(LOGO_URL);
+
     // Calcular altura estimada si es ticket de 80mm (ancho de 226pt)
     let docOptions: PDFKit.PDFDocumentOptions = { size: 'A4', margin: 30 };
 
     if (isThermal && orders.length === 1) {
         const itemLines = orders[0].items.length * 35;
-        const calculatedHeight = Math.max(350, 220 + itemLines);
+        const calculatedHeight = Math.max(380, 240 + itemLines);
         docOptions = { size: [226, calculatedHeight], margin: 10 };
     } else if (isThermal) {
         docOptions = { size: [226, 800], margin: 10 };
@@ -88,9 +108,9 @@ export async function generateOrdersPDF(
         const qrDataUrl = await QRCode.toDataURL(order.orderNumber, { margin: 1, width: 80 });
 
         if (isThermal) {
-            await renderThermalDocument(doc, order, options.type, qrDataUrl);
+            await renderThermalDocument(doc, order, options.type, qrDataUrl, logoBuffer);
         } else {
-            await renderA4Document(doc, order, options.type, qrDataUrl);
+            await renderA4Document(doc, order, options.type, qrDataUrl, logoBuffer);
         }
     }
 
@@ -105,16 +125,24 @@ async function renderA4Document(
     doc: PDFKit.PDFDocument,
     order: IOrder,
     type: DocumentType,
-    qrDataUrl: string
+    qrDataUrl: string,
+    logoBuffer: Buffer | null
 ): Promise<void> {
     const isPacking = type === 'packing_slip';
     const title = isPacking ? 'GUÍA DE EMPAQUE / PACKING SLIP' : 'NOTA DE VENTA / COMPROBANTE INTERNO';
 
-    // 1. Cabecera
-    doc.fontSize(15).font('Helvetica-Bold').text(title, { align: 'center' });
-    doc.moveDown(0.5);
+    // 1. Cabecera con Logo
+    const headerTop = 30;
+    if (logoBuffer) {
+        doc.image(logoBuffer, 30, headerTop, { width: 110 });
+    } else {
+        doc.fontSize(14).font('Helvetica-Bold').text('GOPHONE.PE', 30, headerTop);
+    }
 
-    const startY = doc.y;
+    doc.fontSize(13).font('Helvetica-Bold').text(title, 150, headerTop + 5, { align: 'right' });
+    doc.moveDown(1.5);
+
+    const startY = doc.y + 15;
 
     doc.fontSize(9).font('Helvetica-Bold').text('ORDEN N°: ', 30, startY, { continued: true })
        .font('Helvetica').text(order.orderNumber);
@@ -132,7 +160,7 @@ async function renderA4Document(
 
     // QR arriba a la derecha
     const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-    doc.image(qrBuffer, 485, startY, { width: 60, height: 65 });
+    doc.image(qrBuffer, 485, startY - 5, { width: 60, height: 60 });
 
     // 2. Bloques de Información (Cliente / Envío)
     doc.moveDown(1.5);
@@ -187,11 +215,9 @@ async function renderA4Document(
         const sku = item.sku || 'N/A';
         doc.text(sku, 40, currentY + 6);
 
-        // Limpiar nombre y variantes
         let rawName = item.nombre || 'Producto';
         const formattedAttrs = formatVariantAttributes(item.variantAttributes);
         
-        // Si el nombre aún no incluye los atributos, los concatenamos de forma segura
         if (formattedAttrs && !rawName.includes('(')) {
             rawName += ` (${formattedAttrs})`;
         }
@@ -245,13 +271,21 @@ async function renderThermalDocument(
     doc: PDFKit.PDFDocument,
     order: IOrder,
     type: DocumentType,
-    qrDataUrl: string
+    qrDataUrl: string,
+    logoBuffer: Buffer | null
 ): Promise<void> {
     const isPacking = type === 'packing_slip';
     const title = isPacking ? 'TICKET DE EMPAQUE' : 'NOTA DE VENTA';
 
-    doc.fontSize(10).font('Helvetica-Bold').text('MI TIENDA E-COMMERCE', { align: 'center' });
-    doc.fontSize(8).text(title, { align: 'center' });
+    if (logoBuffer) {
+        doc.image(logoBuffer, 73, 10, { width: 80 });
+        doc.moveDown(2.2);
+    } else {
+        doc.fontSize(10).font('Helvetica-Bold').text('GOPHONE.PE', { align: 'center' });
+        doc.moveDown(0.2);
+    }
+
+    doc.fontSize(8).font('Helvetica-Bold').text(title, { align: 'center' });
     doc.moveDown(0.3);
 
     doc.fontSize(7.5).font('Helvetica');
@@ -266,7 +300,6 @@ async function renderThermalDocument(
     doc.moveDown(0.3);
     doc.text('----------------------------------------------------');
 
-    // Tabla de ítems para ticketera
     order.items.forEach((item: any) => {
         let name = item.nombre || 'Producto';
         const formattedAttrs = formatVariantAttributes(item.variantAttributes);
@@ -294,5 +327,5 @@ async function renderThermalDocument(
 
     doc.moveDown(0.5);
     const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-    doc.image(qrBuffer, 73, doc.y, { width: 70, height: 70 });
+    doc.image(qrBuffer, 78, doc.y, { width: 70, height: 70 });
 }

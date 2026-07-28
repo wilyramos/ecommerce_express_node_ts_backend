@@ -112,9 +112,9 @@ router.get('/my', authenticate, orderController.getMyOrders);
 router.get('/admin/all', authenticate, isAdminOrVendedor, orderController.getAllOrders);
 router.get('/admin/stats', authenticate, isAdmin, orderController.getStats);
 router.post('/admin/cleanup-expired', authenticate, isAdmin, orderController.triggerCleanup);
-// En backend/src/modules/order/order.router.ts
 
 router.post('/admin/generate-pdf', authenticate, isAdmin, orderController.generatePDF);
+
 router.patch(
     '/admin/:id/status',
     authenticate,
@@ -131,6 +131,13 @@ router.patch(
     orderController.assignTracking
 );
 
+router.post('/admin/:id/resend-email', authenticate, isAdmin, validateMongoId, orderController.resendConfirmationEmail);
+
+router.post('/admin/:id/generate-boleta', authenticate, isAdmin, validateMongoId, orderController.generateBoleta);
+// File: backend/src/modules/order/order.router.ts (Rutas Admin)
+
+router.post('/admin/:id/generate-credit-note', authenticate, isAdmin, validateMongoId, orderController.generateCreditNote);
+router.post('/admin/:id/generate-void', authenticate, isAdmin, validateMongoId, orderController.generateVoid);
 router.patch(
     '/admin/:id/refund',
     authenticate,

@@ -285,8 +285,6 @@ export const orderController = {
         sendSuccess(res, result);
     },
 
-    // En backend/src/modules/order/order.controller.ts
-
     /**
      * POST /orders/v2/admin/generate-pdf
      * Emitir documentos PDF (Guía de Empaque o Nota de Venta) en A4 o Térmico 80mm
@@ -298,7 +296,6 @@ export const orderController = {
             throw new AppError('Debe proporcionar al menos un ID de orden.', 400);
         }
 
-        // Asegúrate de incluir 'shipping_label' en los tipos válidos
         const validTypes: DocumentType[] = ['packing_slip', 'sale_note', 'shipping_label'];
         const validFormats: PageFormat[] = ['A4', 'thermal_80mm'];
 
@@ -321,5 +318,44 @@ export const orderController = {
         }
 
         await generateOrdersPDF(orders, res, { type, format });
+    },
+
+    /**
+     * POST /orders/v2/admin/:id/resend-email
+     * Reenvía manualmente el correo de confirmación de pedido al cliente.
+     */
+    async resendConfirmationEmail(req: Request, res: Response): Promise<void> {
+        const { id } = req.params;
+        const result = await orderService.resendOrderConfirmationEmail(id);
+        sendSuccess(res, result);
+    },
+
+    /**
+     * POST /orders/v2/admin/:id/generate-boleta
+     * Genera la boleta electrónica de venta en SUNAT vía Nubefact.
+     */
+    async generateBoleta(req: Request, res: Response): Promise<void> {
+        const { id } = req.params;
+        const adminId = (req as any).user?.id;
+        const order = await orderService.generateBoleta(id, `admin_${adminId}`);
+        sendSuccess(res, order);
+    },
+
+    // File: backend/src/modules/order/order.controller.ts (Nuevos controladores Admin)
+
+    async generateCreditNote(req: Request, res: Response): Promise<void> {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const adminId = (req as any).user?.id;
+        const order = await orderService.generateCreditNote(id, reason, `admin_${adminId}`);
+        sendSuccess(res, order);
+    },
+
+    async generateVoid(req: Request, res: Response): Promise<void> {
+        const { id } = req.params;
+        const { motivo } = req.body;
+        const adminId = (req as any).user?.id;
+        const order = await orderService.generateVoid(id, motivo, `admin_${adminId}`);
+        sendSuccess(res, order);
     }
 };
