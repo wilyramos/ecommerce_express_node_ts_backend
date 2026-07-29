@@ -93,6 +93,11 @@ export interface IOrder extends Document {
     items: IOrderItem[];
     subtotal: number;
     shippingCost: number;
+
+
+    discountCode?: string;       // El código tipeado por el cliente
+    discountAmount?: number;     // Cuánto descontó (en la misma moneda)
+
     totalPrice: number;
     currency: string;
     status: OrderStatus;
@@ -187,6 +192,10 @@ const orderSchema = new Schema<IOrder>({
     items: { type: [orderItemSchema], required: true },
     subtotal: { type: Number, required: true },
     shippingCost: { type: Number, default: 0 },
+
+    discountCode: { type: String, trim: true, uppercase: true },
+    discountAmount: { type: Number, default: 0 },
+
     totalPrice: { type: Number, required: true },
     currency: { type: String, default: 'PEN' },
     status: { type: String, enum: Object.values(OrderStatus), default: OrderStatus.AWAITING_PAYMENT },

@@ -3,11 +3,12 @@
 import mongoose, { FilterQuery, Types, UpdateQuery } from 'mongoose';
 import Order, { IOrder, IOrderItem, OrderStatus, PaymentStatus } from '../../models/Order';
 import Product from '../../models/Product';
+import Discount from '../discount/discount.model'; // Importamos el modelo
+import { discountService } from '../discount/discount.service'; // Importamos el servicio
 import { generateSecureOrderNumber } from '../../utils/orderNumber-helper';
 import { OrderEmail } from '../../emails/OrderEmailResend';
 import { getPeruDateRange } from '../../utils/date-helper';
 import { sendOrderToNubefact, sendCreditNoteToNubefact, sendVoidToNubefact } from '../../utils/nubefact';
-
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
 export interface CreateOrderDTO {
@@ -41,6 +42,8 @@ export interface CreateOrderDTO {
         ipAddress?: string;
         userAgent?: string;
     };
+
+    discountCode?: string;
 }
 
 export interface OrderFilters {
@@ -71,11 +74,13 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 1. Crear orden (Inicializa en Espera de Pago, sin alterar stock ni enviar correo)
     // ─────────────────────────────────────────────────────────────────────────
+
     async createOrder(dto: CreateOrderDTO): Promise<IOrder> {
         const orderNumber = generateSecureOrderNumber();
         const items: IOrderItem[] = [];
         let subtotal = 0;
 
+        // 1. Recorrer y validar ítems del carrito (Productos o Variantes)
         for (const item of dto.items) {
             const dbProduct = await Product.findOne({
                 _id: item.productId,
@@ -140,12 +145,32 @@ export const orderService = {
             });
         }
 
+        // 2. Costo de envío base
         const shippingCost = subtotal < 49 ? 10 : 0;
-        const totalPrice = subtotal + shippingCost;
+
+        // 3. Aplicación y Validación de Cupón de Descuento
+        let discountAmount = 0;
+        let appliedCode: string | undefined = undefined;
+
+        if (dto.discountCode) {
+            const discountResult = await discountService.validateAndCalculateDiscount(
+                dto.discountCode,
+                subtotal,
+                items,
+                dto.userId || dto.customerProfile.email
+            );
+
+            discountAmount = discountResult.discountAmount;
+            appliedCode = discountResult.code;
+        }
+
+        // 4. Cálculo final del monto total a cobrar
+        const totalPrice = Math.max(0, subtotal + shippingCost - discountAmount);
         const amountInCents = Math.round(totalPrice * 100);
 
         let culqiOrderId: string | undefined = undefined;
 
+        // 5. Generación de Orden de Pago en Culqi
         try {
             const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
                 method: "POST",
@@ -181,7 +206,8 @@ export const orderService = {
         const estimatedDeliveryDate = new Date();
         estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 3);
 
-        return Order.create({
+        // 6. Creación y Persistencia de la Orden en MongoDB
+        const order = await Order.create({
             orderNumber,
             culqiOrderId,
             user: dto.userId ? new Types.ObjectId(dto.userId) : undefined,
@@ -189,6 +215,8 @@ export const orderService = {
             items,
             subtotal,
             shippingCost,
+            discountCode: appliedCode,
+            discountAmount: discountAmount,
             totalPrice,
             currency: dto.currency ?? 'PEN',
             shippingAddress: dto.shippingAddress,
@@ -204,6 +232,19 @@ export const orderService = {
             }],
             deviceInfo: dto.deviceInfo
         });
+
+        // 7. Registro asíncrono del conteo de uso del cupón
+        if (appliedCode) {
+            Discount.updateOne(
+                { code: appliedCode },
+                {
+                    $inc: { currentUsageCount: 1 },
+                    $push: { usedBy: { userId: dto.userId || dto.customerProfile.email, count: 1 } }
+                }
+            ).catch(err => console.error("Error registrando uso del cupón:", err));
+        }
+
+        return order;
     },
 
     // ─────────────────────────────────────────────────────────────────────────

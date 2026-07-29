@@ -43,6 +43,7 @@ import claimRouter from './modules/claim/claim.routes';
 
 // Importación del Módulo de Inventario
 import inventoryRouter from './modules/inventory/inventory.router';
+import discountRouter from './modules/discount/discount.router';
 
 // Importación del Seeder y del Cron Job
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -118,7 +119,8 @@ app.use('/api/cash/v2', cashRouter)
 app.use('/api/reports/v2', reportRouter)
 app.use('/api/users/v2', userRouterV2)
 app.use('/api/orders/v2', orderRouterV2)
-app.use('/api/inventory', inventoryRouter) // <- Módulo de Inventario y Stock
+app.use('/api/inventory', inventoryRouter)
+app.use('/api/discounts', discountRouter)
 app.use('/api/slider-banners', sliderBannerRouter)
 app.use('/api/sections', sectionRouter)
 app.use('/api/collections', collectionRouter)

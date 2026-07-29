@@ -43,37 +43,31 @@ function getPeruDateFormatted(): string {
     return `${day}-${month}-${year}`;
 }
 
-export async function sendOrderToNubefact(order: IOrder): Promise<Required<Pick<NubefactResponse, 'serie' | 'numero'>> & NubefactResponse> {
-    if (!NUBEFACT_RUTA || !NUBEFACT_TOKEN) {
-        throw new Error('Las credenciales de Nubefact no están configuradas.');
-    }
+/**
+ * Mapea los ítems de la orden distribuyendo proporcionalmente los descuentos globales
+ * para evitar inconsistencias de IGV en la validación de SUNAT/Nubefact.
+ */
+function buildNubefactItems(order: IOrder) {
+    const rawSubtotal = order.subtotal || 0;
+    const discountAmount = order.discountAmount || 0;
 
-    const docType = (order.customerProfile?.tipoDocumento || 'DNI').toUpperCase();
-    const docNum = order.customerProfile?.numeroDocumento?.trim() || '';
+    // Subtotal gravado real tras descuento
+    const subtotalConDescuento = Math.max(0, rawSubtotal - discountAmount);
 
-    let clienteTipoDoc = '-';
-    let clienteNumeroDoc = '00000000';
-
-    if (docType === 'DNI' && docNum.length === 8) {
-        clienteTipoDoc = '1';
-        clienteNumeroDoc = docNum;
-    } else if (docType === 'RUC' && docNum.length === 11) {
-        clienteTipoDoc = '6';
-        clienteNumeroDoc = docNum;
-    } else if (docType === 'CE' && docNum.length >= 6) {
-        clienteTipoDoc = '4';
-        clienteNumeroDoc = docNum;
-    }
-
-    const fechaEmision = getPeruDateFormatted();
+    // Factor de prorrateo (ej. 0.85 si hay 15% de descuento global)
+    const factorDescuento = rawSubtotal > 0 ? subtotalConDescuento / rawSubtotal : 1;
 
     const items = order.items.map((item) => {
-        const precioUnitarioConIgv = item.price;
-        const valorUnitarioSinIgv = precioUnitarioConIgv / 1.18;
+        const precioUnitarioOriginal = item.price;
+        // Precio unitario efectivo con el descuento aplicado
+        const precioUnitarioConDescuento = precioUnitarioOriginal * factorDescuento;
+
+        // Cálculo exacto en PEN con IGV 18%
+        const valorUnitarioSinIgv = precioUnitarioConDescuento / 1.18;
         const cantidad = item.quantity;
 
+        const totalItemConIgv = precioUnitarioConDescuento * cantidad;
         const subtotalSinIgv = valorUnitarioSinIgv * cantidad;
-        const totalItemConIgv = precioUnitarioConIgv * cantidad;
         const totalIgvItem = totalItemConIgv - subtotalSinIgv;
 
         return {
@@ -82,7 +76,7 @@ export async function sendOrderToNubefact(order: IOrder): Promise<Required<Pick<
             descripcion: item.nombre,
             cantidad: cantidad,
             valor_unitario: Number(valorUnitarioSinIgv.toFixed(6)),
-            precio_unitario: Number(precioUnitarioConIgv.toFixed(2)),
+            precio_unitario: Number(precioUnitarioConDescuento.toFixed(2)),
             subtotal: Number(subtotalSinIgv.toFixed(2)),
             tipo_de_igv: 1,
             igv: Number(totalIgvItem.toFixed(2)),
@@ -111,9 +105,38 @@ export async function sendOrderToNubefact(order: IOrder): Promise<Required<Pick<
         });
     }
 
+    return items;
+}
+
+export async function sendOrderToNubefact(order: IOrder): Promise<Required<Pick<NubefactResponse, 'serie' | 'numero'>> & NubefactResponse> {
+    if (!NUBEFACT_RUTA || !NUBEFACT_TOKEN) {
+        throw new Error('Las credenciales de Nubefact no están configuradas.');
+    }
+
+    const docType = (order.customerProfile?.tipoDocumento || 'DNI').toUpperCase();
+    const docNum = order.customerProfile?.numeroDocumento?.trim() || '';
+
+    let clienteTipoDoc = '-';
+    let clienteNumeroDoc = '00000000';
+
+    if (docType === 'DNI' && docNum.length === 8) {
+        clienteTipoDoc = '1';
+        clienteNumeroDoc = docNum;
+    } else if (docType === 'RUC' && docNum.length === 11) {
+        clienteTipoDoc = '6';
+        clienteNumeroDoc = docNum;
+    } else if (docType === 'CE' && docNum.length >= 6) {
+        clienteTipoDoc = '4';
+        clienteNumeroDoc = docNum;
+    }
+
+    const fechaEmision = getPeruDateFormatted();
+    const items = buildNubefactItems(order);
+
+    // Sumamos directamente los totales ajustados de las líneas para evitar descuadres por redondeo
+    const totalGravada = items.reduce((acc, curr) => acc + curr.subtotal, 0);
+    const totalIgv = items.reduce((acc, curr) => acc + curr.igv, 0);
     const totalConIgv = order.totalPrice;
-    const totalGravada = totalConIgv / 1.18;
-    const totalIgv = totalConIgv - totalGravada;
 
     const fullAddress = `${order.shippingAddress?.direccion || ''} ${order.shippingAddress?.numero ? `N° ${order.shippingAddress.numero}` : ''} (${order.shippingAddress?.distrito || ''} - ${order.shippingAddress?.provincia || ''})`.trim();
     const nombreCliente = `${order.customerProfile?.nombre || ''} ${order.customerProfile?.apellidos || ''}`.trim().toUpperCase();
@@ -159,40 +182,17 @@ export async function sendOrderToNubefact(order: IOrder): Promise<Required<Pick<
     return data as Required<Pick<NubefactResponse, 'serie' | 'numero'>> & NubefactResponse;
 }
 
-// File: backend/src/utils/nubefact.ts
-
 export async function sendCreditNoteToNubefact(order: IOrder, reason: string): Promise<NubefactResponse> {
     if (!order.invoice || !order.invoice.serie || !order.invoice.numero) {
         throw new Error('La orden no cuenta con una boleta emitida para generar nota de crédito.');
     }
 
-    const totalConIgv = order.totalPrice;
-    const totalGravada = totalConIgv / 1.18;
-    const totalIgv = totalConIgv - totalGravada;
     const fechaEmision = getPeruDateFormatted();
+    const items = buildNubefactItems(order);
 
-    const items = order.items.map((item) => {
-        const precioUnitarioConIgv = item.price;
-        const valorUnitarioSinIgv = precioUnitarioConIgv / 1.18;
-        const cantidad = item.quantity;
-        const subtotalSinIgv = valorUnitarioSinIgv * cantidad;
-        const totalItemConIgv = precioUnitarioConIgv * cantidad;
-        const totalIgvItem = totalItemConIgv - subtotalSinIgv;
-
-        return {
-            unidad_de_medida: 'NIU',
-            codigo: item.sku || 'PROD',
-            descripcion: item.nombre,
-            cantidad: cantidad,
-            valor_unitario: Number(valorUnitarioSinIgv.toFixed(6)),
-            precio_unitario: Number(precioUnitarioConIgv.toFixed(2)),
-            subtotal: Number(subtotalSinIgv.toFixed(2)),
-            tipo_de_igv: 1,
-            igv: Number(totalIgvItem.toFixed(2)),
-            total: Number(totalItemConIgv.toFixed(2)),
-            anticipo_regularizacion: false
-        };
-    });
+    const totalGravada = items.reduce((acc, curr) => acc + curr.subtotal, 0);
+    const totalIgv = items.reduce((acc, curr) => acc + curr.igv, 0);
+    const totalConIgv = order.totalPrice;
 
     const docType = (order.customerProfile?.tipoDocumento || 'DNI').toUpperCase();
     const docNum = order.customerProfile?.numeroDocumento?.trim() || '';
