@@ -127,7 +127,7 @@ app.use('/api/pages', pageRouter)
 app.use('/api/icons', iconRouter)
 
 // ════════════════════════════════════════════════════════════════
-// 4. RUTAS VERSION 1 / LEGADO
+// 4. RUTAS VERSION 1 
 // ════════════════════════════════════════════════════════════════
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
