@@ -26,7 +26,6 @@ import productRouterV2 from './modules/product/product.routes'
 import saleRouterV2 from './modules/sale/sale.routes'
 import cashRouter from './modules/cash/cash.routes'
 import reportRouter from './modules/reports/report.routes'
-import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 import userRouterV2 from './modules/users/users.router'
 import orderRouterV2 from './modules/order/order.router'
 import webhookRouterV2 from './modules/webhook/webhook.router'
@@ -34,12 +33,16 @@ import sectionRouter from './modules/section/section.router'
 import advertisementRouter from './modules/advertisement/advertisement.routes'
 import pageRouter from './modules/page/page.routes'
 import iconRouter from './modules/icon/icon.routes'
+import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
 
 import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
 import comparisonRouter from './modules/comparison/comparison.router'
 import mediaRouter from './modules/media/media.routes';
 import claimRouter from './modules/claim/claim.routes';
+
+// Importación del Módulo de Inventario
+import inventoryRouter from './modules/inventory/inventory.router';
 
 // Importación del Seeder y del Cron Job
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -67,7 +70,6 @@ connectDB()
     });
 
 // ════════════════════════════════════════════════════════════════
-// 1. CONFIGURACIÓN DE PARSERS Y MIDDLEWARES DE ENTRADA CRÍTICOS
 // ════════════════════════════════════════════════════════════════
 app.use(morgan('dev'))
 
@@ -76,8 +78,8 @@ app.use(express.urlencoded({ extended: true }))
 
 // CONFIGURACIÓN DE CORS REFORZADA CON TU FRONTEND_URL
 const allowedOrigins = [
-    process.env.FRONTEND_URL,          // Tu URL de producción (Render o Vercel)
-    'http://localhost:3000'            // Tu entorno local de Next.js
+    process.env.FRONTEND_URL,          
+    'http://localhost:3000'            
 ];
 
 app.use(cors({
@@ -116,6 +118,7 @@ app.use('/api/cash/v2', cashRouter)
 app.use('/api/reports/v2', reportRouter)
 app.use('/api/users/v2', userRouterV2)
 app.use('/api/orders/v2', orderRouterV2)
+app.use('/api/inventory', inventoryRouter) // <- Módulo de Inventario y Stock
 app.use('/api/slider-banners', sliderBannerRouter)
 app.use('/api/sections', sectionRouter)
 app.use('/api/collections', collectionRouter)
