@@ -3,13 +3,13 @@
 import mongoose, { FilterQuery, Types, UpdateQuery } from 'mongoose';
 import Order, { IOrder, IOrderItem, OrderStatus, PaymentStatus } from '../../models/Order';
 import Product from '../../models/Product';
-import Discount from '../discount/discount.model'; // Importamos el modelo
-import { discountService } from '../discount/discount.service'; // Importamos el servicio
+import { discountService, ICartItemValidation } from '../discount/discount.service';
 import { generateSecureOrderNumber } from '../../utils/orderNumber-helper';
 import { OrderEmail } from '../../emails/OrderEmailResend';
 import { getPeruDateRange } from '../../utils/date-helper';
 import { sendOrderToNubefact, sendCreditNoteToNubefact, sendVoidToNubefact } from '../../utils/nubefact';
-// ── DTOs ─────────────────────────────────────────────────────────────────────
+
+// ── DTOs e Interfases ────────────────────────────────────────────────────────
 
 export interface CreateOrderDTO {
     userId?: string;
@@ -42,7 +42,6 @@ export interface CreateOrderDTO {
         ipAddress?: string;
         userAgent?: string;
     };
-
     discountCode?: string;
 }
 
@@ -58,212 +57,246 @@ export interface OrderFilters {
     to?: string;
 }
 
-// Interfaz para coincidir exactamente con las métricas de Shopify
 export interface OrderStats {
-    paidOrders: number;         // Órdenes pagadas con éxito
-    itemsDiscounted: number;    // Unidades descontadas del stock real
-    paidRevenue: number;        // Dinero total recaudado de pagos aprobados
-    pendingFulfillment: number; // Órdenes pagadas pendientes de embalaje/despacho
-    salesReversals: number;     // Dinero de ventas revertidas (reembolsos)
+    paidOrders: number;
+    itemsDiscounted: number;
+    paidRevenue: number;
+    pendingFulfillment: number;
+    salesReversals: number;
 }
 
-// ── Servicio ──────────────────────────────────────────────────────────────────
+// ── Servicio Principal ─────────────────────────────────────────────────────────
 
 export const orderService = {
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. Crear orden (Inicializa en Espera de Pago, sin alterar stock ni enviar correo)
+    // 1. Crear Orden (Transaccional ACID + Culqi + Cupón Atómico por _id)
     // ─────────────────────────────────────────────────────────────────────────
 
     async createOrder(dto: CreateOrderDTO): Promise<IOrder> {
-        const orderNumber = generateSecureOrderNumber();
-        const items: IOrderItem[] = [];
-        let subtotal = 0;
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-        // 1. Recorrer y validar ítems del carrito (Productos o Variantes)
-        for (const item of dto.items) {
-            const dbProduct = await Product.findOne({
-                _id: item.productId,
-                isActive: true,
-                deletedAt: null,
-            }).lean();
-
-            if (!dbProduct) {
-                throw new Error(`El producto con ID ${item.productId} no está disponible.`);
-            }
-
-            let finalPrice = dbProduct.precio || 0;
-            let finalNombre = dbProduct.nombre;
-            let finalSku = dbProduct.sku;
-            let finalBarcode = dbProduct.barcode;
-            let finalImagen = dbProduct.imagenes?.[0] || undefined;
-            let variantAttributesObj: Record<string, string> = {};
-
-            if (item.variantId) {
-                const variant = dbProduct.variants?.find(
-                    (v) => v._id?.toString() === item.variantId
-                );
-                if (!variant) {
-                    throw new Error(`La variante específica para "${dbProduct.nombre}" no existe.`);
-                }
-                if (variant.stock < item.quantity) {
-                    throw new Error(`Stock insuficiente para la variante de "${dbProduct.nombre}".`);
-                }
-
-                if (variant.precio) finalPrice = variant.precio;
-                if (variant.sku) finalSku = variant.sku;
-                if (variant.barcode) finalBarcode = variant.barcode;
-                if (variant.imagenes?.[0]) finalImagen = variant.imagenes[0];
-
-                const rawAttributes = variant.atributos || {};
-                variantAttributesObj = Object.fromEntries(
-                    Object.entries(rawAttributes).map(([k, v]) => [String(k), String(v)])
-                );
-
-                const attrStrings = Object.entries(variantAttributesObj)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join(', ');
-                finalNombre = attrStrings ? `${dbProduct.nombre} (${attrStrings})` : dbProduct.nombre;
-            } else {
-                if ((dbProduct.stock || 0) < item.quantity) {
-                    throw new Error(`Stock insuficiente para el producto "${dbProduct.nombre}".`);
-                }
-            }
-
-            subtotal += finalPrice * item.quantity;
-
-            items.push({
-                productId: new Types.ObjectId(item.productId),
-                variantId: item.variantId ? new Types.ObjectId(item.variantId) : undefined,
-                variantAttributes: item.variantId ? variantAttributesObj : undefined,
-                quantity: item.quantity,
-                price: finalPrice,
-                nombre: finalNombre,
-                imagen: finalImagen,
-                sku: finalSku,
-                barcode: finalBarcode,
-            });
-        }
-
-        // 2. Costo de envío base
-        const shippingCost = subtotal < 49 ? 10 : 0;
-
-        // 3. Aplicación y Validación de Cupón de Descuento
-        let discountAmount = 0;
-        let appliedCode: string | undefined = undefined;
-
-        if (dto.discountCode) {
-            const discountResult = await discountService.validateAndCalculateDiscount(
-                dto.discountCode,
-                subtotal,
-                items,
-                dto.userId || dto.customerProfile.email
-            );
-
-            discountAmount = discountResult.discountAmount;
-            appliedCode = discountResult.code;
-        }
-
-        // 4. Cálculo final del monto total a cobrar
-        const totalPrice = Math.max(0, subtotal + shippingCost - discountAmount);
-        const amountInCents = Math.round(totalPrice * 100);
-
-        let culqiOrderId: string | undefined = undefined;
-
-        // 5. Generación de Orden de Pago en Culqi
         try {
-            const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${process.env.CULQI_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    amount: amountInCents,
-                    currency_code: dto.currency ?? "PEN",
-                    description: `Cargo por orden comercial ${orderNumber}`,
-                    order_number: orderNumber,
-                    expiration_date: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
-                    client_details: {
-                        first_name: dto.customerProfile.nombre,
-                        last_name: dto.customerProfile.apellidos,
-                        email: dto.customerProfile.email,
-                        phone_number: dto.customerProfile.telefono
-                    },
-                    confirm: false,
-                })
-            });
+            const orderNumber = generateSecureOrderNumber();
+            const items: IOrderItem[] = [];
+            let subtotal = 0;
 
-            const culqiOrderData = (await culqiResponse.json()) as { id?: string; object?: string;[key: string]: unknown };
+            // 1.1. Recorrer e inspeccionar ítems del carrito
+            for (const item of dto.items) {
+                const dbProduct = await Product.findOne({
+                    _id: item.productId,
+                    isActive: true,
+                    deletedAt: null,
+                }).session(session).lean();
 
-            if (culqiResponse.ok && culqiOrderData.id) {
-                culqiOrderId = culqiOrderData.id;
-            }
-        } catch (error) {
-            console.error("❌ Error de red con Culqi Orders API:", error);
-        }
-
-        const estimatedDeliveryDate = new Date();
-        estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 3);
-
-        // 6. Creación y Persistencia de la Orden en MongoDB
-        const order = await Order.create({
-            orderNumber,
-            culqiOrderId,
-            user: dto.userId ? new Types.ObjectId(dto.userId) : undefined,
-            customerProfile: dto.customerProfile,
-            items,
-            subtotal,
-            shippingCost,
-            discountCode: appliedCode,
-            discountAmount: discountAmount,
-            totalPrice,
-            currency: dto.currency ?? 'PEN',
-            shippingAddress: dto.shippingAddress,
-            shippingMethod: dto.shippingMethod ?? 'Delivery Estándar',
-            estimatedDeliveryDate,
-            notes: dto.notes,
-            status: OrderStatus.AWAITING_PAYMENT,
-            statusHistory: [{
-                status: OrderStatus.AWAITING_PAYMENT,
-                changedAt: new Date(),
-                actionBy: dto.userId ?? 'system_guest',
-                reason: 'Orden inicializada en checkout'
-            }],
-            deviceInfo: dto.deviceInfo
-        });
-
-        // 7. Registro asíncrono del conteo de uso del cupón
-        if (appliedCode) {
-            Discount.updateOne(
-                { code: appliedCode },
-                {
-                    $inc: { currentUsageCount: 1 },
-                    $push: { usedBy: { userId: dto.userId || dto.customerProfile.email, count: 1 } }
+                if (!dbProduct) {
+                    throw new Error(`Lo sentimos, uno de los productos de tu carrito ya no se encuentra disponible o fue descontinuado. Por favor, actualiza tu carrito.`);
                 }
-            ).catch(err => console.error("Error registrando uso del cupón:", err));
-        }
 
-        return order;
+                let finalPrice = dbProduct.precio || 0;
+                let finalNombre = dbProduct.nombre;
+                let finalSku = dbProduct.sku;
+                let finalBarcode = dbProduct.barcode;
+                let finalImagen = dbProduct.imagenes?.[0] || undefined;
+                let variantAttributesObj: Record<string, string> = {};
+
+                if (item.variantId) {
+                    const variant = dbProduct.variants?.find(
+                        (v) => v._id?.toString() === item.variantId
+                    );
+                    if (!variant) {
+                        throw new Error(`La opción seleccionada para el producto "${dbProduct.nombre}" ya no está disponible.`);
+                    }
+                    if (variant.stock < item.quantity) {
+                        throw new Error(`Stock insuficiente. Solo nos quedan ${variant.stock} unidades disponibles de "${dbProduct.nombre}". Por favor, ajusta la cantidad.`);
+                    }
+
+                    if (variant.precio) finalPrice = variant.precio;
+                    if (variant.sku) finalSku = variant.sku;
+                    if (variant.barcode) finalBarcode = variant.barcode;
+                    if (variant.imagenes?.[0]) finalImagen = variant.imagenes[0];
+
+                    const rawAttributes = variant.atributos || {};
+                    variantAttributesObj = Object.fromEntries(
+                        Object.entries(rawAttributes).map(([k, v]) => [String(k), String(v)])
+                    );
+
+                    const attrStrings = Object.entries(variantAttributesObj)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(', ');
+                    finalNombre = attrStrings ? `${dbProduct.nombre} (${attrStrings})` : dbProduct.nombre;
+                } else {
+                    if ((dbProduct.stock || 0) < item.quantity) {
+                        throw new Error(`Stock insuficiente. Solo nos quedan ${dbProduct.stock} unidades disponibles de "${dbProduct.nombre}". Por favor, ajusta la cantidad.`);
+                    }
+                }
+
+                subtotal += finalPrice * item.quantity;
+
+                items.push({
+                    productId: new Types.ObjectId(item.productId),
+                    variantId: item.variantId ? new Types.ObjectId(item.variantId) : undefined,
+                    variantAttributes: item.variantId ? variantAttributesObj : undefined,
+                    quantity: item.quantity,
+                    price: finalPrice,
+                    nombre: finalNombre,
+                    imagen: finalImagen,
+                    sku: finalSku,
+                    barcode: finalBarcode,
+                });
+            }
+
+            // 1.2. Costo de envío base
+            let shippingCost = subtotal < 49 ? 10 : 0;
+
+            // ── 1.3. Aplicar y Validar Descuento (Exclusividad: Manual O Automático) ──────
+            let discountAmount = 0;
+            let appliedCode: string | undefined = undefined;
+            let appliedDiscountId: string | undefined = undefined;
+            const customerIdentifier = dto.userId || dto.customerProfile.email.toLowerCase();
+
+            const validationItems: ICartItemValidation[] = items.map((i) => ({
+                productId: i.productId.toString(),
+                variantId: i.variantId?.toString(),
+                quantity: i.quantity,
+                price: i.price,
+            }));
+
+            const cleanDiscountCode = dto.discountCode?.trim();
+            const isAutomaticFromFrontend = cleanDiscountCode?.startsWith("AUTO-");
+
+            if (cleanDiscountCode && !isAutomaticFromFrontend) {
+                // A. Cupón Manual ingresado por el cliente
+                const discountResult = await discountService.validateAndCalculateDiscount(
+                    cleanDiscountCode,
+                    subtotal,
+                    validationItems,
+                    customerIdentifier
+                );
+
+                discountAmount = discountResult.discountAmount;
+                appliedCode = discountResult.code;
+                appliedDiscountId = discountResult.id;
+
+                if (discountResult.isFreeShipping) {
+                    shippingCost = 0;
+                }
+            } else {
+                // B. Evaluación de Promociones Automáticas (Si no hay cupón manual o vino un AUTO- de la UI)
+                const autoEvaluation = await discountService.evaluateAutomaticDiscounts(
+                    subtotal,
+                    validationItems
+                );
+
+                if (autoEvaluation.appliedDiscount && autoEvaluation.discountAmount > 0) {
+                    discountAmount = autoEvaluation.discountAmount;
+                    appliedCode = `AUTO-${autoEvaluation.appliedDiscount.title}`;
+                    appliedDiscountId = autoEvaluation.appliedDiscount.id;
+
+                    if (autoEvaluation.appliedDiscount.type === 'FREE_SHIPPING') {
+                        shippingCost = 0;
+                    }
+                }
+            }
+
+            // Consumir/Reservar el límite del descuento atómicamente en MongoDB por su _id
+            if (appliedDiscountId) {
+                await discountService.consumeCouponById(appliedDiscountId, customerIdentifier, session);
+            }
+
+            // 1.4. Cálculo total financiero
+            const totalPrice = Math.max(0, subtotal + shippingCost - discountAmount);
+            const amountInCents = Math.round(totalPrice * 100);
+
+            let culqiOrderId: string | undefined = undefined;
+
+            // 1.5. Comunicación con Culqi Orders API
+            try {
+                const culqiResponse = await fetch("https://api.culqi.com/v2/orders", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${process.env.CULQI_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        amount: amountInCents,
+                        currency_code: dto.currency ?? "PEN",
+                        description: `Orden de compra ${orderNumber}`,
+                        order_number: orderNumber,
+                        expiration_date: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+                        client_details: {
+                            first_name: dto.customerProfile.nombre,
+                            last_name: dto.customerProfile.apellidos,
+                            email: dto.customerProfile.email,
+                            phone_number: dto.customerProfile.telefono
+                        },
+                        confirm: false,
+                    })
+                });
+
+                const culqiOrderData = (await culqiResponse.json()) as { id?: string };
+                if (culqiResponse.ok && culqiOrderData.id) {
+                    culqiOrderId = culqiOrderData.id;
+                }
+            } catch (error) {
+                console.error("❌ Error de comunicación con la API de Culqi:", error);
+            }
+
+            const estimatedDeliveryDate = new Date();
+            estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 3);
+
+            // 1.6. Persistir la Orden en MongoDB
+            const [order] = await Order.create([{
+                orderNumber,
+                culqiOrderId,
+                user: dto.userId ? new Types.ObjectId(dto.userId) : undefined,
+                customerProfile: dto.customerProfile,
+                items,
+                subtotal,
+                shippingCost,
+                discountId: appliedDiscountId ? new Types.ObjectId(appliedDiscountId) : undefined,
+                discountCode: appliedCode,
+                discountAmount,
+                totalPrice,
+                currency: dto.currency ?? 'PEN',
+                shippingAddress: dto.shippingAddress,
+                shippingMethod: dto.shippingMethod ?? 'Delivery Estándar',
+                estimatedDeliveryDate,
+                notes: dto.notes,
+                status: OrderStatus.AWAITING_PAYMENT,
+                statusHistory: [{
+                    status: OrderStatus.AWAITING_PAYMENT,
+                    changedAt: new Date(),
+                    actionBy: dto.userId ?? 'system_guest',
+                    reason: 'Orden inicializada en el checkout'
+                }],
+                deviceInfo: dto.deviceInfo
+            }], { session });
+
+            await session.commitTransaction();
+            session.endSession();
+
+            return order;
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        }
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. Obtener orden por ObjectId
+    // 2. Consultas de Órdenes
     // ─────────────────────────────────────────────────────────────────────────
     async getOrderById(orderId: string): Promise<IOrder | null> {
         return Order.findById(orderId).populate('user', 'nombre apellidos email telefono').lean();
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3. Obtener orden por número comercial (ORD-...)
-    // ─────────────────────────────────────────────────────────────────────────
     async getOrderByNumber(orderNumber: string): Promise<IOrder | null> {
         return Order.findOne({ orderNumber }).populate('user', 'nombre apellidos email telefono').lean();
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 4. Historial paginado de un usuario registrado
-    // ─────────────────────────────────────────────────────────────────────────
     async getOrdersByUser(userId: string, page = 1, limit = 10): Promise<{ orders: IOrder[]; total: number }> {
         const skip = (page - 1) * limit;
         const query = { user: new Types.ObjectId(userId) };
@@ -274,9 +307,6 @@ export const orderService = {
         return { orders, total };
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 5. Historial paginado de invitado por email
-    // ─────────────────────────────────────────────────────────────────────────
     async getOrdersByEmail(email: string, page = 1, limit = 10): Promise<{ orders: IOrder[]; total: number }> {
         const skip = (page - 1) * limit;
         const query = { 'customerProfile.email': email.toLowerCase() };
@@ -287,9 +317,6 @@ export const orderService = {
         return { orders, total };
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 6. Listado admin con filtros y rangos de fecha
-    // ─────────────────────────────────────────────────────────────────────────
     async getAllOrders(filters: OrderFilters): Promise<{ orders: IOrder[]; total: number }> {
         const { status, paymentStatus, email, userId, orderNumber, page = 1, limit = 20, from, to } = filters;
         const skip = (page - 1) * limit;
@@ -301,7 +328,6 @@ export const orderService = {
         if (userId) query.user = new Types.ObjectId(userId);
         if (orderNumber) query.orderNumber = { $regex: orderNumber, $options: 'i' };
 
-        // Aplicamos la conversión correcta ajustada a Perú UTC-5
         if (from || to) {
             query.createdAt = getPeruDateRange(from, to);
         }
@@ -314,10 +340,12 @@ export const orderService = {
         return { orders, total };
     },
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. Métricas y Analítica
+    // ─────────────────────────────────────────────────────────────────────────
     async getStats(filters: { from?: string; to?: string } = {}): Promise<OrderStats> {
         const matchStage: FilterQuery<IOrder> = {};
 
-        // Aplicamos la conversión correcta ajustada a Perú UTC-5
         if (filters.from || filters.to) {
             matchStage.createdAt = getPeruDateRange(filters.from, filters.to);
         }
@@ -383,7 +411,7 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. Actualizar estado logístico manual
+    // 4. Actualización de Estados Logísticos e Inventario
     // ─────────────────────────────────────────────────────────────────────────
     async updateOrderStatus(orderId: string, newStatus: OrderStatus, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
@@ -398,7 +426,7 @@ export const orderService = {
             }
 
             if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELED) {
-                throw new Error(`Operación denegada. La orden ya está en un estado terminal: ${order.status}`);
+                throw new Error(`Operación denegada. La orden se encuentra en estado terminal: ${order.status}`);
             }
 
             const yaTeniaStockDescontado = order.statusHistory.some(
@@ -476,7 +504,6 @@ export const orderService = {
             await session.commitTransaction();
             session.endSession();
 
-            // ── Flujo asíncrono seguro de correos ──
             const itemsList = order.items.map((item: any) => item.toObject());
             const shippingInfo = order.shippingAddress?.direccion ?? order.shippingMethod ?? 'Delivery';
 
@@ -522,9 +549,6 @@ export const orderService = {
         }
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 8. Asignar tracking de paquetería
-    // ─────────────────────────────────────────────────────────────────────────
     async assignTracking(orderId: string, trackingNumber: string, actionBy?: string): Promise<IOrder | null> {
         await Order.findByIdAndUpdate(orderId, { $set: { trackingNumber } });
 
@@ -532,13 +556,10 @@ export const orderService = {
             orderId,
             OrderStatus.SHIPPED,
             actionBy,
-            `Asignación automática de tracking por despacho de guía comercial: ${trackingNumber}`
+            `Asignación de guía de despacho: ${trackingNumber}`
         );
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 9. Actualizar estado de pago
-    // ─────────────────────────────────────────────────────────────────────────
     async updatePayment(
         orderId: string,
         paymentData: { provider: string; method?: string; transactionId: string; status: PaymentStatus; rawResponse?: unknown }
@@ -577,14 +598,14 @@ export const orderService = {
                 totalPrice: order.totalPrice,
                 items: itemsList,
                 trackingNumber: order.trackingNumber
-            }).catch(err => console.error("Error enviando email por pago:", err));
+            }).catch(err => console.error("Error enviando email por actualización de pago:", err));
         }
 
         return order;
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 10. Cancelación atómica con restitución condicional de stock
+    // 5. Cancelación y Reembolso (Restitución de Cupones por _id e Inventario)
     // ─────────────────────────────────────────────────────────────────────────
     async cancelOrder(orderId: string, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
@@ -592,7 +613,7 @@ export const orderService = {
 
         try {
             const executor = actionBy ?? 'system_request';
-            const cancelReasonStr = reason ?? 'Cancelación solicitada por el usuario o administración';
+            const cancelReasonStr = reason ?? 'Cancelación solicitada por usuario o administración';
 
             const order = await Order.findOne({
                 _id: orderId,
@@ -600,7 +621,7 @@ export const orderService = {
             }).session(session);
 
             if (!order) {
-                throw new Error('La orden no se puede cancelar en su estado logístico actual o ya se encuentra cerrada.');
+                throw new Error('La orden no se puede cancelar en su estado actual o ya está cerrada.');
             }
 
             const teniaStockDescontado = order.statusHistory.some(
@@ -609,6 +630,7 @@ export const orderService = {
                     h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
             );
 
+            // 5.1. Restituir inventario si ya se había procesado el pago
             if (teniaStockDescontado) {
                 for (const item of order.items) {
                     const productId = (item.productId as any)?._id ?? item.productId;
@@ -630,6 +652,12 @@ export const orderService = {
                         ).session(session);
                     }
                 }
+            }
+
+            // 5.2. Restituir el límite de uso del cupón usando su _id de MongoDB
+            if (order.discountId) {
+                const customerId = order.user?.toString() || order.customerProfile.email.toLowerCase();
+                await discountService.releaseCouponById(order.discountId.toString(), customerId, session);
             }
 
             order.status = OrderStatus.CANCELED;
@@ -666,9 +694,6 @@ export const orderService = {
         }
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 11. Reembolso con Transacción Atómica y Restitución de Stock
-    // ─────────────────────────────────────────────────────────────────────────
     async refundOrder(orderId: string, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -682,11 +707,11 @@ export const orderService = {
             }
 
             if (order.payment?.status !== PaymentStatus.APPROVED) {
-                throw new Error('Solo se pueden reembolsar órdenes que tengan un pago previamente approved.');
+                throw new Error('Solo se pueden reembolsar órdenes con pago aprobado.');
             }
 
             if (order.status === OrderStatus.DELIVERED) {
-                throw new Error('No se puede reembolsar automáticamente una orden ya entregada.');
+                throw new Error('No se puede reembolsar automáticamente una orden entregada.');
             }
 
             if (order.status === OrderStatus.CANCELED) {
@@ -696,6 +721,7 @@ export const orderService = {
             const executor = actionBy ?? 'admin_system';
             const refundReason = reason ?? 'Reembolso manual aprobado por administración';
 
+            // Restitución de Stock
             for (const item of order.items) {
                 const productId = (item.productId as any)?._id ?? item.productId;
                 if (item.variantId) {
@@ -717,6 +743,12 @@ export const orderService = {
                 }
             }
 
+            // Restitución de Cupón por _id
+            if (order.discountId) {
+                const customerId = order.user?.toString() || order.customerProfile.email.toLowerCase();
+                await discountService.releaseCouponById(order.discountId.toString(), customerId, session);
+            }
+
             order.status = OrderStatus.CANCELED;
             if (order.payment) order.payment.status = PaymentStatus.REFUNDED;
             order.canceledAt = new Date();
@@ -726,7 +758,7 @@ export const orderService = {
                 status: OrderStatus.CANCELED,
                 changedAt: new Date(),
                 actionBy: executor,
-                reason: `Orden revertida por reembolso financiero. Motivo: ${refundReason}`
+                reason: `Orden revertida por reembolso. Motivo: ${refundReason}`
             });
 
             await order.save({ session });
@@ -753,29 +785,20 @@ export const orderService = {
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 12. Actualizar nota interna
+    // 6. Utilidades y Mantenimiento
     // ─────────────────────────────────────────────────────────────────────────
     async updateNote(orderId: string, notes: string): Promise<IOrder | null> {
         return Order.findByIdAndUpdate(orderId, { $set: { notes } }, { new: true });
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 13. Obtener por transactionId
-    // ─────────────────────────────────────────────────────────────────────────
     async getOrderByTransactionId(transactionId: string): Promise<IOrder | null> {
         return Order.findOne({ 'payment.transactionId': transactionId });
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 14. Estado ligero para polling de pasarela
-    // ─────────────────────────────────────────────────────────────────────────
     async getOrderStatusByNumber(orderNumber: string): Promise<Pick<IOrder, 'status' | 'payment'> | null> {
         return Order.findOne({ orderNumber }).select('status payment.status').lean();
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 15. Limpieza de órdenes expiradas
-    // ─────────────────────────────────────────────────────────────────────────
     async cancelExpiredOrders(hoursThreshold = 24): Promise<{ canceledCount: number }> {
         const thresholdDate = new Date();
         thresholdDate.setHours(thresholdDate.getHours() - hoursThreshold);
@@ -783,13 +806,21 @@ export const orderService = {
         const expiredOrders = await Order.find({
             status: OrderStatus.AWAITING_PAYMENT,
             createdAt: { $lt: thresholdDate }
-        }).select('_id orderNumber customerProfile');
+        }).select('_id orderNumber discountId user customerProfile');
 
         if (expiredOrders.length === 0) {
             return { canceledCount: 0 };
         }
 
         const expiredIds = expiredOrders.map(o => o._id);
+
+        // Liberar cupones por _id de las órdenes expiradas por inactividad
+        for (const expOrder of expiredOrders) {
+            if (expOrder.discountId) {
+                const customerId = expOrder.user?.toString() || expOrder.customerProfile.email.toLowerCase();
+                await discountService.releaseCouponById(expOrder.discountId.toString(), customerId).catch(() => null);
+            }
+        }
 
         const result = await Order.updateMany(
             { _id: { $in: expiredIds } },
@@ -798,32 +829,27 @@ export const orderService = {
                     status: OrderStatus.CANCELED,
                     canceledAt: new Date(),
                     canceledBy: 'system_auto_expiration',
-                    cancelReason: `Expiración automática: Se superó la ventana de pago de ${hoursThreshold} horas.`
+                    cancelReason: `Expiración automática por superar la ventana de pago de ${hoursThreshold}h.`
                 },
                 $push: {
                     statusHistory: {
                         status: OrderStatus.CANCELED,
                         changedAt: new Date(),
                         actionBy: 'system_cron',
-                        reason: `Orden cancelada automáticamente por falta de pago pasadas ${hoursThreshold}h.`
+                        reason: `Cancelación automática por falta de pago.`
                     }
                 }
             }
         );
 
-        console.log(`🧹 [Cron Order Cleanup] Se cancelaron automáticamente ${result.modifiedCount} órdenes no pagadas.`);
-
+        console.log(`🧹 [Cron Order Cleanup] Canceladas ${result.modifiedCount} órdenes vencidas.`);
         return { canceledCount: result.modifiedCount };
     },
 
-    // Obtención de órdenes para emisión masiva de documentos PDF
     async getOrdersByIds(orderIds: string[]): Promise<IOrder[]> {
         return Order.find({ _id: { $in: orderIds } }).sort({ createdAt: -1 });
     },
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 16. Reenviar manualmente correo de confirmación de pedido al cliente
-    // ─────────────────────────────────────────────────────────────────────────
     async resendOrderConfirmationEmail(orderId: string): Promise<{ success: boolean; message: string }> {
         const order = await Order.findById(orderId).lean();
         if (!order) {
@@ -854,26 +880,21 @@ export const orderService = {
         });
 
         if (!result.success) {
-            throw new Error('No se pudo enviar el correo de confirmación. Revisa la configuración del proveedor de emails.');
+            throw new Error('No se pudo enviar el correo de confirmación. Verifica la configuración de correo.');
         }
 
         return { success: true, message: 'Correo de confirmación reenviado con éxito.' };
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 17. Generar Boleta Electrónica en SUNAT mediante Nubefact
+    // 7. Facturación Electrónica SUNAT (Nubefact)
     // ─────────────────────────────────────────────────────────────────────────
-    // File: backend/src/modules/order/order.service.ts (Adiciones clave para el servicio)
-
-
-    // Dentro del objeto orderService:
-
     async generateBoleta(orderId: string, actionBy?: string): Promise<IOrder> {
         const order = await Order.findById(orderId);
         if (!order) throw new Error('Orden no encontrada.');
 
         if (order.invoice?.numero) {
-            throw new Error(`La orden ya tiene la Boleta ${order.invoice.serie}-${order.invoice.numero} emitida.`);
+            throw new Error(`La orden ya cuenta con la Boleta ${order.invoice.serie}-${order.invoice.numero} emitida.`);
         }
 
         const nubefactRes = await sendOrderToNubefact(order);
@@ -907,7 +928,7 @@ export const orderService = {
         if (!order) throw new Error('Orden no encontrada.');
 
         if (order.creditNote?.numero) {
-            throw new Error(`Ya existe una Nota de Crédito emitida para esta orden: ${order.creditNote.serie}-${order.creditNote.numero}`);
+            throw new Error(`Nota de crédito previamente emitida: ${order.creditNote.serie}-${order.creditNote.numero}`);
         }
 
         const ncRes = await sendCreditNoteToNubefact(order, reason);
@@ -929,7 +950,7 @@ export const orderService = {
             status: order.status,
             changedAt: new Date(),
             actionBy: actionBy ?? 'admin',
-            reason: `Emisión de Nota de Crédito por Reembolso/Anulación (${ncRes.serie}-${ncRes.numero})`
+            reason: `Emisión de Nota de Crédito (${ncRes.serie}-${ncRes.numero})`
         });
 
         await order.save();

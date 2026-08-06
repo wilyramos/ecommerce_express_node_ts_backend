@@ -1,9 +1,14 @@
-// File: backend/src/server.ts
-
 import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
 import dotenv from 'dotenv'
+import cors from 'cors'
+
+// Middleware y utilidades
+import { globalErrorHandler } from './middleware/error.middleware'
+import { AppError } from './utils/AppError'
+
+// Rutas v1
 import authRouter from './routes/authRouter'
 import productRouter from './routes/productRouter'
 import categoryRouter from './routes/categoryRouter'
@@ -15,13 +20,9 @@ import webhookRouter from './routes/webhookRouter'
 import userRouter from './routes/userRouter'
 import purchaseRouter from './routes/purchaseRouter'
 import brandRouter from './routes/brandRouter'
-
-// Cors
-import cors from 'cors'
-import { globalErrorHandler } from './middleware/error.middleware'
 import lineRouter from './routes/line.router'
 
-// v2
+// Rutas v2
 import productRouterV2 from './modules/product/product.routes'
 import saleRouterV2 from './modules/sale/sale.routes'
 import cashRouter from './modules/cash/cash.routes'
@@ -34,18 +35,14 @@ import advertisementRouter from './modules/advertisement/advertisement.routes'
 import pageRouter from './modules/page/page.routes'
 import iconRouter from './modules/icon/icon.routes'
 import sliderBannerRouter from './modules/sliderbanner/sliderbanner.routes'
-
-import setupSwagger from './config/swagger.config'
 import collectionRouter from './modules/collection/collection.router'
 import comparisonRouter from './modules/comparison/comparison.router'
-import mediaRouter from './modules/media/media.routes';
-import claimRouter from './modules/claim/claim.routes';
+import mediaRouter from './modules/media/media.routes'
+import claimRouter from './modules/claim/claim.routes'
+import inventoryRouter from './modules/inventory/inventory.router'
+import discountRouter from './modules/discount/discount.router'
 
-// Importación del Módulo de Inventario
-import inventoryRouter from './modules/inventory/inventory.router';
-import discountRouter from './modules/discount/discount.router';
-
-// Importación del Seeder y del Cron Job
+import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
 import { initOrderCleanupJob } from './jobs/orderCleanup.job'
 
@@ -53,14 +50,11 @@ dotenv.config()
 
 const app = express()
 
-// Ejecución controlada y asíncrona tras conectar con éxito a la Base de Datos
 connectDB()
     .then(async () => {
         try {
             await seedSystemCollections();
             console.log('Colecciones del sistema verificadas/inicializadas correctamente.');
-            
-            // ── INICIALIZACIÓN DEL CRON JOB DE LIMPIEZA ──────────────────────
             initOrderCleanupJob();
         } catch (seedError) {
             console.error('Error ejecutando tareas de inicio (seeds/cron):', seedError);
@@ -70,23 +64,18 @@ connectDB()
         console.error('Error crítico en la cadena de conexión:', dbError);
     });
 
-// ════════════════════════════════════════════════════════════════
-// ════════════════════════════════════════════════════════════════
 app.use(morgan('dev'))
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }))
 
-// CONFIGURACIÓN DE CORS REFORZADA CON TU FRONTEND_URL
 const allowedOrigins = [
-    process.env.FRONTEND_URL,          
-    'http://localhost:3000'            
+    process.env.FRONTEND_URL,
+    'http://localhost:3000'
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true);
-
         if (allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -98,9 +87,7 @@ app.use(cors({
     credentials: true
 }))
 
-// ════════════════════════════════════════════════════════════════
-// 2. WEBHOOKS Y ENRUTADORES ASÍNCRONOS
-// ════════════════════════════════════════════════════════════════
+// Webhooks
 app.use('/api/webhooks/v2', webhookRouterV2)
 app.use('/api/webhooks', webhookRouter)
 
@@ -110,9 +97,7 @@ app.get('/', (req, res) => {
 
 setupSwagger(app)
 
-// ════════════════════════════════════════════════════════════════
-// 3. RUTAS DE MÓDULOS VERSION 2
-// ════════════════════════════════════════════════════════════════
+// Rutas V2
 app.use('/api/products/v2', productRouterV2)
 app.use('/api/sales/v2', saleRouterV2)
 app.use('/api/cash/v2', cashRouter)
@@ -131,9 +116,7 @@ app.use('/api/advertisements', advertisementRouter)
 app.use('/api/pages', pageRouter)
 app.use('/api/icons', iconRouter)
 
-// ════════════════════════════════════════════════════════════════
-// 4. RUTAS VERSION 1 
-// ════════════════════════════════════════════════════════════════
+// Rutas V1
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
 app.use('/api/category', categoryRouter)
@@ -146,7 +129,12 @@ app.use('/api/sales', saleRouter)
 app.use('/api/lines', lineRouter)
 app.use('/api/purchases', purchaseRouter)
 
-// Middleware global para captura de errores
+// Captura de rutas no encontradas (404)
+app.use((req, res, next) => {
+    next(new AppError(`No se encontró la ruta ${req.originalUrl} en este servidor.`, 404));
+});
+
+// Middleware global de errores
 app.use(globalErrorHandler);
 
-export default app
+export default app;

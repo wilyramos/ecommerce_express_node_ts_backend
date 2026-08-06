@@ -1,3 +1,5 @@
+// File: backend/src/modules/product/product.service.ts
+
 import Product from "../../models/Product";
 import { FilterQuery } from "mongoose";
 
@@ -116,8 +118,6 @@ export class ProductService {
     }
 
     async getProductsByIds(ids: string[]) {
-
-
         const products = await Product.find({ _id: { $in: ids } })
             .populate('categoria', 'nombre')
             .populate('brand', 'nombre')
@@ -148,29 +148,55 @@ export class ProductService {
             .populate('categoria', 'nombre')
             .populate('brand', 'nombre')
             .lean();
-
     }
 
     /**
- * Optimizado para IA: Devuelve solo los campos esenciales
- * para que el chatbot pueda responder consultas de inventario o precio.
- */
-async getProductsForAI(query: string) {
-    const filter: FilterQuery<any> = { isActive: true, deletedAt: null };
+     * Optimizado para IA: Devuelve solo los campos esenciales
+     * para que el chatbot pueda responder consultas de inventario o precio.
+     */
+    async getProductsForAI(query: string) {
+        const filter: FilterQuery<any> = { isActive: true, deletedAt: null };
 
-    if (query) {
-        filter.$or = [
-            { nombre: { $regex: query, $options: 'i' } },
-            { sku: { $regex: query, $options: 'i' } },
-            { 'variants.nombre': { $regex: query, $options: 'i' } }
-        ];
+        if (query) {
+            filter.$or = [
+                { nombre: { $regex: query, $options: 'i' } },
+                { sku: { $regex: query, $options: 'i' } },
+                { 'variants.nombre': { $regex: query, $options: 'i' } }
+            ];
+        }
+
+        // Proyección: Solo traemos lo que el usuario necesita ver
+        return await Product.find(filter)
+            .select('nombre precio stock variants.nombre variants.precio variants.stock categoria')
+            .populate('categoria', 'nombre')
+            .limit(10) // Limitamos a 10 para no sobrecargar el contexto de la IA
+            .lean();
     }
 
-    // Proyección: Solo traemos lo que el usuario necesita ver
-    return await Product.find(filter)
-        .select('nombre precio stock variants.nombre variants.precio variants.stock categoria')
-        .populate('categoria', 'nombre')
-        .limit(10) // Limitamos a 10 para no sobrecargar el contexto de la IA
+    /**
+     * Obtiene metadatos ligeros de un producto para evaluar promociones automáticas
+     * sin exponer Mongoose a otros dominios.
+     */
+    async getProductMetadataForDiscount(productId: string) {
+        const product = await Product.findById(productId).select('categoria brand collections').lean();
+        if (!product) return null;
+
+        return {
+            _id: product._id.toString(),
+            categoria: product.categoria ? product.categoria.toString() : undefined,
+            brand: product.brand ? product.brand.toString() : undefined,
+            collections: product.collections ? product.collections.map((c) => c.toString()) : []
+        };
+    }
+
+    /**
+ * Obtiene información ligera (nombre, slug, imágenes) de productos por sus IDs
+ */
+async getLightProductsByIds(ids: string[]) {
+    return await Product.find({ _id: { $in: ids }, isActive: true })
+        .select('nombre slug imagenes precio')
         .lean();
 }
 }
+
+export const productService = new ProductService();

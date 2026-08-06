@@ -1,3 +1,5 @@
+//File: backend/src/modules/collection/collection.model.ts
+
 import mongoose, { Schema, Document } from 'mongoose';
 
 export const COLLECTION_TYPES = [

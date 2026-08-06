@@ -1,62 +1,86 @@
 // File: backend/src/modules/discount/discount.controller.ts
-import { Request, Response, NextFunction } from 'express';
+
+import { Request, Response } from 'express';
 import { discountService } from './discount.service';
 import { ApiResponse } from '../../utils/ApiResponse';
+import { catchAsync } from '../../utils/catchAsync';
 
 export const discountController = {
-    // ── PUBLIC ──────────────────────────────────────────
-    async validateCoupon(req: Request, res: Response, next: NextFunction): Promise<void> {
-        try {
-            const { code, subtotal, cartItems, userId } = req.body;
-            
-            // userId puede ser el correo (si es invitado) o el MongoID si está logueado
-            const result = await discountService.validateAndCalculateDiscount(code, Number(subtotal), cartItems, userId);
-            
-            ApiResponse.success(res, 200, 'Cupón válido y calculado', result);
-        } catch (error) {
-            next(error);
-        }
-    },
+    // ── EVALUACIÓN AUTOMÁTICA EN CARRITO ──────────────────
+    evaluateAutomatic: catchAsync(async (req: Request, res: Response) => {
+        const { subtotal, cartItems } = req.body;
+        const result = await discountService.evaluateAutomaticDiscounts(
+            Number(subtotal),
+            cartItems
+        );
+        ApiResponse.success(
+            res,
+            200,
+            'Evaluación de promociones automáticas completada',
+            result
+        );
+    }),
 
-    // ── ADMIN ───────────────────────────────────────────
-    async create(req: Request, res: Response, next: NextFunction): Promise<void> {
-        try {
-            const discount = await discountService.createDiscount(req.body);
-            ApiResponse.success(res, 201, 'Cupón creado exitosamente', discount);
-        } catch (error) {
-            next(error);
-        }
-    },
+    // ── PROMOCIONES AUTOMÁTICAS POR PRODUCTO ──────────────
+    getProductAutomaticDiscounts: catchAsync(async (req: Request, res: Response) => {
+        const { productId } = req.params;
+        const discounts = await discountService.getAutomaticDiscountsForProduct(productId);
+        ApiResponse.success(res, 200, 'Promociones automáticas obtenidas', discounts);
+    }),
 
-    async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
-        try {
-            const page = Number(req.query.page) || 1;
-            const limit = Number(req.query.limit) || 10;
-            const search = req.query.search as string || '';
+    // ── VALIDACIÓN MANUAL POR CÓDIGO (CHECKOUT) ─────────────
+    validateCoupon: catchAsync(async (req: Request, res: Response) => {
+        const { code, subtotal, cartItems, userId } = req.body;
+        const result = await discountService.validateAndCalculateDiscount(
+            code,
+            Number(subtotal),
+            cartItems,
+            userId
+        );
+        ApiResponse.success(res, 200, 'Cupón válido y calculated', result);
+    }),
 
-            const { data, total } = await discountService.getAllDiscounts(page, limit, search);
+    // ── CRUD ADMINISTRATIVO ─────────────────────────────
+    create: catchAsync(async (req: Request, res: Response) => {
+        console.log('req.body', req.body);
+        const discount = await discountService.createDiscount(req.body);
+        ApiResponse.success(res, 201, 'Descuento o cupón creado exitosamente', discount);
+    }),
 
-            ApiResponse.paginated(res, data, total, page, limit, 200, 'Cupones obtenidos');
-        } catch (error) {
-            next(error);
-        }
-    },
+    // En backend/src/modules/discount/discount.controller.ts
 
-    async toggleStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
-        try {
-            const discount = await discountService.toggleDiscountStatus(req.params.id);
-            ApiResponse.success(res, 200, `Cupón ${discount.isActive ? 'activado' : 'desactivado'} correctamente`, discount);
-        } catch (error) {
-            next(error);
-        }
-    },
+    getById: catchAsync(async (req: Request, res: Response) => {
+        const discount = await discountService.getDiscountById(req.params.id);
+        ApiResponse.success(res, 200, 'Detalle del descuento obtenido correctamente', discount);
+    }),
 
-    async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
-        try {
-            await discountService.deleteDiscount(req.params.id);
-            ApiResponse.success(res, 200, 'Cupón eliminado permanentemente');
-        } catch (error) {
-            next(error);
-        }
-    }
+    getAll: catchAsync(async (req: Request, res: Response) => {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const search = (req.query.search as string) || '';
+
+        const { data, total } = await discountService.getAllDiscounts(page, limit, search);
+        ApiResponse.paginated(res, data, total, page, limit, 200, 'Cupones y promociones obtenidos');
+    }),
+
+    toggleStatus: catchAsync(async (req: Request, res: Response) => {
+        const discount = await discountService.toggleDiscountStatus(req.params.id);
+        ApiResponse.success(
+            res,
+            200,
+            `Promoción ${discount.isActive ? 'activada' : 'desactivada'} correctamente`,
+            discount
+        );
+    }),
+
+    delete: catchAsync(async (req: Request, res: Response) => {
+        await discountService.deleteDiscount(req.params.id);
+        ApiResponse.success(res, 200, 'Descuento eliminado permanentemente');
+    }),
+
+    // ── REPORTE Y ANALÍTICA ──────────────────────────────
+    getAnalytics: catchAsync(async (req: Request, res: Response) => {
+        const analytics = await discountService.getDiscountAnalytics(req.params.code);
+        ApiResponse.success(res, 200, 'Reporte de auditoría generado correctamente', analytics);
+    }),
 };

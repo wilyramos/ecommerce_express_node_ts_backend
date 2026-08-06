@@ -94,9 +94,9 @@ export interface IOrder extends Document {
     subtotal: number;
     shippingCost: number;
 
-
-    discountCode?: string;       // El código tipeado por el cliente
-    discountAmount?: number;     // Cuánto descontó (en la misma moneda)
+    discountId?: Types.ObjectId;     // Referencia ObjectId al cupón o promo consumida
+    discountCode?: string;           // Código o nombre comercial para visualización
+    discountAmount?: number;         // Monto total descontado
 
     totalPrice: number;
     currency: string;
@@ -193,6 +193,7 @@ const orderSchema = new Schema<IOrder>({
     subtotal: { type: Number, required: true },
     shippingCost: { type: Number, default: 0 },
 
+    discountId: { type: Schema.Types.ObjectId, ref: 'Discount', required: false },
     discountCode: { type: String, trim: true, uppercase: true },
     discountAmount: { type: Number, default: 0 },
 
@@ -217,6 +218,7 @@ const orderSchema = new Schema<IOrder>({
 
 orderSchema.index({ user: 1 }, { sparse: true });
 orderSchema.index({ status: 1 });
+orderSchema.index({ discountId: 1 }, { sparse: true });
 orderSchema.index({ 'payment.transactionId': 1 }, { sparse: true });
 orderSchema.index({ trackingNumber: 1 }, { sparse: true });
 orderSchema.index({ 'customerProfile.email': 1 });
