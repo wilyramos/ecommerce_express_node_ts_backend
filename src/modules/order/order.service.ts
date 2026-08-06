@@ -289,6 +289,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 2. Consultas de Órdenes
     // ─────────────────────────────────────────────────────────────────────────
+
     async getOrderById(orderId: string): Promise<IOrder | null> {
         return Order.findById(orderId).populate('user', 'nombre apellidos email telefono').lean();
     },
@@ -343,6 +344,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 3. Métricas y Analítica
     // ─────────────────────────────────────────────────────────────────────────
+
     async getStats(filters: { from?: string; to?: string } = {}): Promise<OrderStats> {
         const matchStage: FilterQuery<IOrder> = {};
 
@@ -413,6 +415,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 4. Actualización de Estados Logísticos e Inventario
     // ─────────────────────────────────────────────────────────────────────────
+
     async updateOrderStatus(orderId: string, newStatus: OrderStatus, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -429,11 +432,11 @@ export const orderService = {
                 throw new Error(`Operación denegada. La orden se encuentra en estado terminal: ${order.status}`);
             }
 
+            // CORRECCIÓN CLAVE: PAID_BUT_OUT_OF_STOCK NO descuenta stock en la nueva lógica de deductStock
             const yaTeniaStockDescontado = order.statusHistory.some(
                 (h) => h.status === OrderStatus.PROCESSING ||
                     h.status === OrderStatus.SHIPPED ||
-                    h.status === OrderStatus.DELIVERED ||
-                    h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
+                    h.status === OrderStatus.DELIVERED
             );
 
             const nuevoEstadoRequiereStock =
@@ -452,7 +455,7 @@ export const orderService = {
                         const variant = prodData?.variants?.find(v => v._id?.toString() === item.variantId?.toString());
 
                         if (!variant || variant.stock < item.quantity) {
-                            throw new Error(`Stock insuficiente en almacén para la variante de: ${item.nombre}`);
+                            throw new Error(`Stock insuficiente en almacén para la variante de: ${item.nombre}. Agregue stock primero.`);
                         }
 
                         await Product.updateOne(
@@ -468,7 +471,7 @@ export const orderService = {
                     } else {
                         const prodData = await Product.findById(productId).session(session);
                         if (!prodData || (prodData.stock ?? 0) < item.quantity) {
-                            throw new Error(`Stock insuficiente en almacén para el producto: ${item.nombre}`);
+                            throw new Error(`Stock insuficiente en almacén para el producto: ${item.nombre}. Agregue stock primero.`);
                         }
 
                         await Product.updateOne(
@@ -478,18 +481,15 @@ export const orderService = {
                     }
                 }
 
-                if (!order.payment) {
+                if (!order.payment || order.payment.status !== PaymentStatus.APPROVED) {
                     order.payment = {
                         provider: 'manual_admin',
                         method: 'offline_verificado',
                         status: PaymentStatus.APPROVED,
                         rawResponse: { aprobadoPor: actionBy, motivo: reason }
                     };
-                } else {
-                    order.payment.status = PaymentStatus.APPROVED;
+                    fueAprobadoManualmenteAhora = true;
                 }
-
-                fueAprobadoManualmenteAhora = true;
             }
 
             order.status = newStatus;
@@ -607,6 +607,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 5. Cancelación y Reembolso (Restitución de Cupones por _id e Inventario)
     // ─────────────────────────────────────────────────────────────────────────
+
     async cancelOrder(orderId: string, actionBy?: string, reason?: string): Promise<IOrder | null> {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -624,13 +625,14 @@ export const orderService = {
                 throw new Error('La orden no se puede cancelar en su estado actual o ya está cerrada.');
             }
 
+            // CORRECCIÓN: Evitar duplicar stock si la orden falló en PAID_BUT_OUT_OF_STOCK
             const teniaStockDescontado = order.statusHistory.some(
                 (h) => h.status === OrderStatus.PROCESSING ||
                     h.status === OrderStatus.SHIPPED ||
-                    h.status === OrderStatus.PAID_BUT_OUT_OF_STOCK
+                    h.status === OrderStatus.DELIVERED
             );
 
-            // 5.1. Restituir inventario si ya se había procesado el pago
+            // 5.1. Restituir inventario SOLO si realmente se descontó
             if (teniaStockDescontado) {
                 for (const item of order.items) {
                     const productId = (item.productId as any)?._id ?? item.productId;
@@ -721,25 +723,34 @@ export const orderService = {
             const executor = actionBy ?? 'admin_system';
             const refundReason = reason ?? 'Reembolso manual aprobado por administración';
 
-            // Restitución de Stock
-            for (const item of order.items) {
-                const productId = (item.productId as any)?._id ?? item.productId;
-                if (item.variantId) {
-                    await Product.updateOne(
-                        { _id: productId, 'variants._id': item.variantId },
-                        { $inc: { 'variants.$.stock': item.quantity } }
-                    ).session(session);
+            // CORRECCIÓN: Evitar duplicar stock si la orden se cobró pero no tenía stock
+            const teniaStockDescontado = order.statusHistory.some(
+                (h) => h.status === OrderStatus.PROCESSING ||
+                    h.status === OrderStatus.SHIPPED ||
+                    h.status === OrderStatus.DELIVERED
+            );
 
-                    const updatedProd = await Product.findById(productId).session(session);
-                    if (updatedProd && updatedProd.variants) {
-                        updatedProd.stock = updatedProd.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
-                        await updatedProd.save({ session });
+            // Restitución de Stock SOLO si realmente fue descontado
+            if (teniaStockDescontado) {
+                for (const item of order.items) {
+                    const productId = (item.productId as any)?._id ?? item.productId;
+                    if (item.variantId) {
+                        await Product.updateOne(
+                            { _id: productId, 'variants._id': item.variantId },
+                            { $inc: { 'variants.$.stock': item.quantity } }
+                        ).session(session);
+
+                        const updatedProd = await Product.findById(productId).session(session);
+                        if (updatedProd && updatedProd.variants) {
+                            updatedProd.stock = updatedProd.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+                            await updatedProd.save({ session });
+                        }
+                    } else {
+                        await Product.updateOne(
+                            { _id: productId },
+                            { $inc: { stock: item.quantity } }
+                        ).session(session);
                     }
-                } else {
-                    await Product.updateOne(
-                        { _id: productId },
-                        { $inc: { stock: item.quantity } }
-                    ).session(session);
                 }
             }
 
@@ -787,6 +798,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 6. Utilidades y Mantenimiento
     // ─────────────────────────────────────────────────────────────────────────
+
     async updateNote(orderId: string, notes: string): Promise<IOrder | null> {
         return Order.findByIdAndUpdate(orderId, { $set: { notes } }, { new: true });
     },
@@ -889,6 +901,7 @@ export const orderService = {
     // ─────────────────────────────────────────────────────────────────────────
     // 7. Facturación Electrónica SUNAT (Nubefact)
     // ─────────────────────────────────────────────────────────────────────────
+
     async generateBoleta(orderId: string, actionBy?: string): Promise<IOrder> {
         const order = await Order.findById(orderId);
         if (!order) throw new Error('Orden no encontrada.');

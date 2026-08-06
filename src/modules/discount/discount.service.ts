@@ -3,7 +3,6 @@
 import { ClientSession, FilterQuery } from 'mongoose';
 import { DiscountType, DiscountAppliesVia, DiscountTarget, IDiscount } from './discount.model';
 import Order from '../../models/Order';
-import Product from '../../models/Product';
 import { AppError } from '../../utils/AppError';
 import { getDiscountStrategy } from './strategies/discount-strategy.factory';
 import { IDiscountRepository } from './repositories/discount.repository.interface';
@@ -28,47 +27,38 @@ export class DiscountService {
         subtotal: number,
         cartItems: ICartItemValidation[]
     ) {
+        if (!cartItems || cartItems.length === 0 || subtotal <= 0) {
+            return { appliedDiscount: null, discountAmount: 0, newTotal: subtotal, itemDiscounts: [] };
+        }
+
         const autoDiscounts = await this.discountRepository.findActiveAutomaticDiscounts();
         if (autoDiscounts.length === 0) {
             return { appliedDiscount: null, discountAmount: 0, newTotal: subtotal, itemDiscounts: [] };
         }
 
-        // Obtener metadatos de los productos en el carrito utilizando las propiedades reales de IProduct
-        const dbProducts = await Product.find({
-            _id: { $in: cartItems.map((i) => i.productId) }
-        }).select('precio precioComparativo').lean();
-
         let bestDiscountAmount = 0;
         let bestDiscount: IDiscount | null = null;
+        const now = new Date();
 
         for (const discount of autoDiscounts) {
             try {
-                // Validación 1: Monto Mínimo de Compra
+                // Validaciones estáticas de tiempo y capacidad
+                if (now < discount.startDate) continue;
+                if (discount.endDate && now > discount.endDate) continue;
                 if (subtotal < discount.minPurchaseAmount) continue;
-
-                // Validación 2: Límite de Usos Globales
                 if (discount.usageLimitTotal && discount.currentUsageCount >= discount.usageLimitTotal) continue;
 
-                // Validación 3: Excluir ítems que ya cuentan con oferta de precio comparativo (precioComparativo > precio)
-                const validCartItems = cartItems.filter((item) => {
-                    const prod = dbProducts.find((p) => p._id.toString() === item.productId);
-                    if (prod && prod.precioComparativo && prod.precio && prod.precioComparativo > prod.precio) {
-                        return false;
-                    }
-                    return true;
-                });
-
-                if (validCartItems.length === 0) continue;
-
+                // Todos los productos son elegibles para evaluación (sin excluir los que tienen precioComparativo)
                 const strategy = getDiscountStrategy(discount.type, discount.target);
-                const calculatedAmount = await strategy.calculate(discount, subtotal, validCartItems);
+                const calculatedAmount = await strategy.calculate(discount, subtotal, cartItems);
 
-                // Algoritmo "Best-Discount Win": Seleccionar la promoción que proporcione el mayor ahorro
+                // Algoritmo "Best-Discount Win"
                 if (calculatedAmount > bestDiscountAmount) {
                     bestDiscountAmount = calculatedAmount;
                     bestDiscount = discount;
                 }
             } catch {
+                // Falla silenciosa esperada (ej: no se cumplen las unidades mínimas para el BXGY)
                 continue;
             }
         }
@@ -77,23 +67,59 @@ export class DiscountService {
             return { appliedDiscount: null, discountAmount: 0, newTotal: subtotal, itemDiscounts: [] };
         }
 
-        // Desglose por ítem específico si la promoción es de tipo BUY_X_GET_Y
-        const itemDiscounts = cartItems.map((item) => {
-            let discountForItem = 0;
-            if (bestDiscount?.type === DiscountType.BUY_X_GET_Y && bestDiscount.bxgyConfig) {
-                const config = bestDiscount.bxgyConfig;
-                const isTargetGift = !config.getProducts || config.getProducts.length === 0
-                    ? true
-                    : config.getProducts.some((gp) => gp.toString() === item.productId);
+        // Distribución del descuento en los ítems (Para reflejo visual en UI)
+        const discountMap = new Map<string, number>();
+        let remainingDiscount = bestDiscountAmount;
 
-                if (isTargetGift) {
-                    discountForItem = Math.min(item.price * item.quantity, bestDiscountAmount);
+        // Si es un descuento general (Porcentaje o Monto Fijo sobre el total) se distribuye proporcionalmente
+        if (bestDiscount.type === DiscountType.PERCENTAGE || bestDiscount.type === DiscountType.FIXED_AMOUNT) {
+            cartItems.forEach((item, index) => {
+                const key = `${item.productId}-${item.variantId || 'base'}`;
+                const itemTotal = item.price * item.quantity;
+                
+                // Si es el último ítem, se le asigna el remanente para evitar pérdida de centavos por redondeo
+                let discountForItem = 0;
+                if (index === cartItems.length - 1) {
+                    discountForItem = Math.min(remainingDiscount, itemTotal);
+                } else {
+                    const proportion = itemTotal / subtotal;
+                    discountForItem = Math.min(Number((bestDiscountAmount * proportion).toFixed(2)), itemTotal);
                 }
-            }
+                
+                remainingDiscount -= discountForItem;
+                discountMap.set(key, discountForItem);
+            });
+        } 
+        // Si es BXGY, se usa distribución Greedy (los productos regalados son los más baratos de la lista de elegibles)
+        else {
+            const sortedItems = [...cartItems].sort((a, b) => a.price - b.price);
+            
+            sortedItems.forEach((item) => {
+                const key = `${item.productId}-${item.variantId || 'base'}`;
+                let discountForItem = 0;
+
+                if (remainingDiscount > 0) {
+                    const config = bestDiscount!.bxgyConfig;
+                    const isTargetGift = !config?.getProducts || config.getProducts.length === 0
+                        ? true
+                        : config.getProducts.some((gp) => gp.toString() === item.productId);
+
+                    if (isTargetGift) {
+                        const maxPossible = item.price * item.quantity;
+                        discountForItem = Math.min(maxPossible, remainingDiscount);
+                    }
+                    remainingDiscount -= discountForItem;
+                }
+                discountMap.set(key, discountForItem);
+            });
+        }
+
+        const itemDiscounts = cartItems.map((item) => {
+            const key = `${item.productId}-${item.variantId || 'base'}`;
             return {
                 productId: item.productId,
                 variantId: item.variantId,
-                discountAmount: Number(discountForItem.toFixed(2)),
+                discountAmount: Number((discountMap.get(key) || 0).toFixed(2)),
             };
         });
 
@@ -118,6 +144,7 @@ export class DiscountService {
         userId?: string
     ) {
         if (!code || !code.trim()) throw new AppError('Debe ingresar un código de cupón.', 400);
+        if (subtotal <= 0 || !cartItems.length) throw new AppError('El carrito no es válido para aplicar descuentos.', 400);
 
         const cleanCode = code.trim();
         const discount = await this.discountRepository.findActiveByCode(cleanCode);
@@ -177,12 +204,7 @@ export class DiscountService {
             (u) => u.userId.toString() === userId.toString()
         );
 
-        await this.discountRepository.incrementUsageById(
-            discountId,
-            userId,
-            hasUsedBefore,
-            session
-        );
+        await this.discountRepository.incrementUsageById(discountId, userId, hasUsedBefore, session);
     }
 
     async releaseCouponById(discountId: string, userId: string, session?: ClientSession) {
@@ -240,6 +262,14 @@ export class DiscountService {
 
         const { data, total } = await this.discountRepository.findAllPaginated(query, page, limit);
         return { data, total, page, limit };
+    }
+
+    async getDiscountById(id: string) {
+        const discount = await this.discountRepository.findById(id);
+        if (!discount) {
+            throw new AppError('Promoción o cupón no encontrado', 404);
+        }
+        return discount;
     }
 
     async toggleDiscountStatus(id: string) {
@@ -338,22 +368,9 @@ export class DiscountService {
 
         return enrichedDiscounts;
     }
-
-
-    // En backend/src/modules/discount/discount.service.ts
-
-    async getDiscountById(id: string) {
-        const discount = await this.discountRepository.findById(id);
-        if (!discount) {
-            throw new AppError('Promoción o cupón no encontrado', 404);
-        }
-        return discount;
-    }
 }
 
 export const discountService = new DiscountService(
     new DiscountRepository(),
     productService
 );
-
-

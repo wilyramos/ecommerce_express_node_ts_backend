@@ -13,7 +13,7 @@ export interface IDiscountStrategy {
     ): Promise<number>;
 }
 
-// Estrategia: Aplica a TODOS los productos
+// Estrategia: Aplica a TODOS los productos en la orden
 export class AllProductsStrategy implements IDiscountStrategy {
     async calculate(discount: IDiscount, subtotal: number): Promise<number> {
         if (discount.type === DiscountType.PERCENTAGE) {
@@ -26,7 +26,7 @@ export class AllProductsStrategy implements IDiscountStrategy {
     }
 }
 
-// Estrategia: Aplica a PRODUCTOS ESPECÍFICOS
+// Estrategia: Aplica a PRODUCTOS ESPECÍFICOS delimitados por ID
 export class SpecificProductsStrategy implements IDiscountStrategy {
     async calculate(
         discount: IDiscount,
@@ -38,14 +38,11 @@ export class SpecificProductsStrategy implements IDiscountStrategy {
             const isApplicable = discount.applicableProducts.some(
                 (ap) => ap.toString() === pId
             );
-            return isApplicable ? acc + item.price * item.quantity : acc;
+            return isApplicable ? acc + (item.price * item.quantity) : acc;
         }, 0);
 
         if (applicableItemTotal === 0) {
-            throw new AppError(
-                'El cupón no aplica a ninguno de los productos en tu carrito.',
-                400
-            );
+            throw new AppError('El cupón no aplica a ninguno de los productos en tu carrito.', 400);
         }
 
         if (discount.type === DiscountType.PERCENTAGE) {
@@ -71,53 +68,28 @@ export class SpecificMetadataStrategy implements IDiscountStrategy {
         );
 
         const applicableItemTotal = cartItems.reduce((acc, item) => {
-            const prod = dbProducts.find(
-                (p) => p._id.toString() === item.productId.toString()
-            );
+            const prod = dbProducts.find((p) => p._id.toString() === item.productId.toString());
             let isApplicable = false;
 
             if (prod) {
-                if (
-                    discount.target === DiscountTarget.SPECIFIC_CATEGORIES &&
-                    prod.categoria
-                ) {
-                    isApplicable = discount.applicableCategories.some(
-                        (ac) => ac.toString() === prod.categoria.toString()
-                    );
-                } else if (
-                    discount.target === DiscountTarget.SPECIFIC_BRANDS &&
-                    prod.brand
-                ) {
-                    isApplicable = discount.applicableBrands.some(
-                        (ab) => ab.toString() === prod.brand.toString()
-                    );
-                } else if (
-                    discount.target === DiscountTarget.SPECIFIC_COLLECTIONS &&
-                    prod.collections
-                ) {
+                if (discount.target === DiscountTarget.SPECIFIC_CATEGORIES && prod.categoria) {
+                    isApplicable = discount.applicableCategories.some((ac) => ac.toString() === prod.categoria.toString());
+                } else if (discount.target === DiscountTarget.SPECIFIC_BRANDS && prod.brand) {
+                    isApplicable = discount.applicableBrands.some((ab) => ab.toString() === prod.brand.toString());
+                } else if (discount.target === DiscountTarget.SPECIFIC_COLLECTIONS && prod.collections) {
                     isApplicable = prod.collections.some((c) =>
-                        discount.applicableCollections.some(
-                            (ac) => ac.toString() === c.toString()
-                        )
+                        discount.applicableCollections.some((ac) => ac.toString() === c.toString())
                     );
-                } else if (
-                    discount.target === DiscountTarget.SPECIFIC_LINES &&
-                    prod.line
-                ) {
-                    isApplicable = discount.applicableLines.some(
-                        (al) => al.toString() === prod.line.toString()
-                    );
+                } else if (discount.target === DiscountTarget.SPECIFIC_LINES && prod.line) {
+                    isApplicable = discount.applicableLines.some((al) => al.toString() === prod.line.toString());
                 }
             }
 
-            return isApplicable ? acc + item.price * item.quantity : acc;
+            return isApplicable ? acc + (item.price * item.quantity) : acc;
         }, 0);
 
         if (applicableItemTotal === 0) {
-            throw new AppError(
-                'El cupón no aplica a los productos en tu carrito.',
-                400
-            );
+            throw new AppError('El cupón no aplica a los productos de tu carrito.', 400);
         }
 
         if (discount.type === DiscountType.PERCENTAGE) {
@@ -130,7 +102,7 @@ export class SpecificMetadataStrategy implements IDiscountStrategy {
     }
 }
 
-// Estrategia Corregida: Regla Buy X Get Y (Compra X y Lleva Y)
+// Estrategia: Regla Buy X Get Y (Compra X y Lleva Y Gratis o con Descuento)
 export class BuyXGetYStrategy implements IDiscountStrategy {
     async calculate(
         discount: IDiscount,
@@ -149,13 +121,12 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
             'categoria brand collections line'
         );
 
-        // 1. Filtrar artículos del carrito que cumplen la condición de compra X
+        // 1. Identificar productos elegibles que cumplen el requerimiento "X"
         const qualifyingItems = cartItems.filter((item) => {
             const pId = item.productId.toString();
             const prod = dbProducts.find((p) => p._id.toString() === pId);
 
             if (discount.target === DiscountTarget.ALL_PRODUCTS) return true;
-
             if (discount.target === DiscountTarget.SPECIFIC_PRODUCTS) {
                 return discount.applicableProducts.some((ap) => ap.toString() === pId);
             }
@@ -176,15 +147,14 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
                     return discount.applicableLines.some((al) => al.toString() === prod.line.toString());
                 }
             }
-
             return false;
         });
 
+        // Verificamos si los productos regalados pertenecen a los mismos elegibles de la compra (ej. 3x2 general)
         const isSameProductReward = !getProducts || getProducts.length === 0;
 
-        // 2. Validar que existan unidades suficientes según si el regalo es del mismo grupo o de productos específicos
+        // 2. Condicional 1: El beneficio "Y" se descuenta del mismo grupo de artículos comprados "X"
         if (isSameProductReward) {
-            // Para promociones como 3x2 en los mismos productos, se requieren mínimo (X + Y) unidades en el carrito
             const totalUnitsInCart = qualifyingItems.reduce((acc, item) => acc + item.quantity, 0);
             const requiredUnitsPerSet = buyQuantity + getQuantity;
 
@@ -200,13 +170,14 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
 
             if (maxRewardedUnitsAllowed === 0) return 0;
 
-            // Ordenar precios de menor a mayor para bonificar siempre el de menor valor
             const unitPrices: number[] = [];
             qualifyingItems.forEach((item) => {
                 for (let i = 0; i < item.quantity; i++) {
                     unitPrices.push(item.price);
                 }
             });
+            
+            // Ordenar de menor a mayor para asegurar que se descuenten los productos de menor valor
             unitPrices.sort((a, b) => a - b);
 
             const rewardedPrices = unitPrices.slice(0, maxRewardedUnitsAllowed);
@@ -223,8 +194,10 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
             });
 
             return Number(totalDiscount.toFixed(2));
-        } else {
-            // Regla donde los regalos son productos específicos (ej. Compra X y lleva Regalo Y)
+        } 
+        
+        // 3. Condicional 2: El beneficio "Y" proviene de una lista estricta de "productos de regalo"
+        else {
             const totalBuyUnits = qualifyingItems.reduce((acc, item) => acc + item.quantity, 0);
 
             if (totalBuyUnits < buyQuantity) {
@@ -237,6 +210,7 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
             const setsCount = Math.floor(totalBuyUnits / buyQuantity);
             const maxRewardedUnitsAllowed = setsCount * getQuantity;
 
+            // Encontrar si el cliente añadió los "productos de regalo" específicos a su carrito
             const giftItems = cartItems.filter((item) =>
                 getProducts.some((gp) => gp.toString() === item.productId.toString())
             );
@@ -248,6 +222,7 @@ export class BuyXGetYStrategy implements IDiscountStrategy {
                 }
             });
 
+            // Si no añadió el regalo al carrito, el descuento es S/ 0, pero no arroja error
             if (giftUnitPrices.length === 0) return 0;
 
             giftUnitPrices.sort((a, b) => a - b);
