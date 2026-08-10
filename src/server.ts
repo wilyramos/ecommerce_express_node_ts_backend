@@ -103,6 +103,7 @@ app.get('/', (req, res) => {
 
 setupSwagger(app)
 
+
 // Rutas V3
 app.use('/api/products/v3', productRouterV3)
 
