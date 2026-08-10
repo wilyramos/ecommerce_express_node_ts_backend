@@ -42,6 +42,12 @@ import claimRouter from './modules/claim/claim.routes'
 import inventoryRouter from './modules/inventory/inventory.router'
 import discountRouter from './modules/discount/discount.router'
 
+
+
+// Rutas version 3: ultima 08/2026
+
+import productRouterV3 from './modules/product-v3/product.router'
+
 import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
 import { initOrderCleanupJob } from './jobs/orderCleanup.job'
@@ -96,6 +102,9 @@ app.get('/', (req, res) => {
 })
 
 setupSwagger(app)
+
+// Rutas V3
+app.use('/api/products/v3', productRouterV3)
 
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)

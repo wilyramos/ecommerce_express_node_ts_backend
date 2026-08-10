@@ -1,5 +1,3 @@
-// File: backend/src/modules/discount/discount.service.ts
-
 import { ClientSession, FilterQuery } from 'mongoose';
 import { DiscountType, DiscountAppliesVia, DiscountTarget, IDiscount } from './discount.model';
 import Order from '../../models/Order';
@@ -42,23 +40,19 @@ export class DiscountService {
 
         for (const discount of autoDiscounts) {
             try {
-                // Validaciones estáticas de tiempo y capacidad
                 if (now < discount.startDate) continue;
                 if (discount.endDate && now > discount.endDate) continue;
                 if (subtotal < discount.minPurchaseAmount) continue;
                 if (discount.usageLimitTotal && discount.currentUsageCount >= discount.usageLimitTotal) continue;
 
-                // Todos los productos son elegibles para evaluación (sin excluir los que tienen precioComparativo)
                 const strategy = getDiscountStrategy(discount.type, discount.target);
                 const calculatedAmount = await strategy.calculate(discount, subtotal, cartItems);
 
-                // Algoritmo "Best-Discount Win"
                 if (calculatedAmount > bestDiscountAmount) {
                     bestDiscountAmount = calculatedAmount;
                     bestDiscount = discount;
                 }
             } catch {
-                // Falla silenciosa esperada (ej: no se cumplen las unidades mínimas para el BXGY)
                 continue;
             }
         }
@@ -67,17 +61,14 @@ export class DiscountService {
             return { appliedDiscount: null, discountAmount: 0, newTotal: subtotal, itemDiscounts: [] };
         }
 
-        // Distribución del descuento en los ítems (Para reflejo visual en UI)
         const discountMap = new Map<string, number>();
         let remainingDiscount = bestDiscountAmount;
 
-        // Si es un descuento general (Porcentaje o Monto Fijo sobre el total) se distribuye proporcionalmente
         if (bestDiscount.type === DiscountType.PERCENTAGE || bestDiscount.type === DiscountType.FIXED_AMOUNT) {
             cartItems.forEach((item, index) => {
                 const key = `${item.productId}-${item.variantId || 'base'}`;
                 const itemTotal = item.price * item.quantity;
-                
-                // Si es el último ítem, se le asigna el remanente para evitar pérdida de centavos por redondeo
+
                 let discountForItem = 0;
                 if (index === cartItems.length - 1) {
                     discountForItem = Math.min(remainingDiscount, itemTotal);
@@ -85,15 +76,14 @@ export class DiscountService {
                     const proportion = itemTotal / subtotal;
                     discountForItem = Math.min(Number((bestDiscountAmount * proportion).toFixed(2)), itemTotal);
                 }
-                
+
                 remainingDiscount -= discountForItem;
                 discountMap.set(key, discountForItem);
             });
-        } 
-        // Si es BXGY, se usa distribución Greedy (los productos regalados son los más baratos de la lista de elegibles)
+        }
         else {
             const sortedItems = [...cartItems].sort((a, b) => a.price - b.price);
-            
+
             sortedItems.forEach((item) => {
                 const key = `${item.productId}-${item.variantId || 'base'}`;
                 let discountForItem = 0;
@@ -214,17 +204,18 @@ export class DiscountService {
         await this.discountRepository.decrementUsageById(discountId, userId, session);
     }
 
-    // ── 4. CRUD ADMINISTRATIVO CON VALIDACIONES DE SEGURIDAD ────────────────
+    // ── 4. CRUD ADMINISTRATIVO CON VALIDACIONES DE SEGURIDAD Y BXGY ────────────────
     async createDiscount(data: Partial<IDiscount>) {
-        if (data.appliesVia === DiscountAppliesVia.AUTOMATIC) {
-            if (data.target === DiscountTarget.ALL_PRODUCTS) {
-                const minAmount = Number(data.minPurchaseAmount) || 0;
-                const hasSpecificGiftProducts =
-                    data.bxgyConfig?.getProducts && data.bxgyConfig.getProducts.length > 0;
+        if (!data.title || !data.title.trim()) {
+            throw new AppError('El título promocional es requerido.', 400);
+        }
 
-                if (minAmount <= 0 && !hasSpecificGiftProducts) {
+        if (data.appliesVia === DiscountAppliesVia.AUTOMATIC) {
+            if (data.target === DiscountTarget.ALL_PRODUCTS && data.type !== DiscountType.BUY_X_GET_Y) {
+                const minAmount = Number(data.minPurchaseAmount) || 0;
+                if (minAmount <= 0) {
                     throw new AppError(
-                        'Por seguridad comercial, una promoción automática para "Todos los productos" debe requerir un Monto Mínimo de Compra mayor a S/ 0 o delimitar los productos de regalo.',
+                        'Una promoción automática para "Todos los productos" debe requerir un Monto Mínimo de Compra mayor a S/ 0.',
                         400
                     );
                 }
@@ -244,8 +235,41 @@ export class DiscountService {
             data.code = undefined;
         }
 
-        if (!data.title || !data.title.trim()) {
-            throw new AppError('El título promocional es requerido.', 400);
+        // Validaciones estrictas de reglas de negocio para Buy X Get Y
+        if (data.type === DiscountType.BUY_X_GET_Y) {
+            if (!data.bxgyConfig) {
+                throw new AppError('La configuración Buy X Get Y es obligatoria.', 400);
+            }
+
+            const { buyQuantity, getQuantity, getDiscountType, getDiscountValue, getProducts } = data.bxgyConfig;
+
+            if (!buyQuantity || buyQuantity < 1) {
+                throw new AppError('La cantidad mínima a comprar (X) debe ser al menos 1.', 400);
+            }
+            if (!getQuantity || getQuantity < 1) {
+                throw new AppError('La cantidad bonificada (Y) debe ser al menos 1.', 400);
+            }
+
+            if (getDiscountType === 'PERCENTAGE') {
+                if (getDiscountValue < 1 || getDiscountValue > 100) {
+                    throw new AppError('El porcentaje descontado debe estar entre 1% y 100%.', 400);
+                }
+            } else if (getDiscountType === 'FIXED_AMOUNT') {
+                if (getDiscountValue <= 0) {
+                    throw new AppError('El monto fijo descontado debe ser mayor a 0.', 400);
+                }
+            }
+
+            if (data.target === DiscountTarget.SPECIFIC_PRODUCTS) {
+                if (!data.applicableProducts || data.applicableProducts.length === 0) {
+                    throw new AppError('Debes seleccionar al menos un producto elegible de compra (X).', 400);
+                }
+            }
+
+            if (getProducts && getProducts.length > 0) {
+                // Verificar que no existan IDs duplicados o nulos en los regalos
+                data.bxgyConfig.getProducts = Array.from(new Set(getProducts.map((p) => p.toString()))) as any;
+            }
         }
 
         return await this.discountRepository.create(data);
@@ -265,10 +289,23 @@ export class DiscountService {
     }
 
     async getDiscountById(id: string) {
-        const discount = await this.discountRepository.findById(id);
-        if (!discount) {
+        const discountDoc = await this.discountRepository.findById(id);
+        if (!discountDoc) {
             throw new AppError('Promoción o cupón no encontrado', 404);
         }
+
+        const discount = discountDoc.toObject ? discountDoc.toObject() : discountDoc;
+
+        if (discount.target === 'SPECIFIC_PRODUCTS' && discount.applicableProducts?.length > 0) {
+            const productIds = discount.applicableProducts.map((pId: any) => pId.toString());
+            discount.applicableProductsDetails = await this.productService.getLightProductsByIds(productIds);
+        }
+
+        if (discount.type === 'BUY_X_GET_Y' && discount.bxgyConfig?.getProducts?.length > 0) {
+            const giftIds = discount.bxgyConfig.getProducts.map((pId: any) => pId.toString());
+            discount.giftProductsDetails = await this.productService.getLightProductsByIds(giftIds);
+        }
+
         return discount;
     }
 
@@ -350,6 +387,7 @@ export class DiscountService {
             return false;
         });
 
+        // Enriquecer y adjuntar la imagen del producto bonificado para renderizado público
         const enrichedDiscounts = await Promise.all(
             matchingDiscounts.map(async (disc) => {
                 const discObj = disc.toObject ? disc.toObject() : disc;
