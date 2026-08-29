@@ -16,7 +16,6 @@ import cartRouter from './routes/cartRouter'
 import orderRouter from './routes/orderRouter'
 import checkoutRouter from './routes/checkoutRouter'
 import saleRouter from './routes/saleRouter'
-import webhookRouter from './routes/webhookRouter'
 import userRouter from './routes/userRouter'
 import purchaseRouter from './routes/purchaseRouter'
 import brandRouter from './routes/brandRouter'
@@ -47,6 +46,7 @@ import discountRouter from './modules/discount/discount.router'
 // Rutas version 3: ultima 08/2026
 
 import productRouterV3 from './modules/product-v3/product.router'
+import checkoutRouterV3 from './modules/checkout/checkout.router';
 
 import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -95,7 +95,6 @@ app.use(cors({
 
 // Webhooks
 app.use('/api/webhooks/v2', webhookRouterV2)
-app.use('/api/webhooks', webhookRouter)
 
 app.get('/', (req, res) => {
     res.send('API is running...')
@@ -106,6 +105,7 @@ setupSwagger(app)
 
 // Rutas V3
 app.use('/api/products/v3', productRouterV3)
+app.use('/api/checkout/v3', checkoutRouterV3);
 
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)
@@ -134,7 +134,6 @@ app.use('/api/brands', brandRouter)
 app.use('/api/products', productRouter)
 app.use('/api/cart', cartRouter)
 app.use('/api/orders', orderRouter)
-app.use('/api/checkout', checkoutRouter)
 app.use('/api/sales', saleRouter)
 app.use('/api/lines', lineRouter)
 app.use('/api/purchases', purchaseRouter)

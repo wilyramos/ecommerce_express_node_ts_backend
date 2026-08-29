@@ -176,7 +176,7 @@ export class OrderController {
                 return;
             }
 
-            const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            const orderNumber = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
             const newOrder = await Order.create([{
                 orderNumber,
@@ -365,7 +365,7 @@ export class OrderController {
             }
 
             const totalOrders = await Order.countDocuments();
-            const orderNumber = `ORD-${totalOrders + 1}`; // Generar un número de orden único
+            const orderNumber = `${totalOrders + 1}`; // Generar un número de orden único
 
             // Crear la orden
             const newOrder = new Order({

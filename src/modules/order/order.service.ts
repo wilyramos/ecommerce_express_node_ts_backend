@@ -232,6 +232,9 @@ export const orderService = {
                             phone_number: dto.customerProfile.telefono
                         },
                         confirm: false,
+                        metadata: {
+                            orderNumber: orderNumber
+                        }
                     })
                 });
 

@@ -1,11 +1,10 @@
-// File: backend/src/modules/webhook/culqi.webhook.ts
-
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Order, { PaymentStatus, OrderStatus } from '../../models/Order';
 import { OrderEmail } from '../../emails/OrderEmailResend';
 import { deductStock } from './deductStock';
 import { validateCulqiCharge, validateCulqiOrder } from './culqi.verify';
+import { orderService } from '../order/order.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos internos basados en la documentación oficial de Culqi
@@ -24,13 +23,13 @@ interface CulqiChargeObject {
         code: string;
         userMessage?: string;
     };
-    metadata?: { order_id?: string; [key: string]: unknown };
+    metadata?: { [key: string]: unknown };
 }
 
 interface CulqiOrderObject {
     id: string;
     state: string; // "paid" | "expired" | "deleted" | "pending"
-    metadata?: { order_id?: string; [key: string]: unknown };
+    metadata?: { [key: string]: unknown };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +59,12 @@ export async function handleWebhookCulqi(req: Request, res: Response): Promise<v
             eventType === 'charge.update.succeeded'
         ) {
             await handleChargeEvent(eventObject as CulqiChargeObject, res);
+            return;
+        }
+
+        // ── Reembolsos en pasarela ───────────────────────────────────────────
+        if (eventType === 'charge.refunded') {
+            await handleRefundEvent(eventObject as CulqiChargeObject, res);
             return;
         }
 
@@ -98,12 +103,12 @@ async function handleChargeEvent(charge: CulqiChargeObject, res: Response): Prom
         return;
     }
 
-    const { outcomeType, orderId } = verified;
-    console.log('💳 [Culqi Cargo verificado]', { chargeId, outcomeType, orderId });
+    const { outcomeType, orderNumber } = verified;
+    console.log('💳 [Culqi Cargo verificado]', { chargeId, outcomeType, orderNumber });
 
-    if (!orderId) {
-        console.warn('⚠️ [Culqi Cargo] Sin order_id en metadata — ignorado');
-        res.status(200).json({ message: 'Sin order_id en metadata del cargo' });
+    if (!orderNumber) {
+        console.warn('⚠️ [Culqi Cargo] Sin orderNumber en el objeto de pago — ignorado');
+        res.status(200).json({ message: 'Sin orderNumber identificable en el cargo' });
         return;
     }
 
@@ -113,8 +118,34 @@ async function handleChargeEvent(charge: CulqiChargeObject, res: Response): Prom
         return;
     }
 
-    await processApprovedOrder(orderId, chargeId, 'culqi-cargo');
+    await processApprovedOrder(orderNumber, chargeId, 'culqi-cargo');
     res.status(200).json({ message: 'Cargo aprobado procesado correctamente' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: Reembolsos automáticos desde Culqi
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function handleRefundEvent(charge: CulqiChargeObject, res: Response): Promise<void> {
+    const chargeId = charge.id ?? '';
+    if (!chargeId) {
+        res.status(200).json({ message: 'Sin charge ID' });
+        return;
+    }
+
+    const verified = await validateCulqiCharge(chargeId);
+    if (!verified.valid || !verified.orderNumber) {
+        res.status(200).json({ message: 'Reembolso no procesable' });
+        return;
+    }
+
+    const order = await Order.findOne({ orderNumber: verified.orderNumber });
+    if (order) {
+        await orderService.refundOrder(String(order._id), 'webhook_culqi', 'Reembolso procesado desde panel Culqi');
+        console.log(`↩️ [Culqi Refund] Orden ${verified.orderNumber} revertida`);
+    }
+
+    res.status(200).json({ message: 'Reembolso sincronizado correctamente' });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,39 +169,47 @@ async function handleOrderEvent(culqiOrder: CulqiOrderObject, res: Response): Pr
         return;
     }
 
-    const { state, orderId } = verified;
-    console.log('📱 [Culqi Orden verificada]', { culqiOrderId, state, orderId });
+    const { state, orderNumber } = verified;
+    console.log('📱 [Culqi Orden verificada]', { culqiOrderId, state, orderNumber });
 
-    if (!orderId) {
-        console.warn('⚠️ [Culqi Orden] Sin order_id en metadata — ignorado');
-        res.status(200).json({ message: 'Sin order_id en metadata de la orden' });
+    if (!orderNumber) {
+        console.warn('⚠️ [Culqi Orden] Sin orderNumber en el objeto de orden — ignorado');
+        res.status(200).json({ message: 'Sin orderNumber identificable en la orden Culqi' });
         return;
     }
 
     switch (state) {
         case 'paid': {
-            await processApprovedOrder(orderId, culqiOrderId, 'culqi-orden');
+            await processApprovedOrder(orderNumber, culqiOrderId, 'culqi-orden');
             res.status(200).json({ message: 'Orden Culqi pagada procesada correctamente' });
             break;
         }
         case 'expired':
         case 'deleted': {
-            await Order.findByIdAndUpdate(orderId, {
-                $set: {
-                    'payment.status': PaymentStatus.REJECTED,
-                    'payment.provider': 'culqi-orden',
-                    status: OrderStatus.CANCELED,
-                },
-                $push: {
-                    statusHistory: { status: OrderStatus.CANCELED, changedAt: new Date() },
-                },
-            });
-            console.log(`❌ [Culqi Orden] Orden ${orderId} "${state}" — marcada como cancelada`);
+            await Order.findOneAndUpdate(
+                { orderNumber },
+                {
+                    $set: {
+                        'payment.status': PaymentStatus.REJECTED,
+                        'payment.provider': 'culqi-orden',
+                        status: OrderStatus.CANCELED,
+                    },
+                    $push: {
+                        statusHistory: {
+                            status: OrderStatus.CANCELED,
+                            changedAt: new Date(),
+                            actionBy: 'webhook_culqi',
+                            reason: `Orden expirada o eliminada en Culqi (${state})`,
+                        },
+                    },
+                }
+            );
+            console.log(`❌ [Culqi Orden] Orden ${orderNumber} "${state}" — marcada como cancelada`);
             res.status(200).json({ message: `Orden Culqi "${state}" registrada` });
             break;
         }
         case 'pending': {
-            console.log(`⏳ [Culqi Orden] Orden ${orderId} pendiente — sin acción`);
+            console.log(`⏳ [Culqi Orden] Orden ${orderNumber} pendiente — sin acción`);
             res.status(200).json({ message: 'Orden pendiente, sin acción requerida' });
             break;
         }
@@ -186,7 +225,7 @@ async function handleOrderEvent(culqiOrder: CulqiOrderObject, res: Response): Pr
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function processApprovedOrder(
-    orderId: string,
+    orderNumber: string,
     transactionId: string,
     provider: string
 ): Promise<void> {
@@ -194,28 +233,28 @@ async function processApprovedOrder(
     session.startTransaction();
 
     try {
-        console.log(`🔄 [Culqi] Procesando orden aprobada: ${orderId} | tx: ${transactionId}`);
+        console.log(`🔄 [Culqi] Procesando orden aprobada: ${orderNumber} | tx: ${transactionId}`);
 
-        const order = await Order.findById(orderId)
+        const order = await Order.findOne({ orderNumber })
             .populate<{ user: { email: string; nombre: string; telefono?: string } }>('user', 'email nombre telefono')
             .session(session);
 
         if (!order) {
-            throw new Error(`Orden no encontrada: ${orderId}`);
+            throw new Error(`Orden no encontrada por orderNumber: ${orderNumber}`);
         }
 
         // Idempotencia: si ya fue aprobada, salir limpiamente
         if (order.payment?.status === PaymentStatus.APPROVED) {
-            console.warn(`⚠️ [Culqi] Orden ${orderId} ya procesada — descartando duplicado`);
+            console.warn(`⚠️ [Culqi] Orden ${orderNumber} ya procesada — descartando duplicado`);
             await session.abortTransaction();
             session.endSession();
             return;
         }
 
-        // Intentar descontar stock — ya no lanza, devuelve resultado
+        // Intentar descontar stock
         const stockResult = await deductStock(order.items, session);
 
-        // Siempre registrar el pago como aprobado (el dinero ya fue cobrado)
+        // Registrar el pago como aprobado
         order.payment = {
             provider,
             transactionId,
@@ -224,19 +263,24 @@ async function processApprovedOrder(
         };
 
         if (stockResult.success) {
-            // Caso feliz: todo el stock disponible
             order.status = OrderStatus.PROCESSING;
-            order.statusHistory.push({ status: OrderStatus.PROCESSING, changedAt: new Date() });
-            console.log(`✅ [Culqi] Orden ${orderId} → PROCESSING`);
+            order.statusHistory.push({
+                status: OrderStatus.PROCESSING,
+                changedAt: new Date(),
+                actionBy: 'webhook_culqi',
+                reason: 'Pago aprobado y stock asignado exitosamente',
+            });
+            console.log(`✅ [Culqi] Orden ${orderNumber} → PROCESSING`);
         } else {
-            // Pago cobrado pero stock insuficiente en uno o más ítems
             order.status = OrderStatus.PAID_BUT_OUT_OF_STOCK;
             order.statusHistory.push({
                 status: OrderStatus.PAID_BUT_OUT_OF_STOCK,
                 changedAt: new Date(),
+                actionBy: 'webhook_culqi',
+                reason: `Pago recibido sin stock suficiente en: ${stockResult.outOfStockItems.join(', ')}`,
             });
             console.warn(
-                `⚠️ [Culqi] Orden ${orderId} → PAID_BUT_OUT_OF_STOCK. ` +
+                `⚠️ [Culqi] Orden ${orderNumber} → PAID_BUT_OUT_OF_STOCK. ` +
                 `Ítems sin stock: ${stockResult.outOfStockItems.join(', ')}`
             );
         }
@@ -245,19 +289,17 @@ async function processApprovedOrder(
         await session.commitTransaction();
         session.endSession();
 
-        // ── Correo de confirmación (fuera de la transacción) ──────────────────
+        // ── Envío de correos de confirmación (fuera de la transacción) ─────────
         const user = order.user as any;
         const emailTarget = user?.email ?? order.customerProfile?.email;
         const nameTarget = user?.nombre ?? order.customerProfile?.nombre;
         const phoneTarget = user?.telefono ?? order.customerProfile?.telefono;
 
         if (emailTarget) {
-            // Mapeamos los ítems a objetos puros de JS
             const itemsList = order.items.map((item: any) => item.toObject());
             const shippingInfo = order.shippingAddress?.direccion ?? provider;
 
             Promise.allSettled([
-                // 1. Notificación al Cliente (Confirmación estándar)
                 OrderEmail.sendOrderConfirmationEmail({
                     email: emailTarget,
                     name: nameTarget,
@@ -266,8 +308,6 @@ async function processApprovedOrder(
                     shippingMethod: shippingInfo,
                     items: itemsList,
                 }),
-
-                // 2. Notificación a Administradores (Estilo Shopify Operaciones)
                 OrderEmail.sendAdminOrderNotificationEmail({
                     customerName: nameTarget,
                     customerEmail: emailTarget,
@@ -280,15 +320,15 @@ async function processApprovedOrder(
             ]).then((results) => {
                 results.forEach((result, idx) => {
                     if (result.status === 'rejected') {
-                        console.error(`⚠️ [Culqi Email] Error en el flujo de correo [${idx === 0 ? 'Cliente' : 'Admin'}]:`, result.reason);
+                        console.error(`⚠️ [Culqi Email] Error en envío [${idx === 0 ? 'Cliente' : 'Admin'}]:`, result.reason);
                     } else {
-                        console.log(`✉️ [Culqi Email] Envío completado con éxito para: ${idx === 0 ? 'Cliente' : 'Admins'}`);
+                        console.log(`✉️ [Culqi Email] Notificación enviada a: ${idx === 0 ? 'Cliente' : 'Admin'}`);
                     }
                 });
             });
         }
 
-        console.log(`✅ [Culqi] Orden ${orderId} procesada exitosamente`);
+        console.log(`✅ [Culqi] Orden ${orderNumber} procesada exitosamente`);
     } catch (error) {
         if (session.inTransaction()) await session.abortTransaction();
         session.endSession();

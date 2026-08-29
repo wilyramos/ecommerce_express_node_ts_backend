@@ -1,17 +1,15 @@
-// File: backend/src/modules/webhook/culqi.verify.ts
-
 const CULQI_API_BASE = 'https://api.culqi.com/v2';
 
 export interface CulqiChargeVerification {
     valid: boolean;
     outcomeType?: string;
-    orderId?: string;
+    orderNumber?: string;
 }
 
 export interface CulqiOrderVerification {
     valid: boolean;
     state?: string;
-    orderId?: string;
+    orderNumber?: string;
 }
 
 interface CulqiChargeResponse {
@@ -19,16 +17,20 @@ interface CulqiChargeResponse {
         type?: string;
     };
     response_code?: string;
+    order_number?: string;
     metadata?: {
-        order_id?: string;
+        orderNumber?: string;
+        order_number?: string;
         [key: string]: unknown;
     };
 }
 
 interface CulqiOrderResponse {
     state?: string;
+    order_number?: string;
     metadata?: {
-        order_id?: string;
+        orderNumber?: string;
+        order_number?: string;
         [key: string]: unknown;
     };
 }
@@ -49,10 +51,17 @@ export async function validateCulqiCharge(chargeId: string): Promise<CulqiCharge
 
         const charge = (await response.json()) as CulqiChargeResponse;
 
+        // Búsqueda flexible del identificador comercial: campo nativo o metadata
+        const orderNumber =
+            charge.order_number ||
+            charge.metadata?.orderNumber ||
+            charge.metadata?.order_number ||
+            '';
+
         return {
             valid: true,
             outcomeType: charge.outcome?.type ?? charge.response_code ?? '',
-            orderId: charge.metadata?.order_id ?? '',
+            orderNumber: String(orderNumber).trim(),
         };
     } catch (error) {
         console.error('❌ [Culqi Verify] Error verificando cargo:', error);
@@ -76,10 +85,16 @@ export async function validateCulqiOrder(culqiOrderId: string): Promise<CulqiOrd
 
         const order = (await response.json()) as CulqiOrderResponse;
 
+        const orderNumber =
+            order.order_number ||
+            order.metadata?.orderNumber ||
+            order.metadata?.order_number ||
+            '';
+
         return {
             valid: true,
             state: order.state ?? '',
-            orderId: order.metadata?.order_id ?? '',
+            orderNumber: String(orderNumber).trim(),
         };
     } catch (error) {
         console.error('❌ [Culqi Verify] Error verificando orden:', error);
