@@ -12,5 +12,5 @@ export function generateSecureOrderNumber(): string {
     // Genera 4 bytes aleatorios criptográficamente seguros y los transforma a hexadecimal (8 caracteres)
     const secureSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
     
-    return `ORD-${date}-${secureSuffix}`;
+    return `${date}${secureSuffix}`;
 }
