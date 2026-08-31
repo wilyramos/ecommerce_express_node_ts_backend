@@ -105,7 +105,7 @@ setupSwagger(app)
 // Rutas V3
 app.use('/api/products/v3', productRouterV3)
 app.use('/api/checkout/v3', checkoutRouterV3);
-app.use('/api/categories/v3', categoryRouterV3); // <-- Montado aquí
+app.use('/api/categories/v3', categoryRouterV3);
 
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)
