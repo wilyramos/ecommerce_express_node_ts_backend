@@ -1,66 +1,76 @@
-// comparison.controller.ts
-import { Request, Response, NextFunction } from 'express';
-import { ComparisonService } from './comparison.service';
+// backend/src/modules/comparison/comparison.controller.ts
 
-export class ComparisonController {
+import { Request, Response } from 'express';
+import { comparisonService } from './comparison.service';
+import { ApiResponse } from '../../utils/ApiResponse';
+import { catchAsync } from '../../utils/catchAsync';
 
-    static async create(req: Request, res: Response, next: NextFunction) {
-        try {
-            const comparison = await ComparisonService.create(req.body);
-            res.status(201).json({ status: 'success', data: comparison });
-        } catch (e) { next(e); }
-    }
+export const comparisonController = {
+    getAllPublic: catchAsync(async (req: Request, res: Response) => {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const search = (req.query.search as string) || '';
 
-    static async getAll(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { isActive, isFeatured, search, page, limit } = req.query;
+        const { data, total } = await comparisonService.getAllComparisons(page, limit, search, true);
+        ApiResponse.paginated(res, data, total, page, limit, 200, 'Comparativas obtenidas exitosamente');
+    }),
 
-            const result = await ComparisonService.getAll({
-                isActive:   isActive   !== undefined ? isActive   === 'true' : undefined,
-                isFeatured: isFeatured !== undefined ? isFeatured === 'true' : undefined,
-                search:     search as string,
-                page:       page  ? Number(page)  : undefined,
-                limit:      limit ? Number(limit) : undefined
-            });
+    getBySlug: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.getComparisonBySlug(req.params.slug, true);
+        ApiResponse.success(res, 200, 'Detalle de comparativa obtenido', comparison);
+    }),
 
-            res.status(200).json({ status: 'success', ...result });
-        } catch (e) { next(e); }
-    }
+    getByProduct: catchAsync(async (req: Request, res: Response) => {
+        const comparisons = await comparisonService.getComparisonsByProduct(req.params.productId);
+        ApiResponse.success(res, 200, 'Comparativas relacionadas obtenidas', comparisons);
+    }),
 
-    static async getBySlug(req: Request, res: Response, next: NextFunction) {
-        try {
-            const comparison = await ComparisonService.getBySlug(req.params.slug);
-            res.status(200).json({ status: 'success', data: comparison });
-        } catch (e) { next(e); }
-    }
+    create: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.createComparison(req.body);
+        ApiResponse.success(res, 201, 'Comparativa creada exitosamente', comparison);
+    }),
 
-    static async getById(req: Request, res: Response, next: NextFunction) {
-        try {
-            const comparison = await ComparisonService.getById(req.params.id);
-            res.status(200).json({ status: 'success', data: comparison });
-        } catch (e) { next(e); }
-    }
+    update: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.updateComparison(req.params.id, req.body);
+        ApiResponse.success(res, 200, 'Comparativa actualizada correctamente', comparison);
+    }),
 
-    static async update(req: Request, res: Response, next: NextFunction) {
-        try {
-            const comparison = await ComparisonService.update(req.params.id, req.body);
-            res.status(200).json({ status: 'success', data: comparison });
-        } catch (e) { next(e); }
-    }
+    getAllAdmin: catchAsync(async (req: Request, res: Response) => {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const search = (req.query.search as string) || '';
 
-    static async delete(req: Request, res: Response, next: NextFunction) {
-        try {
-            await ComparisonService.delete(req.params.id);
-            res.status(200).json({ status: 'success', message: 'Comparativa eliminada.' });
-        } catch (e) { next(e); }
-    }
+        const { data, total } = await comparisonService.getAllComparisons(page, limit, search, false);
+        ApiResponse.paginated(res, data, total, page, limit, 200, 'Gestión de comparativas obtenida');
+    }),
 
-    static async getRelatedToProduct(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { productId } = req.params;
-            const limit = req.query.limit ? Number(req.query.limit) : undefined;
-            const data  = await ComparisonService.getRelatedToProduct(productId, limit);
-            res.status(200).json({ status: 'success', data });
-        } catch (e) { next(e); }
-    }
-}
+    getById: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.getComparisonById(req.params.id);
+        ApiResponse.success(res, 200, 'Comparativa obtenida', comparison);
+    }),
+
+    toggleStatus: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.toggleStatus(req.params.id);
+        ApiResponse.success(
+            res,
+            200,
+            `Comparativa ${comparison?.isActive ? 'activada' : 'desactivada'} correctamente`,
+            comparison
+        );
+    }),
+
+    toggleFeatured: catchAsync(async (req: Request, res: Response) => {
+        const comparison = await comparisonService.toggleFeatured(req.params.id);
+        ApiResponse.success(
+            res,
+            200,
+            `Comparativa ${comparison?.isFeatured ? 'destacada' : 'removida de destacados'}`,
+            comparison
+        );
+    }),
+
+    delete: catchAsync(async (req: Request, res: Response) => {
+        await comparisonService.deleteComparison(req.params.id);
+        ApiResponse.success(res, 200, 'Comparativa eliminada correctamente');
+    }),
+};

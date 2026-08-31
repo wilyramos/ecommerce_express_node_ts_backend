@@ -1,179 +1,156 @@
-// comparison.service.ts
+// backend/src/modules/comparison/comparison.service.ts
 
-import Comparison, { IComparison } from './comparison.model';
-import Product from '../../models/Product';
 import { AppError } from '../../utils/AppError';
-import { Types } from 'mongoose';
-import slugify from 'slugify';
+import { IComparisonRepository } from './repositories/comparison.repository.interface';
+import { ComparisonRepository } from './repositories/comparison.repository';
+import { IComparison } from './comparison.model';
 
 export class ComparisonService {
+    constructor(private readonly comparisonRepository: IComparisonRepository) {}
 
-    // ── Helpers privados ──────────────────────────────────
-
-    private static generateSlug(title: string): string {
-        return slugify(title, { lower: true, strict: true });
+    private generateSlug(title: string): string {
+        return title
+            .toLowerCase()
+            .trim()
+            .replace(/[\s\W-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
     }
 
-    private static async validateProducts(ids: string[]): Promise<void> {
-        const unique = [...new Set(ids)];
-        if (unique.length < 2) {
-            throw new AppError('Se requieren al menos 2 productos.', 400);
+    private validateBusinessRules(data: Partial<IComparison>) {
+        if (data.products && data.products.length < 2) {
+            throw new AppError('Se requieren al menos 2 productos para una comparativa.', 400);
         }
 
-        const found = await Product.countDocuments({
-            _id: { $in: unique },
-            isActive: true,
-            deletedAt: null
-        });
-
-        if (found !== unique.length) {
-            throw new AppError('Uno o más productos no existen o están inactivos.', 400);
+        if (data.especificaciones && data.products) {
+            const productCount = data.products.length;
+            data.especificaciones.forEach((spec, index) => {
+                if (spec.values.length !== productCount) {
+                    throw new AppError(
+                        `La especificación '${spec.key || index}' debe tener exactamente ${productCount} valores (uno por producto).`,
+                        400
+                    );
+                }
+                if (spec.scores.length !== productCount) {
+                    throw new AppError(
+                        `La especificación '${spec.key || index}' debe tener exactamente ${productCount} puntuaciones (una por producto).`,
+                        400
+                    );
+                }
+            });
         }
     }
 
-    private static toObjectIds(ids: string[]): Types.ObjectId[] {
-        return [...new Set(ids)].map(id => new Types.ObjectId(id));
-    }
-
-    // ── CRUD ──────────────────────────────────────────────
-
-    static async create(data: Partial<IComparison>) {
-        if (!data.title) throw new AppError('El título es requerido.', 400);
-
-        data.slug = data.slug
-            ? slugify(data.slug, { lower: true, strict: true })
-            : this.generateSlug(data.title);
-
-        const exists = await Comparison.exists({ slug: data.slug, deletedAt: null });
-        if (exists) throw new AppError(`El slug '${data.slug}' ya está en uso.`, 400);
-
-        const productIds = (data.products ?? []).map(p => p.toString());
-        await this.validateProducts(productIds);
-        data.products = this.toObjectIds(productIds);
-
-        return Comparison.create(data);
-    }
-
-    static async getAll(filters: {
-        isActive?: boolean;
-        isFeatured?: boolean;
-        search?: string;
-        page?: number;
-        limit?: number;
-    } = {}) {
-        const { isActive, isFeatured, search, page = 1, limit = 10 } = filters;
-
-        const query: Record<string, unknown> = { deletedAt: null };
-        if (isActive !== undefined)   query.isActive   = isActive;
-        if (isFeatured !== undefined) query.isFeatured = isFeatured;
-        if (search?.trim()) {
-            query.$or = [
-                { title: new RegExp(search, 'i') },
-                { veredictoRapido: new RegExp(search, 'i') }
-            ];
+    async createComparison(data: Partial<IComparison>) {
+        if (!data.slug && data.title) {
+            data.slug = this.generateSlug(data.title);
         }
 
-        const [data, total] = await Promise.all([
-            Comparison.find(query)
-                .populate('products', 'nombre slug imagenes precio rating')
-                .sort({ isFeatured: -1, createdAt: -1 })
-                .skip((page - 1) * limit)
-                .limit(limit)
-                .lean(),
-            Comparison.countDocuments(query)
-        ]);
+        if (!data.slug) {
+            throw new AppError('El título es obligatorio para generar el slug.', 400);
+        }
 
-        return { data, total, page, pages: Math.ceil(total / limit) };
+        const existing = await this.comparisonRepository.findBySlug(data.slug);
+        if (existing) {
+            throw new AppError('Ya existe una comparativa con este slug.', 400);
+        }
+
+        this.validateBusinessRules(data);
+
+        return await this.comparisonRepository.create(data);
     }
 
-    static async getBySlug(slug: string) {
-        const comparison = await Comparison.findOne({ slug, isActive: true, deletedAt: null })
-            .populate('products', 'nombre slug imagenes precio rating brand')
-            .lean();
-
-        if (!comparison) throw new AppError('Comparativa no encontrada.', 404);
-
-        // Incrementa viewCount sin bloquear la respuesta
-        Comparison.updateOne({ slug }, { $inc: { viewCount: 1 } }).exec();
-
-        return comparison;
-    }
-
-    static async getById(id: string) {
-        if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
-
-        const comparison = await Comparison.findOne({ _id: id, deletedAt: null })
-            .populate('products', 'nombre slug imagenes precio rating brand isActive')
-            .lean();
-
-        if (!comparison) throw new AppError('Comparativa no encontrada.', 404);
-
-        return comparison;
-    }
-
-    static async update(id: string, data: Partial<IComparison>) {
-        if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
-
-        // Slug: regenerar si cambia el título
+    async updateComparison(id: string, data: Partial<IComparison>) {
         if (data.title && !data.slug) {
             data.slug = this.generateSlug(data.title);
-        } else if (data.slug) {
-            data.slug = slugify(data.slug, { lower: true, strict: true });
         }
 
         if (data.slug) {
-            const conflict = await Comparison.exists({
-                slug: data.slug,
-                _id: { $ne: id },
-                deletedAt: null
-            });
-            if (conflict) throw new AppError('El slug ya está en uso.', 400);
+            const existing = await this.comparisonRepository.findBySlug(data.slug);
+            if (existing && existing._id.toString() !== id) {
+                throw new AppError('El slug generado o provisto ya está en uso por otra comparativa.', 400);
+            }
         }
 
-        if (data.products?.length) {
-            const productIds = data.products.map(p => p.toString());
-            await this.validateProducts(productIds);
-            data.products = this.toObjectIds(productIds);
+        const currentComparison = await this.comparisonRepository.findById(id);
+        if (!currentComparison) {
+            throw new AppError('Comparativa no encontrada', 404);
         }
 
-        const updated = await Comparison.findOneAndUpdate(
-            { _id: id, deletedAt: null },
-            data,
-            { new: true, runValidators: true }
-        ).lean();
+        const mergedData = {
+            ...currentComparison.toObject(),
+            ...data,
+        };
 
-        if (!updated) throw new AppError('Comparativa no encontrada.', 404);
+        this.validateBusinessRules(mergedData);
+
+        const updated = await this.comparisonRepository.update(id, data);
+        if (!updated) {
+            throw new AppError('Error al actualizar la comparativa', 500);
+        }
 
         return updated;
     }
 
-    static async delete(id: string) {
-        if (!Types.ObjectId.isValid(id)) throw new AppError('ID inválido.', 400);
-
-        const deleted = await Comparison.findOneAndUpdate(
-            { _id: id, deletedAt: null },
-            { deletedAt: new Date(), isActive: false },
-            { new: true }
-        ).lean();
-
-        if (!deleted) throw new AppError('Comparativa no encontrada.', 404);
-
-        return deleted;
-    }
-
-    static async getRelatedToProduct(productId: string, limit = 5) {
-        if (!Types.ObjectId.isValid(productId)) {
-            throw new AppError('ID de producto inválido.', 400);
+    async getComparisonBySlug(slug: string, recordView: boolean = false) {
+        const comparison = await this.comparisonRepository.findBySlug(slug);
+        if (!comparison) {
+            throw new AppError('Comparativa no encontrada', 404);
         }
 
-        return Comparison.find({
-            products: new Types.ObjectId(productId),
-            isActive: true,
-            deletedAt: null
-        })
-            .select('title slug metaDescription viewCount createdAt')
-            .sort({ isFeatured: -1, viewCount: -1 })
-            .limit(limit)
-            .lean();
+        if (recordView) {
+            this.comparisonRepository.incrementViewCount(comparison._id.toString()).catch(() => {});
+        }
+
+        return comparison;
+    }
+
+    async getComparisonById(id: string) {
+        const comparison = await this.comparisonRepository.findById(id);
+        if (!comparison) {
+            throw new AppError('Comparativa no encontrada', 404);
+        }
+        return comparison;
+    }
+
+    async getAllComparisons(page = 1, limit = 10, search = '', activeOnly = false) {
+        const query: any = {};
+
+        if (search) {
+            query.$or = [
+                { title: { $regex: search, $options: 'i' } },
+                { slug: { $regex: search, $options: 'i' } },
+            ];
+        }
+
+        if (activeOnly) {
+            query.isActive = true;
+        }
+
+        const { data, total } = await this.comparisonRepository.findAllPaginated(query, page, limit);
+        return { data, total, page, limit };
+    }
+
+    async getComparisonsByProduct(productId: string) {
+        return await this.comparisonRepository.findByProductId(productId);
+    }
+
+    async toggleStatus(id: string) {
+        const comparison = await this.getComparisonById(id);
+        return await this.comparisonRepository.update(id, { isActive: !comparison.isActive });
+    }
+
+    async toggleFeatured(id: string) {
+        const comparison = await this.getComparisonById(id);
+        return await this.comparisonRepository.update(id, { isFeatured: !comparison.isFeatured });
+    }
+
+    async deleteComparison(id: string) {
+        const deleted = await this.comparisonRepository.softDelete(id);
+        if (!deleted) {
+            throw new AppError('Comparativa no encontrada', 404);
+        }
+        return deleted;
     }
 }
+
+export const comparisonService = new ComparisonService(new ComparisonRepository());

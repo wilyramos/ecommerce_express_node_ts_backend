@@ -1,3 +1,5 @@
+// File: backend/src/server.ts
+
 import express from 'express'
 import morgan from 'morgan'
 import connectDB from './config/db'
@@ -14,7 +16,6 @@ import productRouter from './routes/productRouter'
 import categoryRouter from './routes/categoryRouter'
 import cartRouter from './routes/cartRouter'
 import orderRouter from './routes/orderRouter'
-import checkoutRouter from './routes/checkoutRouter'
 import saleRouter from './routes/saleRouter'
 import userRouter from './routes/userRouter'
 import purchaseRouter from './routes/purchaseRouter'
@@ -41,12 +42,10 @@ import claimRouter from './modules/claim/claim.routes'
 import inventoryRouter from './modules/inventory/inventory.router'
 import discountRouter from './modules/discount/discount.router'
 
-
-
 // Rutas version 3: ultima 08/2026
-
 import productRouterV3 from './modules/product-v3/product.router'
-import checkoutRouterV3 from './modules/checkout/checkout.router';
+import checkoutRouterV3 from './modules/checkout/checkout.router'
+import categoryRouterV3 from './modules/category/category.router';
 
 import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -106,6 +105,7 @@ setupSwagger(app)
 // Rutas V3
 app.use('/api/products/v3', productRouterV3)
 app.use('/api/checkout/v3', checkoutRouterV3);
+app.use('/api/categories/v3', categoryRouterV3); // <-- Montado aquí
 
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)
