@@ -1,31 +1,32 @@
-// backend/src/middleware/validate.middleware.ts
+// backend/src/middleware/validate.middleware.v3.ts
 import { Request, Response, NextFunction } from 'express';
 import { ZodType, ZodError } from 'zod';
 import { AppError } from '../utils/AppError';
 
-type ValidationSource = 'body' | 'query' | 'params' | 'all';
-
-export const validateRequest = (
-    schema: ZodType<unknown, any, any>,
-    source: ValidationSource = 'body'
-) => {
-    return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+export const validateRequest = (schema: ZodType<any, any, any>) => {
+    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            if (source === 'all') {
-                const parsed = await schema.parseAsync({
-                    body: req.body,
-                    query: req.query,
-                    params: req.params,
-                }) as { body?: unknown; query?: unknown; params?: unknown };
+            const validatedData = await schema.parseAsync({
+                body: req.body,
+                query: req.query,
+                params: req.params,
+            });
 
-                if (parsed.body) req.body = parsed.body;
-                if (parsed.query) req.query = parsed.query as any;
-                if (parsed.params) req.params = parsed.params as any;
-            } else {
-                const target = req[source];
-                const parsed = await schema.parseAsync(target);
-                req[source] = parsed;
-            }
+            req.body = validatedData.body;
+            
+            // Express define 'query' y 'params' usando getters. La asignación directa (req.query = ...) 
+            // lanza un TypeError. Se debe usar Object.defineProperty para sobrescribirlos de forma segura.
+            Object.defineProperty(req, 'query', { 
+                value: validatedData.query, 
+                writable: true, 
+                configurable: true 
+            });
+            
+            Object.defineProperty(req, 'params', { 
+                value: validatedData.params, 
+                writable: true, 
+                configurable: true 
+            });
 
             next();
         } catch (error) {
@@ -35,8 +36,8 @@ export const validateRequest = (
                     message: issue.message,
                 }));
 
-                const mainMessage = formattedErrors[0]?.message || 'Error de validación';
                 const mainField = formattedErrors[0]?.field;
+                const mainMessage = formattedErrors[0]?.message || 'Error de validación';
                 const fieldPrefix = mainField ? `[${mainField}] ` : '';
 
                 next(new AppError(`Validación fallida: ${fieldPrefix}${mainMessage}`, 400));
