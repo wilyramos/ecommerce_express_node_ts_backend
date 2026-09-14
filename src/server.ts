@@ -45,7 +45,8 @@ import discountRouter from './modules/discount/discount.router'
 // Rutas version 3: ultima 08/2026
 import productRouterV3 from './modules/product-v3/product.router'
 import checkoutRouterV3 from './modules/checkout/checkout.router'
-import categoryRouterV3 from './modules/category/category.router';
+import categoryRouterV3 from './modules/category/category.router'
+import favoriteRouterV3 from './modules/favorite-v3/favorite.router'
 
 import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -106,6 +107,7 @@ setupSwagger(app)
 app.use('/api/products/v3', productRouterV3)
 app.use('/api/checkout/v3', checkoutRouterV3);
 app.use('/api/categories/v3', categoryRouterV3);
+app.use('/api/favorites/v3', favoriteRouterV3);
 
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)

@@ -3,7 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ProductService } from './product.service';
 
 export class ProductController {
-    constructor(private readonly productService: ProductService) {}
+    constructor(private readonly productService: ProductService) { }
 
     searchAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
@@ -24,6 +24,18 @@ export class ProductController {
             });
         } catch (error) {
             console.error('[ProductController.searchAdmin] Error capturado:', error);
+            next(error);
+        }
+    };
+    getById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const product = await this.productService.getById(req.params.id);
+
+            res.status(200).json({
+                success: true,
+                data: product
+            });
+        } catch (error) {
             next(error);
         }
     };

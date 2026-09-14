@@ -1,4 +1,3 @@
-// backend/src/modules/product/repositories/product.repository.ts
 import ProductModel, { IProduct } from '../../../models/Product';
 import { IProductRepository } from './product.repository.interface';
 
@@ -17,9 +16,15 @@ export class ProductRepository implements IProductRepository {
                 { 'variants.nombre': regex }
             ]
         })
-            // IMPORTANTE: Asegúrate de incluir 'imagenes' aquí para que el frontend las reciba
             .select('_id productId nombre slug sku precio stock isActive imagenes variants')
             .limit(limit)
+            .lean();
+    }
+
+    // NUEVO MÉTODO
+    async findById(id: string): Promise<IProduct | null> {
+        return await ProductModel.findById(id)
+            .populate('categoria brand line') // Opcional: Para cargar relaciones si las usas
             .lean();
     }
 }

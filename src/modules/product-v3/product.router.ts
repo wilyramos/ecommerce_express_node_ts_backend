@@ -1,4 +1,3 @@
-// backend/src/modules/product/product.router.ts
 import { Router } from 'express';
 import { ProductController } from './product.controller';
 import { ProductService } from './product.service';
@@ -13,6 +12,7 @@ const productRepository = new ProductRepository();
 const productService = new ProductService(productRepository);
 const productController = new ProductController(productService);
 
+// Rutas específicas primero
 router.get(
     '/admin/search',
     authorizeAdmin,
@@ -20,5 +20,7 @@ router.get(
     productController.searchAdmin
 );
 
+// Ruta dinámica al final (Pública para que el carrito/favoritos la puedan leer)
+router.get('/:id', productController.getById);
 
 export default router;

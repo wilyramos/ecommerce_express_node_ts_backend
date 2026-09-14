@@ -3,7 +3,7 @@ import { IProductRepository } from './repositories/product.repository.interface'
 import { AppError } from '../../utils/AppError';
 
 export class ProductService {
-    constructor(private readonly productRepository: IProductRepository) {}
+    constructor(private readonly productRepository: IProductRepository) { }
 
     async searchAdmin(term: string, limitStr: string) {
         console.log('[ProductService.searchAdmin] Input recibido:', { term, limitStr });
@@ -17,12 +17,25 @@ export class ProductService {
         const limit = isNaN(parsedLimit) || parsedLimit <= 0 ? 10 : parsedLimit;
         const maxLimit = limit > 50 ? 50 : limit;
 
-        console.log('[ProductService.searchAdmin] Parámetros normalizados:', { 
-            term: term.trim(), 
-            rawLimit: limitStr, 
-            finalLimit: maxLimit 
+        console.log('[ProductService.searchAdmin] Parámetros normalizados:', {
+            term: term.trim(),
+            rawLimit: limitStr,
+            finalLimit: maxLimit
         });
 
         return await this.productRepository.searchForAdmin(term.trim(), maxLimit);
+    }
+    async getById(id: string) {
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            throw new AppError('ID de producto inválido', 400);
+        }
+
+        const product = await this.productRepository.findById(id);
+
+        if (!product) {
+            throw new AppError('Producto no encontrado', 404);
+        }
+
+        return product;
     }
 }
