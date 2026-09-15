@@ -30,6 +30,7 @@ export const categoryController = {
     }),
 
     create: catchAsync(async (req: Request, res: Response) => {
+        console.log("[CategoryController] create - Datos recibidos:", req.body);
         const category = await categoryService.createCategory(req.body);
         ApiResponse.success(res, 201, 'Categoría creada exitosamente', category);
     }),

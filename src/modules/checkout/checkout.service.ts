@@ -1,3 +1,5 @@
+// File: backend/src/modules/checkout/checkout.service.ts
+
 import Order, { PaymentStatus } from '../../models/Order';
 import { AppError } from '../../utils/AppError';
 
@@ -42,7 +44,51 @@ export const checkoutService = {
             };
         }
 
-        // ── FLUJO 1: Pago asíncrono (Cuotéalo, PagoEfectivo, Billeteras) ──
+        // ── FLUJO 1: Cargo inmediato síncrono (Tarjetas, Yape Directo) ──
+        if (token) {
+            const payload = {
+                amount,
+                currency_code,
+                email,
+                source_id: token,
+                capture: true,
+                order: existingOrder.culqiOrderId, // CRÍTICO: Vincula la autenticación 3DS al cargo
+                antifraud_details: {
+                    address: existingOrder.shippingAddress?.direccion || "No especificada",
+                    address_city: existingOrder.shippingAddress?.provincia || "No especificada",
+                    country_code: "PE",
+                    first_name: existingOrder.customerProfile.nombre,
+                    last_name: existingOrder.customerProfile.apellidos,
+                    phone_number: existingOrder.customerProfile.telefono,
+                },
+                metadata: {
+                    orderNumber: orderNumber,
+                },
+            };
+
+            const culqiResponse = await fetch("https://api.culqi.com/v2/charges", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${culqiPrivateKey}`,
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await culqiResponse.json() as any;
+
+            if (!culqiResponse.ok) {
+                throw new AppError(data.user_message ?? "Error al procesar el pago con Culqi", culqiResponse.status);
+            }
+
+            return {
+                alreadyProcessed: false,
+                message: "Transacción enviada correctamente. Esperando confirmación del webhook.",
+                data
+            };
+        }
+
+        // ── FLUJO 2: Pago asíncrono (Cuotéalo, PagoEfectivo, Billeteras) ──
         if (culqiOrderId) {
             existingOrder.payment = {
                 provider: 'culqi',
@@ -59,46 +105,6 @@ export const checkoutService = {
             };
         }
 
-        // ── FLUJO 2: Cargo inmediato síncrono (Tarjetas, Yape Directo) ──
-        const payload = {
-            amount,
-            currency_code,
-            email,
-            source_id: token,
-            capture: true,
-            antifraud_details: {
-                address: existingOrder.shippingAddress?.direccion || "No especificada",
-                address_city: existingOrder.shippingAddress?.provincia || "No especificada",
-                country_code: "PE",
-                first_name: existingOrder.customerProfile.nombre,
-                last_name: existingOrder.customerProfile.apellidos,
-                phone_number: existingOrder.customerProfile.telefono,
-            },
-            metadata: {
-                orderNumber: orderNumber, // Vinculación clave para el Webhook
-            },
-        };
-
-        const culqiResponse = await fetch("https://api.culqi.com/v2/charges", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${culqiPrivateKey}`,
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await culqiResponse.json() as any;
-
-        if (!culqiResponse.ok) {
-            throw new AppError(data.user_message ?? "Error al procesar el pago con Culqi", culqiResponse.status);
-        }
-
-        // Si es exitoso, el Webhook se encargará de actualizar el estado a APPROVED y descontar stock.
-        return {
-            alreadyProcessed: false,
-            message: "Transacción enviada correctamente. Esperando confirmación del webhook.",
-            data
-        };
+        throw new AppError("Payload inválido: no se recibió token ni ID de orden asíncrona.", 400);
     }
 };

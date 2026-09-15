@@ -11,6 +11,8 @@ export class CategoryService {
     }
 
     async createCategory(data: Partial<ICategory>) {
+
+        console.log("[CategoryService] createCategory - Datos recibidos:", data);
         const slug = data.slug || this.generateSlug(data.nombre!);
         const existing = await this.categoryRepository.findByNameOrSlug(data.nombre!, slug);
         if (existing) {

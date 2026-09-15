@@ -1,3 +1,4 @@
+// File: backend/src/modules/category/category.schema.ts
 import { z } from 'zod';
 
 export const CategoryAttributeSchema = z.object({
@@ -9,33 +10,43 @@ export const CategoryAttributeSchema = z.object({
 });
 
 export const CreateCategorySchema = z.object({
-    nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(100),
-    descripcion: z.string().optional(),
-    slug: z.string().optional(),
-    parent: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID de categoría padre inválido').nullable().optional(),
-    image: z.string().optional(),
-    isActive: z.boolean().optional().default(true),
-    order: z.number().int().optional().default(0),
-    attributes: z.array(CategoryAttributeSchema).optional().default([]),
+    body: z.object({
+        nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(100),
+        descripcion: z.string().optional(),
+        slug: z.string().optional(),
+        parent: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID de categoría padre inválido').nullable().optional(),
+        image: z.string().optional(),
+        isActive: z.boolean().optional().default(true),
+        order: z.number().int().optional().default(0),
+        attributes: z.array(CategoryAttributeSchema).optional().default([]),
+    })
 });
 
-export const UpdateCategorySchema = CreateCategorySchema.partial();
+export const UpdateCategorySchema = z.object({
+    body: CreateCategorySchema.shape.body.partial(),
+});
 
 export const BulkStatusSchema = z.object({
-    ids: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido')).min(1, 'Debe seleccionar al menos un registro'),
-    isActive: z.boolean(),
+    body: z.object({
+        ids: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido')).min(1, 'Debe seleccionar al menos un registro'),
+        isActive: z.boolean(),
+    })
 });
 
 export const BulkDeleteSchema = z.object({
-    ids: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido')).min(1, 'Debe seleccionar al menos un registro'),
+    body: z.object({
+        ids: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido')).min(1, 'Debe seleccionar al menos un registro'),
+    })
 });
 
 export const ReorderCategoriesSchema = z.object({
-    items: z.array(
-        z.object({
-            id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido'),
-            order: z.number().int(),
-            parent: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido').nullable().optional(),
-        })
-    ).min(1, 'Debe proveer elementos a ordenar'),
+    body: z.object({
+        items: z.array(
+            z.object({
+                id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido'),
+                order: z.number().int(),
+                parent: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido').nullable().optional(),
+            })
+        ).min(1, 'Debe proveer elementos a ordenar'),
+    })
 });

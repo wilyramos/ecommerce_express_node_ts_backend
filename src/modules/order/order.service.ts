@@ -226,10 +226,10 @@ export const orderService = {
                         order_number: orderNumber,
                         expiration_date: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
                         client_details: {
-                            first_name: dto.customerProfile.nombre,
-                            last_name: dto.customerProfile.apellidos,
-                            email: dto.customerProfile.email,
-                            phone_number: dto.customerProfile.telefono
+                            first_name: dto.customerProfile.nombre.substring(0, 50).trim(),
+                            last_name: dto.customerProfile.apellidos.substring(0, 50).trim(),
+                            email: dto.customerProfile.email.trim(),
+                            phone_number: dto.customerProfile.telefono.substring(0, 15).trim()
                         },
                         confirm: false,
                         metadata: {
