@@ -23,6 +23,9 @@ export const CreateCategorySchema = z.object({
 });
 
 export const UpdateCategorySchema = z.object({
+    params: z.object({
+        id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID inválido')
+    }),
     body: CreateCategorySchema.shape.body.partial(),
 });
 
