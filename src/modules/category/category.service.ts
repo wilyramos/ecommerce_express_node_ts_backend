@@ -4,7 +4,7 @@ import { ICategoryRepository } from './repositories/category.repository.interfac
 import { ICategory } from '../../models/Category';
 
 export class CategoryService {
-    constructor(private readonly categoryRepository: ICategoryRepository) {}
+    constructor(private readonly categoryRepository: ICategoryRepository) { }
 
     private generateSlug(text: string): string {
         return text.toLowerCase().trim().replace(/[\s\W-]+/g, '-').replace(/^-+|-+$/g, '');

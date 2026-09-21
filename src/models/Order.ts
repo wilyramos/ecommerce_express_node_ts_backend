@@ -56,6 +56,7 @@ export interface IPaymentInfo {
     method?: string;
     transactionId?: string;
     status: PaymentStatus;
+    authentication3DS?: any; // <-- AGREGADO PARA SOLUCIONAR EL ERROR TS2353
     rawResponse?: any;
 }
 
@@ -155,6 +156,7 @@ const paymentSchema = new Schema<IPaymentInfo>({
     method: { type: String },
     transactionId: { type: String },
     status: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.PENDING },
+    authentication3DS: { type: Schema.Types.Mixed }, // <-- AGREGADO AL SCHEMA
     rawResponse: { type: Schema.Types.Mixed }
 }, { _id: false });
 
