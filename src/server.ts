@@ -48,6 +48,9 @@ import checkoutRouterV3 from './modules/checkout/checkout.router'
 import categoryRouterV3 from './modules/category/category.router'
 import favoriteRouterV3 from './modules/favorite-v3/favorite.router'
 import orderRouterV3 from './modules/orders-v3/order.router'
+import userRouterV3 from './modules/user-v3/user.router'
+import authRouterV3 from './modules/auth-v3/auth.router';
+
 
 import setupSwagger from './config/swagger.config'
 import { seedSystemCollections } from './seeds/systemCollections'
@@ -103,14 +106,14 @@ app.get('/', (req, res) => {
 
 setupSwagger(app)
 
-
 // Rutas V3
-app.use('/api/products/v3', productRouterV3)
+app.use('/api/products/v3', productRouterV3);
 app.use('/api/checkout/v3', checkoutRouterV3);
 app.use('/api/categories/v3', categoryRouterV3);
 app.use('/api/favorites/v3', favoriteRouterV3);
 app.use('/api/orders/v3', orderRouterV3);
-
+app.use('/api/users/v3', userRouterV3);
+app.use('/api/auth/v3', authRouterV3);
 // Rutas V2
 app.use('/api/products/v2', productRouterV2)
 app.use('/api/sales/v2', saleRouterV2)

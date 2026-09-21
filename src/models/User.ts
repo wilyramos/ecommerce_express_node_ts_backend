@@ -4,6 +4,16 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export type UserRole = 'cliente' | 'administrador' | 'vendedor';
 
+export interface IUserAddress {
+    departamento?: string;
+    provincia?: string;
+    distrito?: string;
+    direccion?: string;
+    numero?: string;
+    pisoDpto?: string;
+    referencia?: string;
+}
+
 export interface IUser extends Document {
     nombre: string;
     apellidos?: string;
@@ -12,11 +22,24 @@ export interface IUser extends Document {
     email: string;
     password?: string;
     telefono?: string;
+    direccion?: IUserAddress;
     rol?: UserRole;
     googleId?: string;
     isActive?: boolean;
     deletedAt?: Date | null;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
+
+const userAddressSchema = new Schema<IUserAddress>({
+    departamento: { type: String, trim: true },
+    provincia: { type: String, trim: true },
+    distrito: { type: String, trim: true },
+    direccion: { type: String, trim: true },
+    numero: { type: String, trim: true },
+    pisoDpto: { type: String, trim: true },
+    referencia: { type: String, trim: true }
+}, { _id: false });
 
 const userSchema = new Schema<IUser>({
     nombre: { type: String, required: true, trim: true },
@@ -26,36 +49,29 @@ const userSchema = new Schema<IUser>({
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, select: false },
     telefono: { type: String, required: false, trim: true },
+    direccion: { type: userAddressSchema, required: false, default: {} },
     rol: {
         type: String,
         enum: ['cliente', 'administrador', 'vendedor'],
         default: 'cliente'
     },
-    googleId: { type: String, required: false, unique: true, sparse: true }, // <- sparse evita conflictos si es null
-    
-    // ==========================================
-    // CAMPOS DE ESTADO Y SEGURIDAD (Soft Delete)
-    // ==========================================
-    isActive: { 
-        type: Boolean, 
-        required: true, 
-        default: true 
+    googleId: { type: String, required: false, unique: true, sparse: true },
+    isActive: {
+        type: Boolean,
+        required: true,
+        default: true
     },
-    deletedAt: { 
-        type: Date, 
-        required: false, 
-        default: null 
+    deletedAt: {
+        type: Date,
+        required: false,
+        default: null
     }
-}, { 
-    timestamps: true // Agrega automáticamente createdAt y updatedAt
+}, {
+    timestamps: true
 });
 
 userSchema.index({ rol: 1, isActive: 1 });
-
-// Optimiza el rendimiento de getAllUsers y getAllClients que filtran por rol y ordenan por fecha
 userSchema.index({ rol: 1, createdAt: -1 });
-
-// Permite buscar por documento eficientemente si se usa en los filtros de paneles
 userSchema.index({ numeroDocumento: 1 }, { sparse: true });
 
 const User = mongoose.model<IUser>("User", userSchema);

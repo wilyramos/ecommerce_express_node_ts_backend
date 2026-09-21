@@ -97,5 +97,12 @@ const {
 
         const order = await orderService.updateOrderStatus(req.params.id, status, reason, adminId);
         ApiResponse.success(res, 200, 'Estado de la orden actualizado', order);
-    })
+    }),
+    getMyOrders: catchAsync(async (req: Request, res: Response) => {
+        const userId = (req as any).user?.id;
+        const filters = { ...(req.query as any), user: userId };
+        
+        const { data, total, page, limit } = await orderService.getPaginatedOrders(filters);
+        ApiResponse.paginated(res, data, total, page, limit, 200, 'Historial de órdenes obtenido');
+    }),
 };

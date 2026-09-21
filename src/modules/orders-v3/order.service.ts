@@ -477,7 +477,7 @@ async processCharge(
         return order;
     }
 
-    async getPaginatedOrders(queryFilters?: OrderFiltersQuery) {
+    async getPaginatedOrders(queryFilters?: OrderFiltersQuery & { user?: string }) {
         const page = queryFilters?.page || 1;
         const limit = queryFilters?.limit || 10;
         const skip = (page - 1) * limit;
@@ -485,7 +485,8 @@ async processCharge(
         const filters = {
             status: queryFilters?.status,
             email: queryFilters?.email,
-            orderNumber: queryFilters?.orderNumber
+            orderNumber: queryFilters?.orderNumber,
+            user: queryFilters?.user
         };
 
         const result = await this.orderRepository.findPaginated(skip, limit, filters);

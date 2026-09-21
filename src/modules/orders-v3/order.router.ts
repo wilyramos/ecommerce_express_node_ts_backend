@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { orderController } from './order.controller';
 import { authorizeAdmin } from '../../middleware/auth.middleware';
+import { authenticate } from '../../middleware/auth.middleware';
 import { validateRequest } from '../../middleware/validate.middleware.v3';
 import {
     CreateOrderDTOSchema,
@@ -22,6 +23,12 @@ router.post(
     '/checkout',
     validateRequest(CreateOrderDTOSchema),
     orderController.checkout
+);
+
+router.get(
+    '/my-orders',
+    authenticate,
+    orderController.getMyOrders
 );
 
 // Procesa el cargo mediante tarjeta o Yape usando el token generado en el frontend
