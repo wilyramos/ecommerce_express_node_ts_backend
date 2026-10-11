@@ -153,7 +153,7 @@ export class OrderEmail {
         <p style="margin:32px 0 0; font-size:13px; color:#9a9a9a; line-height:1.6;">
           Recibirás un correo de seguimiento cuando tu pedido sea despachado. Ante cualquier consulta escríbenos a
           <a href="mailto:contacto@gophone.pe" style="color:#0f0f0f; font-weight:600; text-decoration:none;">contacto@gophone.pe</a> o contáctanos por WhatsApp al 
-          <a href="https://wa.me/51925054636" target="_blank" style="color:#25D366; font-weight:600; text-decoration:none;">+51 925 054 636</a>.
+          <a href="https://wa.me/51927870159" target="_blank" style="color:#25D366; font-weight:600; text-decoration:none;">+51 925 054 636</a>.
         </p>
       `;
 
@@ -357,7 +357,7 @@ export class OrderEmail {
         <p style="margin:24px 0 0; font-size:13px; color:#9a9a9a; line-height:1.6;">
           Si tienes alguna consulta sobre este movimiento logístico, escríbenos a 
           <a href="mailto:contacto@gophone.pe" style="color:#0f0f0f; font-weight:600; text-decoration:none;">contacto@gophone.pe</a> o contáctanos de inmediato por WhatsApp haciendo clic aquí: 
-          <a href="https://wa.me/51925054636" target="_blank" style="color:#25D366; font-weight:600; text-decoration:none;">+51 925 054 636</a>.
+          <a href="https://wa.me/51927870159" target="_blank" style="color:#25D366; font-weight:600; text-decoration:none;">+51 925 054 636</a>.
         </p>
       `;
 

@@ -5,7 +5,7 @@ const COMPANY = {
     ruc: "10725169715",
     direccion: "Jr. Bernardo Ohggins 120",
     city: "Cañete, Lima - Perú",
-    telefono: "925054636",
+    telefono: "927870159",
 };
 
 

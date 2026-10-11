@@ -6,7 +6,7 @@ const COMPANY = {
     nombre: "GOPHONE.PE",
     ruc: "10725169715",
     city: "San Vicente de Cañete, Lima - Perú",
-    telefono: "925054636",
+    telefono: "927870159",
 };
 
 /**
